@@ -13,10 +13,10 @@ import { Colors } from '@/constants/theme';
 // app-tabs.web.tsx qui réimplémente la même interface avec expo-router/ui.
 //
 // Chaque <NativeTabs.Trigger name="X"> correspond à un fichier/dossier
-// src/app/X. "library" pointe vers un dossier avec son propre _layout
-// (Stack) pour permettre de pousser la fiche jeu par-dessus la liste tout
-// en gardant la barre d'onglets visible ; "profile" est un simple fichier
-// car cet onglet n'a pas (encore) de navigation imbriquée.
+// src/app/X. "library" et "profile" pointent vers des dossiers avec leur
+// propre _layout (Stack) pour pousser une fiche/sous-écran par-dessus tout
+// en gardant la barre d'onglets visible ; "explorer" est un simple fichier
+// (pas de navigation imbriquée pour l'instant).
 export default function AppTabs() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
@@ -32,6 +32,11 @@ export default function AppTabs() {
             seul jeu d'icônes vectorielles qui rend correctement sur iOS,
             Android ET web, sans avoir à fournir un asset par plateforme. */}
         <NativeTabs.Trigger.Icon src={<VectorIcon family={Ionicons} name="albums" />} />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="explorer">
+        <NativeTabs.Trigger.Label>Explorer</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon src={<VectorIcon family={Ionicons} name="compass" />} />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="profile">

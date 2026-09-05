@@ -10,11 +10,15 @@ export type ThemedTextProps = TextProps & {
 
 export function ThemedText({ style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
   const theme = useTheme();
+  // linkPrimary est la seule variante à porter une couleur par défaut autre
+  // que le texte principal (l'accent, pas un bleu ad hoc) ; themeColor reste
+  // prioritaire si l'appelant le précise explicitement.
+  const resolvedColor = theme[themeColor ?? (type === 'linkPrimary' ? 'accent' : 'text')];
 
   return (
     <Text
       style={[
-        { color: theme[themeColor ?? 'text'] },
+        { color: resolvedColor },
         type === 'default' && styles.default,
         type === 'title' && styles.title,
         type === 'small' && styles.small,
@@ -63,7 +67,7 @@ const styles = StyleSheet.create({
   linkPrimary: {
     lineHeight: 30,
     fontSize: 14,
-    color: '#3c87f7',
+    fontWeight: 600,
   },
   code: {
     fontFamily: Fonts.mono,

@@ -7,20 +7,33 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
+// Voir ARCHITECTURE.md §2 (identité visuelle) : bibliothèque de jeux vue
+// comme une étagère plutôt qu'un tableau de données. accent (or "trophée
+// débloqué") est l'unique couleur interactive (onglet actif, liens,
+// notation) ; success (vert sauge) ne sert qu'au sens "terminé"/"vu" — les
+// deux ne doivent jamais se substituer l'un à l'autre.
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    text: '#1C1A1F',
+    background: '#FBF8F4',
+    backgroundElement: '#F0EAE2',
+    backgroundSelected: '#E3DAD0',
+    textSecondary: '#6B6470',
+    accent: '#C97F1B',
+    // Couleur de contenu (icône/texte) posée sur un fond `accent` plein —
+    // jamais un texte/icône ordinaire sur le fond normal de l'écran.
+    accentInk: '#ffffff',
+    success: '#3F8A5D',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    text: '#F5F1EC',
+    background: '#121014',
+    backgroundElement: '#1E1B22',
+    backgroundSelected: '#2A2530',
+    textSecondary: '#9C94A3',
+    accent: '#E8A33D',
+    accentInk: '#17130A',
+    success: '#5FAE7B',
   },
 } as const;
 
