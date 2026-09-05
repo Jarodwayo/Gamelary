@@ -1,8 +1,10 @@
+import { Image } from 'expo-image';
 import { StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useGameCover } from '@/hooks/use-game-cover';
 
 const PLACEHOLDER_COLORS = ['#5B4B8A', '#2E6E5E', '#8A4B4B', '#4B6B8A', '#8A7A4B', '#6B4B8A'];
 
@@ -23,11 +25,14 @@ type GameCoverProps = {
   size?: 'small' | 'large';
 };
 
-// Jaquette temporaire (couleur + initiales) tant que l'intégration IGDB
-// n'est pas branchée. Une fois l'API en place, ce composant sera remplacé
-// par une <Image> pointant sur l'URL de cover IGDB, avec ce placeholder
-// gardé comme fallback pendant le chargement ou si l'image est manquante.
+// Jaquette réelle (SteamGridDB, via /api/cover) avec repli sur un
+// placeholder coloré (couleur + initiales) pendant le chargement, si aucune
+// jaquette n'a été trouvée, ou si le jeu n'a pas encore été recherché. Le
+// placeholder n'est donc pas juste une étape temporaire du projet : il reste
+// l'état d'erreur/chargement permanent du composant.
 export function GameCover({ title, size = 'small' }: GameCoverProps) {
+  const { url, loading } = useGameCover(title);
+
   const initials = title
     .split(' ')
     .filter(Boolean)
@@ -36,13 +41,19 @@ export function GameCover({ title, size = 'small' }: GameCoverProps) {
     .join('')
     .toUpperCase();
 
+  const sizeStyle = size === 'large' ? styles.large : styles.small;
+
+  if (url) {
+    // expo-image gère lui-même le cache mémoire + disque des images
+    // distantes : pas besoin de logique de cache supplémentaire côté client
+    // pour éviter de retélécharger la même jaquette à chaque affichage.
+    return <Image source={{ uri: url }} style={[styles.cover, sizeStyle]} contentFit="cover" />;
+  }
+
   return (
     <ThemedView
-      style={[
-        styles.cover,
-        size === 'large' ? styles.large : styles.small,
-        { backgroundColor: colorForTitle(title) },
-      ]}>
+      style={[styles.cover, sizeStyle, { backgroundColor: colorForTitle(title) }]}
+      accessibilityLabel={loading ? `Chargement de la jaquette de ${title}` : undefined}>
       <ThemedText style={size === 'large' ? styles.textLarge : styles.textSmall}>
         {initials}
       </ThemedText>
