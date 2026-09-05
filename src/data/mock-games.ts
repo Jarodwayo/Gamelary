@@ -1,6 +1,9 @@
 import type { Game } from '@/types/game';
 
 // Données de démonstration en attendant l'intégration IGDB / Steam / Spotify.
+// zelda-botw illustre volontairement le cas "0 succès trackés" (jeu Switch,
+// pas de succès Steam) pour tester l'état "Aucun succès suivi" de la fiche
+// jeu plutôt qu'un simple 0%.
 export const mockGames: Game[] = [
   {
     id: 'hollow-knight',
@@ -49,6 +52,9 @@ export const mockGames: Game[] = [
   },
 ];
 
+// Signature volontairement identique à ce que sera un futur fetch API
+// (id -> Promise<Game | undefined>, juste sans le Promise pour l'instant) :
+// le composant appelant n'aura pas à changer quand ça deviendra un appel réseau.
 export function getGameById(id: string): Game | undefined {
   return mockGames.find((game) => game.id === id);
 }
