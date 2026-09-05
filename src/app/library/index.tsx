@@ -9,6 +9,10 @@ import { BottomTabInset, Spacing } from '@/constants/theme';
 import { mockGames } from '@/data/mock-games';
 import type { Game } from '@/types/game';
 
+// asChild fait passer les props de navigation (onPress, href...) directement
+// au Pressable enfant au lieu d'insérer un <a>/<Text> supplémentaire : la
+// carte entière reste stylable comme un composant RN normal tout en restant
+// un vrai lien (touch native + <a href> côté web, donc accessible/SEO-friendly).
 function GameCard({ game }: { game: Game }) {
   return (
     <Link href={`/library/${game.id}`} asChild>
@@ -25,6 +29,10 @@ function GameCard({ game }: { game: Game }) {
   );
 }
 
+// mockGames vient de src/data/mock-games.ts en attendant l'intégration
+// IGDB : quand l'API sera branchée, seul le "data source" changera
+// (fetch + state au lieu d'un tableau statique), le rendu ci-dessous ne
+// bougera pas puisqu'il consomme déjà le type Game partagé.
 export default function LibraryScreen() {
   return (
     <ThemedView style={styles.container}>
