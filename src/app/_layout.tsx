@@ -5,8 +5,15 @@ import { useColorScheme } from 'react-native';
 import AppTabs from '@/components/app-tabs';
 import { AnimatedSplashOverlay } from '@/components/splash-overlay';
 
+// Empêche Expo de masquer le splash natif tant que le JS n'a pas fini de
+// monter : sans ça on aurait un flash de contenu non stylé avant l'app.
 SplashScreen.preventAutoHideAsync();
 
+// Layout racine du router (app/_layout.tsx = point d'entrée de toute
+// l'appli). AppTabs remplace le composant Tabs habituel : ce n'est pas un
+// Stack qui contiendrait des onglets, ce sont les onglets eux-mêmes qui
+// forment la racine de la navigation (voir app-tabs.tsx pour le détail
+// natif vs web).
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   return (

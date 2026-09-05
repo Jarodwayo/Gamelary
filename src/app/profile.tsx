@@ -7,6 +7,9 @@ import { BottomTabInset, Spacing } from '@/constants/theme';
 import { mockGames } from '@/data/mock-games';
 
 export default function ProfileScreen() {
+  // "100% terminé" = tous les succès trackés débloqués. On exclut
+  // explicitement achievementsTotal === 0 (jeu sans succès suivis) pour ne
+  // pas le compter comme "terminé" par un simple 0 === 0.
   const gamesCompleted = mockGames.filter(
     (game) => game.achievementsTotal > 0 && game.achievementsUnlocked === game.achievementsTotal
   ).length;
