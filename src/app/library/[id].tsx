@@ -8,10 +8,16 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { getGameById } from '@/data/mock-games';
 
+// [id].tsx : nom de fichier expo-router pour une route dynamique. Le segment
+// d'URL /library/hollow-knight se retrouve dans useLocalSearchParams().id —
+// c'est le même mécanisme que les [id] de Next.js.
 export default function GameDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const game = getGameById(id);
 
+  // getGameById peut renvoyer undefined (id invalide dans l'URL, jeu
+  // supprimé, lien partagé cassé...) : on gère l'état "introuvable"
+  // explicitement plutôt que de laisser planter le rendu sur `game.title`.
   if (!game) {
     return (
       <ThemedView style={styles.container}>
@@ -20,6 +26,10 @@ export default function GameDetailScreen() {
     );
   }
 
+  // achievementsTotal peut être 0 (jeu pas encore suivi sur une plateforme
+  // avec succès, ex. Switch dans les données de démo) : on distingue "0%"
+  // de "pas de données" pour ne pas afficher un 0% trompeur, et on évite
+  // une division par zéro au passage.
   const hasAchievements = game.achievementsTotal > 0;
   const completion = hasAchievements
     ? Math.round((game.achievementsUnlocked / game.achievementsTotal) * 100)
@@ -27,6 +37,9 @@ export default function GameDetailScreen() {
 
   return (
     <>
+      {/* Titre du header natif du Stack (voir library/_layout.tsx), défini
+          dynamiquement depuis les données plutôt que statiquement dans le
+          layout puisqu'il dépend du jeu affiché. */}
       <Stack.Screen options={{ title: game.title }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <ThemedView style={styles.hero}>
@@ -55,6 +68,14 @@ export default function GameDetailScreen() {
           )}
         </ThemedView>
 
+        {/* Fonctionnalité "musique préférée" : contrairement à un lecteur
+            intégré, l'app ne stocke qu'une référence au morceau (titre +
+            artiste) choisi par l'utilisateur dans la BO du jeu — pas de
+            streaming audio dans l'app, donc pas besoin des droits de
+            diffusion Spotify (Premium + SDK natif), seulement de l'API de
+            recherche. Le lien ci-dessous ouvre Spotify pour choisir/écouter,
+            et c'est cette sélection qui sera persistée plus tard (backend +
+            écriture sur `favoriteTrack`, aujourd'hui en dur dans les mocks). */}
         <ThemedView type="backgroundElement" style={styles.section}>
           <ThemedText type="smallBold">Musique préférée</ThemedText>
           {game.favoriteTrack ? (

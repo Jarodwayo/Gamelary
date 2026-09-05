@@ -13,6 +13,13 @@ import { ThemedView } from './themed-view';
 
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 
+// Le suffixe .web.tsx est une convention Metro/React Native : sur le
+// bundle web, ce fichier remplace automatiquement app-tabs.tsx (natif),
+// sans changer un seul import ailleurs dans le code. C'est nécessaire ici
+// car NativeTabs (app-tabs.tsx) ne fonctionne pas sur web ; on reconstruit
+// donc la même barre d'onglets avec les primitives génériques
+// d'expo-router/ui, en gardant les mêmes noms de route ("library",
+// "profile") pour que la navigation reste identique entre plateformes.
 export default function AppTabs() {
   return (
     <Tabs>
