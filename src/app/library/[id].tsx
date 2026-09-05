@@ -6,18 +6,20 @@ import { GameCover } from '@/components/game-cover';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { getGameById } from '@/data/mock-games';
+import { useGame } from '@/hooks/use-game';
 
 // [id].tsx : nom de fichier expo-router pour une route dynamique. Le segment
 // d'URL /library/hollow-knight se retrouve dans useLocalSearchParams().id —
 // c'est le même mécanisme que les [id] de Next.js.
 export default function GameDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const game = getGameById(id);
+  const { game, loading } = useGame(id);
 
-  // getGameById peut renvoyer undefined (id invalide dans l'URL, jeu
-  // supprimé, lien partagé cassé...) : on gère l'état "introuvable"
-  // explicitement plutôt que de laisser planter le rendu sur `game.title`.
+  // useGame ne renvoie null que si l'id n'existe pas dans tracked-games (id
+  // invalide dans l'URL, lien partagé cassé...) : ce n'est jamais l'état de
+  // chargement IGDB, qui garde un titre/plateforme de repli — voir
+  // src/hooks/use-game.ts. On gère cet état "introuvable" explicitement
+  // plutôt que de laisser planter le rendu sur `game.title`.
   if (!game) {
     return (
       <ThemedView style={styles.container}>
@@ -46,7 +48,9 @@ export default function GameDetailScreen() {
           <GameCover title={game.title} size="large" />
           <ThemedView style={styles.heroText}>
             <ThemedText type="subtitle">{game.title}</ThemedText>
-            <ThemedText themeColor="textSecondary">{game.platform}</ThemedText>
+            <ThemedText themeColor="textSecondary">
+              {loading ? 'Chargement…' : game.platform}
+            </ThemedText>
           </ThemedView>
         </ThemedView>
 

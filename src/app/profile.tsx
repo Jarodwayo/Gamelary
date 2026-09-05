@@ -4,13 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
-import { mockGames } from '@/data/mock-games';
+import { trackedGames } from '@/data/tracked-games';
 
 export default function ProfileScreen() {
   // "100% terminé" = tous les succès trackés débloqués. On exclut
   // explicitement achievementsTotal === 0 (jeu sans succès suivis) pour ne
   // pas le compter comme "terminé" par un simple 0 === 0.
-  const gamesCompleted = mockGames.filter(
+  const gamesCompleted = trackedGames.filter(
     (game) => game.achievementsTotal > 0 && game.achievementsUnlocked === game.achievementsTotal
   ).length;
 
@@ -24,7 +24,7 @@ export default function ProfileScreen() {
         <ThemedView type="backgroundElement" style={styles.statsRow}>
           <ThemedView style={styles.stat}>
             <ThemedText type="title" style={styles.statValue}>
-              {mockGames.length}
+              {trackedGames.length}
             </ThemedText>
             <ThemedText themeColor="textSecondary">Jeux suivis</ThemedText>
           </ThemedView>
