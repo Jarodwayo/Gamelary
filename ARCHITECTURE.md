@@ -54,6 +54,8 @@ src/
   app/                 routes (expo-router) — la navigation elle-même
     _layout.tsx          layout racine (thème + splash + NativeTabs)
     index.tsx             redirige "/" vers "/library" (pas d'onglet racine)
+    api/
+      cover+api.ts          route serveur : proxy + cache vers SteamGridDB
     library/
       _layout.tsx          Stack imbriqué (liste -> fiche jeu)
       index.tsx             bibliothèque (grille de jeux)
@@ -62,6 +64,8 @@ src/
   components/          UI réutilisable, découplée des routes
   constants/theme.ts   couleurs/espacements clair-sombre, source unique du design system
   data/                accès aux données (mock aujourd'hui, API demain)
+  hooks/               logique réutilisable côté client (ex. useGameCover)
+  lib/                 utilitaires transverses (ex. résolution d'URL d'API)
   types/               types partagés (Game, FavoriteTrack)
 ```
 
@@ -81,19 +85,26 @@ Backloggd qui ne se limite pas à une seule plateforme. Auth via
 Client Credentials Twitch (pas de connexion utilisateur requise, juste des
 identifiants d'app).
 
-### 5.2 Jaquettes — SteamGridDB 🚧
+### 5.2 Jaquettes — SteamGridDB ✅
 
 [SteamGridDB](https://www.steamgriddb.com/api/v2) plutôt que les covers
 IGDB par défaut : base communautaire spécialisée dans l'artwork (grids,
 covers, hero images) avec plusieurs styles par jeu et une meilleure qualité
-moyenne que les jaquettes génériques d'IGDB. Le matching se fait par nom de
-jeu (ou id IGDB si l'API le permet) pour retrouver l'entrée SteamGridDB
-correspondante.
+moyenne que les jaquettes génériques d'IGDB.
 
-En attendant cette intégration, `GameCover` (`src/components/game-cover.tsx`)
-affiche un placeholder coloré (hash déterministe du titre + initiales) —
-il sera remplacé par une `<Image>` pointant sur l'URL SteamGridDB, avec le
-placeholder conservé comme état de fallback/chargement.
+Flux : `src/app/api/cover+api.ts` (route serveur — voir §6) recherche le
+jeu par titre (`/search/autocomplete`), prend le premier résultat, récupère
+ses grids au format portrait 600×900 (`/grids/game/:id`) et renvoie l'URL
+de la meilleure. `GameCover` (`src/components/game-cover.tsx`) appelle
+cette route via le hook `useGameCover` et affiche l'image avec `expo-image` ;
+le placeholder coloré (hash déterministe du titre + initiales) reste l'état
+de repli permanent (chargement, jeu introuvable sur SteamGridDB, erreur
+réseau) — pas juste une étape temporaire du projet.
+
+Limite connue : le matching prend le premier résultat de l'autocomplete
+sans désambiguïsation (ex. risque de confondre un jeu et son remake/DLC).
+Une fois IGDB branché, on pourra matcher par id plutôt que par nom pour
+fiabiliser ça.
 
 ### 5.3 Succès / 100% — Steam Web API 🚧
 
@@ -118,17 +129,27 @@ Spotify" actuel (`library/[id].tsx`) ouvre l'app/le site Spotify pour que
 l'utilisateur trouve son morceau ; l'étape suivante est un écran de
 recherche in-app qui persiste juste `{ title, artist }` sur le jeu.
 
-## 6. Secrets API : pourquoi un petit backend est nécessaire 🚧
+## 6. Secrets API : pourquoi un petit backend est nécessaire ✅ (partiel)
 
 IGDB (client secret Twitch), SteamGridDB, Steam Web API et Spotify exigent
 tous une clé/secret d'application. Une clé embarquée dans le bundle JS
 d'une app mobile publique est extractible (l'app est un fichier
 téléchargeable) — donc **aucun de ces secrets ne doit vivre dans le client
-Gamelary**. Solution prévue : une fonction serverless légère (Cloudflare
-Worker ou Vercel Edge Function) qui détient les secrets, expose des
-endpoints simples au client (`/api/games/search`, `/api/games/:id/achievements`,
-`/api/music/search`) et fait le pont vers les APIs tierces. C'est aussi le
-niveau naturel où mettre le cache serveur (section suivante).
+Gamelary**.
+
+Plutôt qu'un service séparé (Cloudflare Worker, Vercel...), le backend est
+les **routes API d'expo-router** (`src/app/api/*+api.ts`, convention
+`+api.ts`) : ces fichiers tournent uniquement côté serveur (dev server
+Metro, ou le serveur Node une fois déployé) et ne sont jamais inclus dans
+le bundle client — pas de service ni de dépôt séparé à maintenir pour un
+projet solo. Contrepartie : `app.json` doit déclarer `web.output: "server"`
+(et non `"static"`) pour que ces routes existent aussi en production, ce
+qui impose un hébergeur qui exécute du Node (ex. EAS Hosting) plutôt qu'un
+CDN statique classique.
+
+Implémenté pour SteamGridDB (`/api/cover`, lit `STEAMGRIDDB_API_KEY` côté
+serveur). À répliquer pour IGDB (`/api/games`), Steam (`/api/achievements`)
+et Spotify (`/api/music/search`) une fois ces intégrations branchées.
 
 ## 7. Stratégie de cache 🚧
 
@@ -137,14 +158,21 @@ source, donc le TTL (durée de vie) diffère aussi.
 
 | Donnée | Volatilité | Cache prévu |
 |---|---|---|
-| Catalogue IGDB (nom, plateformes) | quasi statique | cache serveur long (jours/semaines) |
-| Jaquettes SteamGridDB | statique | cache serveur long + cache disque client via `expo-image` (déjà utilisé dans le projet, gère automatiquement mémoire + disque pour les images distantes — rien à coder en plus côté client) |
-| Succès Steam | change quand l'utilisateur joue | cache court (quelques minutes) ou rafraîchissement manuel, jamais de cache long |
-| Recherche Spotify | éphémère, propre à la session de recherche | pas de cache — seule la sélection finale (`{ title, artist }`) est persistée sur le jeu |
+| Catalogue IGDB (nom, plateformes) | quasi statique | cache serveur long (jours/semaines) 🚧 |
+| Jaquettes SteamGridDB | statique | ✅ cache serveur (`Map` en mémoire, TTL 7 jours, dans `cover+api.ts`) + cache disque client via `expo-image` (déjà utilisé dans le projet, gère automatiquement mémoire + disque pour les images distantes — rien à coder en plus côté client) + petit cache mémoire côté client (`useGameCover`) pour éviter un aller-retour réseau à chaque montage du composant |
+| Succès Steam | change quand l'utilisateur joue | cache court (quelques minutes) ou rafraîchissement manuel, jamais de cache long 🚧 |
+| Recherche Spotify | éphémère, propre à la session de recherche | pas de cache — seule la sélection finale (`{ title, artist }`) est persistée sur le jeu 🚧 |
+
+Limite assumée du cache serveur actuel : une simple `Map` en mémoire ne
+survit pas à un redémarrage et ne serait pas partagée entre plusieurs
+instances si l'app scale — suffisant pour une seule instance de dev/démo,
+mais à remplacer par un vrai cache partagé (Redis/KV) avant une mise en
+production sérieuse.
 
 Côté client, [TanStack Query](https://tanstack.com/query) est envisagé pour
 gérer le cache/refetch/état de chargement des appels au backend (pattern
-stale-while-revalidate), plutôt que de réinventer cette logique à la main
+stale-while-revalidate) de façon plus robuste que le `useState`/`useEffect`
+actuel de `useGameCover`, plutôt que de réinventer cette logique à la main
 dans chaque écran.
 
 ## 8. Licence
@@ -157,9 +185,11 @@ réservés" — consultable, mais pas réutilisable sans autorisation.
 
 **Fait** : scaffold Expo + TypeScript, navigation complète (onglets +
 pile imbriquée), écrans Bibliothèque/Fiche jeu/Profil sur données mock,
-design system clair/sombre partagé (`ThemedText`/`ThemedView`/`theme.ts`).
+design system clair/sombre partagé (`ThemedText`/`ThemedView`/`theme.ts`),
+jaquettes réelles via SteamGridDB (route serveur + cache + composant client).
 
-**Prochaines étapes** : backend léger (secrets + cache), intégration IGDB
-(catalogue), SteamGridDB (jaquettes), Steam Web API (succès, nécessite un
-flow de connexion du compte Steam de l'utilisateur), recherche Spotify
-in-app pour la musique préférée.
+**Prochaines étapes** : intégration IGDB (catalogue — les identifiants
+configurés renvoient actuellement une erreur 401 côté IGDB, à vérifier),
+Steam Web API (succès, nécessite un flow de connexion du compte Steam de
+l'utilisateur), recherche Spotify in-app pour la musique préférée, cache
+serveur partagé (Redis/KV) en remplacement de la `Map` en mémoire.
