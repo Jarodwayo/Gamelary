@@ -57,6 +57,7 @@ src/
     index.tsx             redirige "/" vers "/library" (pas d'onglet racine)
     api/
       cover+api.ts          route serveur : proxy + cache vers SteamGridDB
+      games+api.ts          route serveur : proxy + cache vers IGDB
     library/
       _layout.tsx          Stack imbriqué (liste -> fiche jeu)
       index.tsx             bibliothèque (grille de jeux)
@@ -64,27 +65,56 @@ src/
     profile.tsx           écran profil (stats)
   components/          UI réutilisable, découplée des routes
   constants/theme.ts   couleurs/espacements clair-sombre, source unique du design system
-  data/                accès aux données (mock aujourd'hui, API demain)
-  hooks/               logique réutilisable côté client (ex. useGameCover)
+  data/                accès aux données (tracked-games.ts = ce qui reste mocké, API pour le reste)
+  hooks/               logique réutilisable côté client (ex. useGameCover, useGame)
   lib/                 utilitaires transverses (ex. résolution d'URL d'API)
   types/               types partagés (Game, FavoriteTrack)
 ```
 
 Découplage volontaire : les écrans (`app/`) ne connaissent que le type
-`Game` et les fonctions de `data/` (ex. `getGameById`) — jamais la source
-réelle des données. Remplacer les mocks par de vrais appels API ne devrait
-toucher que `src/data/`, pas les écrans.
+`Game` et le hook `useGame` (`src/hooks/use-game.ts`) — jamais la source
+réelle des données (IGDB pour le catalogue, `tracked-games.ts` pour ce qui
+reste mocké). Brancher les prochaines intégrations (Steam, Spotify) ne
+devrait toucher que `src/data/`/`src/hooks/`, pas les écrans.
 
 ## 5. Sources de données par fonctionnalité
 
-### 5.1 Catalogue de jeux (nom, plateformes) — IGDB 🚧
+### 5.1 Catalogue de jeux (nom, plateformes) — IGDB ✅
 
 [IGDB](https://api-docs.igdb.com/) (propriété Twitch) plutôt que l'API
 Steam seule : couvre toutes les plateformes (PC, PlayStation, Xbox,
 Switch...), pas seulement les jeux Steam — nécessaire pour une appli façon
 Backloggd qui ne se limite pas à une seule plateforme. Auth via
 Client Credentials Twitch (pas de connexion utilisateur requise, juste des
-identifiants d'app).
+identifiants d'app) : IGDB exige à la fois un en-tête `Client-ID` et un
+`Authorization: Bearer <token>`.
+
+Flux : `src/app/api/games+api.ts` recherche le jeu par titre
+(`POST /games`, apicalypse `search "..."; fields name,platforms.name;`,
+10 candidats). Contrairement à SteamGridDB, on ne prend pas juste le
+premier résultat : le classement par pertinence d'IGDB fait souvent
+remonter une édition/bundle/spin-off avant le jeu de base (ex. "Elden
+Ring Nightreign" avant "Elden Ring", un bundle avant "The Legend of Zelda:
+Breath of the Wild"). On préfère donc, parmi les candidats, celui dont le
+nom correspond exactement (insensible à la casse) au titre recherché, et
+on ne retombe sur le premier résultat du ranking IGDB que si aucun ne
+correspond exactement. Le hook
+`useGame` (`src/hooks/use-game.ts`) fait la jointure entre ce résultat et
+`src/data/tracked-games.ts`, qui garde localement les champs qu'IGDB ne
+fournit pas (succès, musique préférée — voir §5.3/§5.4, toujours mockés) :
+`Game.title`/`Game.platform` viennent d'IGDB, le reste de tracked-games.
+`LibraryScreen` et la fiche jeu (`library/[id].tsx`) consomment ce hook au
+lieu du tableau statique `mockGames` d'avant.
+
+Contrairement à SteamGridDB (clé d'API stable), le token Twitch obtenu via
+Client Credentials a une durée de vie limitée (~60 jours) : plutôt que de
+refaire l'échange `client_id`/`client_secret` à chaque requête (flow non
+testable dans cet environnement de dev, `id.twitch.tv` n'étant pas sur la
+liste des hôtes autorisés par le proxy), le serveur lit directement
+`IGDB_CLIENT_ID` et `IGDB_ACCESS_TOKEN` déjà obtenu. Implication assumée :
+`IGDB_ACCESS_TOKEN` doit être renouvelé périodiquement en production (job
+planifié ou renouvellement manuel), sans quoi IGDB renverra un 401 après
+expiration.
 
 ### 5.2 Jaquettes — SteamGridDB ✅
 
@@ -104,8 +134,9 @@ réseau) — pas juste une étape temporaire du projet.
 
 Limite connue : le matching prend le premier résultat de l'autocomplete
 sans désambiguïsation (ex. risque de confondre un jeu et son remake/DLC).
-Une fois IGDB branché, on pourra matcher par id plutôt que par nom pour
-fiabiliser ça.
+IGDB étant maintenant branché (§5.1), une amélioration possible serait de
+matcher par id IGDB plutôt que par nom pour fiabiliser ça — pas encore fait,
+`cover+api.ts` continue de chercher par titre indépendamment de `/api/games`.
 
 ### 5.3 Succès / 100% — Steam Web API 🚧
 
@@ -149,8 +180,9 @@ qui impose un hébergeur qui exécute du Node (ex. EAS Hosting) plutôt qu'un
 CDN statique classique.
 
 Implémenté pour SteamGridDB (`/api/cover`, lit `STEAMGRIDDB_API_KEY` côté
-serveur). À répliquer pour IGDB (`/api/games`), Steam (`/api/achievements`)
-et Spotify (`/api/music/search`) une fois ces intégrations branchées.
+serveur) et IGDB (`/api/games`, lit `IGDB_CLIENT_ID`/`IGDB_ACCESS_TOKEN`
+côté serveur). À répliquer pour Steam (`/api/achievements`) et Spotify
+(`/api/music/search`) une fois ces intégrations branchées.
 
 ## 7. Stratégie de cache 🚧
 
@@ -159,7 +191,7 @@ source, donc le TTL (durée de vie) diffère aussi.
 
 | Donnée | Volatilité | Cache prévu |
 |---|---|---|
-| Catalogue IGDB (nom, plateformes) | quasi statique | cache serveur long (jours/semaines) 🚧 |
+| Catalogue IGDB (nom, plateformes) | quasi statique | ✅ cache serveur (`Map` en mémoire, TTL 30 jours, dans `games+api.ts`) + petit cache mémoire côté client (`useGame`), même principe que les jaquettes |
 | Jaquettes SteamGridDB | statique | ✅ cache serveur (`Map` en mémoire, TTL 7 jours, dans `cover+api.ts`) + cache disque client via `expo-image` (déjà utilisé dans le projet, gère automatiquement mémoire + disque pour les images distantes — rien à coder en plus côté client) + petit cache mémoire côté client (`useGameCover`) pour éviter un aller-retour réseau à chaque montage du composant |
 | Succès Steam | change quand l'utilisateur joue | cache court (quelques minutes) ou rafraîchissement manuel, jamais de cache long 🚧 |
 | Recherche Spotify | éphémère, propre à la session de recherche | pas de cache — seule la sélection finale (`{ title, artist }`) est persistée sur le jeu 🚧 |
@@ -173,8 +205,8 @@ production sérieuse.
 Côté client, [TanStack Query](https://tanstack.com/query) est envisagé pour
 gérer le cache/refetch/état de chargement des appels au backend (pattern
 stale-while-revalidate) de façon plus robuste que le `useState`/`useEffect`
-actuel de `useGameCover`, plutôt que de réinventer cette logique à la main
-dans chaque écran.
+actuel de `useGameCover` et `useGame`, plutôt que de réinventer cette
+logique à la main dans chaque écran.
 
 ## 8. Licence
 
@@ -185,12 +217,15 @@ réservés" — consultable, mais pas réutilisable sans autorisation.
 ## 9. État actuel vs feuille de route
 
 **Fait** : scaffold Expo + TypeScript, navigation complète (onglets +
-pile imbriquée), écrans Bibliothèque/Fiche jeu/Profil sur données mock,
-design system clair/sombre partagé (`ThemedText`/`ThemedView`/`theme.ts`),
-jaquettes réelles via SteamGridDB (route serveur + cache + composant client).
+pile imbriquée), écrans Bibliothèque/Fiche jeu/Profil, design system
+clair/sombre partagé (`ThemedText`/`ThemedView`/`theme.ts`), jaquettes
+réelles via SteamGridDB (route serveur + cache + composant client),
+catalogue réel (titre/plateforme) via IGDB (route serveur + cache + hook
+`useGame` qui le combine avec `src/data/tracked-games.ts`, qui garde les
+données encore mockées : succès et musique préférée).
 
-**Prochaines étapes** : intégration IGDB (catalogue — les identifiants
-configurés renvoient actuellement une erreur 401 côté IGDB, à vérifier),
-Steam Web API (succès, nécessite un flow de connexion du compte Steam de
-l'utilisateur), recherche Spotify in-app pour la musique préférée, cache
-serveur partagé (Redis/KV) en remplacement de la `Map` en mémoire.
+**Prochaines étapes** : Steam Web API (succès, nécessite un flow de
+connexion du compte Steam de l'utilisateur), recherche Spotify in-app pour
+la musique préférée, cache serveur partagé (Redis/KV) en remplacement de la
+`Map` en mémoire, éventuellement matcher les jaquettes SteamGridDB par id
+IGDB plutôt que par titre (§5.2).
