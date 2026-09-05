@@ -1,55 +1,43 @@
 import { Link } from 'expo-router';
-import { FlatList, Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { GameCover } from '@/components/game-cover';
+import { GameGrid } from '@/components/game-grid';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
-import { trackedGames, type TrackedGame } from '@/data/tracked-games';
-import { useGame } from '@/hooks/use-game';
-
-// asChild fait passer les props de navigation (onPress, href...) directement
-// au Pressable enfant au lieu d'insérer un <a>/<Text> supplémentaire : la
-// carte entière reste stylable comme un composant RN normal tout en restant
-// un vrai lien (touch native + <a href> côté web, donc accessible/SEO-friendly).
-// useGame ici (plutôt qu'un fetch fait une fois pour toute la liste) : même
-// pattern que GameCover, un appel /api/games par carte, caché côté serveur
-// (30 jours) et côté client — voir src/hooks/use-game.ts.
-function GameCard({ trackedGame }: { trackedGame: TrackedGame }) {
-  const { game } = useGame(trackedGame.id);
-  const title = game?.title ?? trackedGame.igdbTitle;
-
-  return (
-    <Link href={`/library/${trackedGame.id}`} asChild>
-      <Pressable style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
-        <GameCover title={title} />
-        <ThemedText type="small" numberOfLines={1} style={styles.cardTitle}>
-          {title}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {game?.platform}
-        </ThemedText>
-      </Pressable>
-    </Link>
-  );
-}
+import { Spacing } from '@/constants/theme';
+import { useGameStore } from '@/lib/game-store';
 
 export default function LibraryScreen() {
+  const store = useGameStore();
+  const libraryIds = Object.values(store.games)
+    .filter((game) => game.inLibrary)
+    .map((game) => game.id);
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
-        <FlatList
-          data={trackedGames}
-          keyExtractor={(trackedGame) => trackedGame.id}
-          numColumns={2}
-          columnWrapperStyle={styles.row}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => <GameCard trackedGame={item} />}
-          ListHeaderComponent={
-            <ThemedText type="title" style={styles.header}>
-              Bibliothèque
-            </ThemedText>
+        <GameGrid
+          ids={libraryIds}
+          emptyLabel="Aucun jeu suivi pour le moment."
+          header={
+            <View>
+              <ThemedText type="title" style={styles.header}>
+                Bibliothèque
+              </ThemedText>
+              <View style={styles.linksRow}>
+                <Link href="/library/wishlist" asChild>
+                  <Pressable>
+                    <ThemedText type="linkPrimary">Wishlist</ThemedText>
+                  </Pressable>
+                </Link>
+                <Link href="/library/not-started" asChild>
+                  <Pressable>
+                    <ThemedText type="linkPrimary">Pas commencé</ThemedText>
+                  </Pressable>
+                </Link>
+              </View>
+            </View>
           }
         />
       </SafeAreaView>
@@ -64,28 +52,14 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  listContent: {
-    paddingHorizontal: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.four,
-    gap: Spacing.three,
-  },
   header: {
     fontSize: 28,
     lineHeight: 34,
     paddingTop: Spacing.three,
+  },
+  linksRow: {
+    flexDirection: 'row',
+    gap: Spacing.four,
     paddingBottom: Spacing.two,
-  },
-  row: {
-    gap: Spacing.three,
-  },
-  card: {
-    flex: 1,
-    gap: Spacing.one,
-  },
-  cardTitle: {
-    fontWeight: '600',
-  },
-  pressed: {
-    opacity: 0.7,
   },
 });

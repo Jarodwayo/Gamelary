@@ -1,16 +1,103 @@
 // Route serveur (voir cover+api.ts pour l'explication de la convention
-// "+api.ts") : recherche un jeu par titre sur IGDB et renvoie son nom et sa
-// plateforme "canoniques". Sépare le catalogue (IGDB, ce fichier) des
-// données propres à l'utilisateur (succès, musique préférée — voir
-// src/data/tracked-games.ts) : voir ARCHITECTURE.md §5.1.
+// "+api.ts") : deux usages IGDB distincts sur le même endpoint.
+// - ?title=  : recherche un jeu précis, renvoie son nom et sa plateforme
+//   canoniques (catalogue vs données utilisateur : voir ARCHITECTURE.md §5.1).
+// - ?section=: rangées de l'écran Explorer (voir ARCHITECTURE.md §5.6),
+//   chacune sa propre requête apicalypse plutôt qu'un unique "top jeux" —
+//   IGDB n'a pas de notion native de "tendance"/"recommandé", ce sont des
+//   approximations documentées ci-dessous par section.
 
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+import { slugify } from '@/lib/slug';
+import type { CatalogGame } from '@/types/game';
+
+const LOOKUP_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const SECTION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const gamesCache = new Map<string, { result: GameLookupResult; expiresAt: number }>();
+const sectionCache = new Map<string, { result: CatalogGame[]; expiresAt: number }>();
 
 const IGDB_BASE = 'https://api.igdb.com/v4';
 
 type GameLookupResult = { title: string | null; platform: string | null };
 type IgdbGame = { name: string; platforms?: { name: string }[] };
+
+const DAY_SECONDS = 24 * 60 * 60;
+const TWO_YEARS_SECONDS = 2 * 365 * DAY_SECONDS;
+
+// Requêtes apicalypse par section, testées en direct contre IGDB avant
+// intégration (résultats pertinents et non vides) :
+// - populaire : total_rating_count = volume d'avis agrégés, meilleur proxy
+//   IGDB de la popularité "toutes périodes" que rating seul (qui favorise
+//   les jeux avec très peu d'avis mais tous excellents).
+// - nouveaux : sortis (first_release_date <= maintenant), rating_count > 20
+//   pour écarter les sorties trop confidentielles.
+// - tendances : sortis dans les 2 dernières années, triés par
+//   total_rating_count : "populaire en ce moment" plutôt que "populaire
+//   depuis toujours" (populaire) ou "vient de sortir" (nouveaux).
+// - attendus : first_release_date dans le futur, triés par hypes (nombre
+//   de personnes ayant marqué leur attente sur IGDB/Twitter) — le champ
+//   IGDB conçu pour exactement ce classement.
+// - recommandé : pas de profil utilisateur/historique à exploiter (voir
+//   ARCHITECTURE.md §9) -> approximation par "bien noté avec un volume
+//   d'avis significatif", à remplacer par une vraie recommandation
+//   personnalisée une fois un historique de jeu disponible.
+function sectionQuery(section: string, nowSeconds: number): string | null {
+  switch (section) {
+    case 'recommended':
+      return 'sort rating desc; where rating_count > 200; fields name,platforms.name; limit 10;';
+    case 'trending':
+      return (
+        `sort total_rating_count desc; where first_release_date > ${nowSeconds - TWO_YEARS_SECONDS} ` +
+        `& first_release_date <= ${nowSeconds} & total_rating_count > 30; fields name,platforms.name; limit 10;`
+      );
+    case 'new':
+      return (
+        `sort first_release_date desc; where first_release_date <= ${nowSeconds} & rating_count > 20; ` +
+        'fields name,platforms.name; limit 10;'
+      );
+    case 'popular':
+      return 'sort total_rating_count desc; where total_rating_count > 100; fields name,platforms.name; limit 10;';
+    case 'anticipated':
+      return (
+        `sort hypes desc; where first_release_date > ${nowSeconds} & hypes > 0; ` +
+        'fields name,platforms.name; limit 10;'
+      );
+    default:
+      return null;
+  }
+}
+
+async function fetchSectionFromIgdb(
+  section: string,
+  clientId: string,
+  accessToken: string
+): Promise<CatalogGame[]> {
+  const query = sectionQuery(section, Math.floor(Date.now() / 1000));
+  if (!query) throw new Error(`Section Explorer inconnue : "${section}"`);
+
+  const response = await fetch(`${IGDB_BASE}/games`, {
+    method: 'POST',
+    headers: {
+      'Client-ID': clientId,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'text/plain',
+    },
+    body: query,
+  });
+  if (!response.ok) {
+    throw new Error(`IGDB games (${section}) a échoué (${response.status})`);
+  }
+
+  const games: IgdbGame[] = await response.json();
+  return games.map((game) => ({
+    // slugify plutôt que l'id numérique IGDB : cohérent avec les ids en dur
+    // de tracked-games.ts, lisible dans /library/:id. Limite connue : un jeu
+    // découvert ici peut ne pas correspondre à un id tracked-games.ts dont
+    // le slug diffère du titre IGDB (ex. zelda-botw) — voir ARCHITECTURE.md.
+    id: slugify(game.name),
+    title: game.name,
+    platform: game.platforms?.[0]?.name ?? 'Plateforme inconnue',
+  }));
+}
 
 function escapeApicalypseString(value: string): string {
   // Le body IGDB est écrit dans le mini-langage de requête "apicalypse", où
@@ -74,15 +161,12 @@ async function fetchGameFromIgdb(
 }
 
 export async function GET(request: Request) {
-  const title = new URL(request.url).searchParams.get('title');
-  if (!title) {
-    return Response.json({ error: 'Paramètre "title" requis' }, { status: 400 });
-  }
+  const params = new URL(request.url).searchParams;
+  const section = params.get('section');
+  const title = params.get('title');
 
-  const cacheKey = title.trim().toLowerCase();
-  const cached = gamesCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return Response.json(cached.result);
+  if (!section && !title) {
+    return Response.json({ error: 'Paramètre "title" ou "section" requis' }, { status: 400 });
   }
 
   const clientId = process.env.IGDB_CLIENT_ID;
@@ -98,9 +182,36 @@ export async function GET(request: Request) {
     );
   }
 
+  if (section) {
+    const cached = sectionCache.get(section);
+    if (cached && cached.expiresAt > Date.now()) {
+      return Response.json(cached.result);
+    }
+    try {
+      const result = await fetchSectionFromIgdb(section, clientId, accessToken);
+      sectionCache.set(section, { result, expiresAt: Date.now() + SECTION_CACHE_TTL_MS });
+      return Response.json(result);
+    } catch (error) {
+      return Response.json(
+        { error: error instanceof Error ? error.message : 'Erreur inconnue' },
+        { status: 502 }
+      );
+    }
+  }
+
+  if (!title) {
+    return Response.json({ error: 'Paramètre "title" requis' }, { status: 400 });
+  }
+
+  const cacheKey = title.trim().toLowerCase();
+  const cached = gamesCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Response.json(cached.result);
+  }
+
   try {
     const result = await fetchGameFromIgdb(title, clientId, accessToken);
-    gamesCache.set(cacheKey, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+    gamesCache.set(cacheKey, { result, expiresAt: Date.now() + LOOKUP_CACHE_TTL_MS });
     return Response.json(result);
   } catch (error) {
     return Response.json(
