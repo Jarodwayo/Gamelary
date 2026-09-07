@@ -2,16 +2,14 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet } from 'react-native';
 
-import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 // Rendu au niveau racine (voir app/_layout.tsx), pas dans la barre d'onglets
 // elle-même : NativeTabs ne permet pas d'insérer un élément personnalisé
-// dans la barre native, donc ce composant est une vue superposée
-// indépendante — visible au-dessus de tous les onglets. Barre pleine
-// largeur avec placeholder plutôt qu'une simple icône isolée : une icône
-// seule ne se lit pas comme un champ de recherche fonctionnel.
+// dans la barre native. Un unique bouton icône, à côté de la barre plutôt
+// qu'une barre de recherche factice superposée à l'écran (essayé
+// précédemment : rendu incohérent selon l'écran, retiré).
 export function SearchFab() {
   const router = useRouter();
   const theme = useTheme();
@@ -19,36 +17,26 @@ export function SearchFab() {
   return (
     <Pressable
       onPress={() => router.push('/library/search')}
-      style={({ pressed }) => [
-        styles.bar,
-        { backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected },
-        pressed && styles.pressed,
-      ]}
-      accessibilityRole="search"
+      style={({ pressed }) => [styles.fab, { backgroundColor: theme.accent }, pressed && styles.pressed]}
+      accessibilityRole="button"
       accessibilityLabel="Rechercher un jeu">
-      <Ionicons name="search" size={18} color={theme.textSecondary} />
-      <ThemedText type="small" themeColor="textSecondary">
-        Rechercher un jeu…
-      </ThemedText>
+      <Ionicons name="search" size={20} color={theme.accentInk} />
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  bar: {
+  fab: {
     position: 'absolute',
-    left: Spacing.three,
     right: Spacing.three,
-    bottom: BottomTabInset + Spacing.three,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    borderWidth: 1,
+    bottom: BottomTabInset + Spacing.two,
+    width: 48,
+    height: 48,
     borderRadius: 999,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000',
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,

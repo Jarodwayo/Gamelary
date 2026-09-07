@@ -1,4 +1,9 @@
-export type FavoriteTrack = {
+// Une piste de la bande originale du jeu (voir tracked-games.ts) : liste
+// statique par jeu, indépendante de ce que l'utilisateur en fait — seule la
+// sélection "favori" (Game.favoriteTrack) est un état propre à
+// l'utilisateur, persisté dans game-store.tsx.
+export type Track = {
+  id: string;
   title: string;
   artist: string;
 };
@@ -30,9 +35,10 @@ export type Achievement = {
 // - achievements : liste persistée par game-store.tsx (voir ARCHITECTURE.md
 //   §6.6) ; achievementsUnlocked/Total sont dérivés de cette liste (jamais
 //   stockés séparément, pour ne jamais désynchroniser les deux).
-// - favoriteTrack : à terme résultat d'une recherche Spotify choisi par
-//   l'utilisateur (encore mocké), pas un stream — voir le commentaire dans
-//   library/[id].tsx.
+// - tracks : bande originale complète (statique, tracked-games.ts) ;
+//   favoriteTrack est la piste de `tracks` choisie par l'utilisateur
+//   (id persisté dans game-store.tsx), résolue ici pour ne pas faire
+//   porter cette recherche à chaque écran.
 // - inLibrary/stopped/rating/review/playSessions : état propre à
 //   l'utilisateur, persisté localement par src/lib/game-store.tsx. Un jeu
 //   peut exister (vu dans Explorer, ajouté à une liste) sans être dans la
@@ -47,7 +53,8 @@ export type Game = {
   achievements: Achievement[];
   achievementsUnlocked: number;
   achievementsTotal: number;
-  favoriteTrack?: FavoriteTrack;
+  tracks: Track[];
+  favoriteTrack?: Track;
   // 0-20 (voir library/[id].tsx) : note personnelle, pas une moyenne
   // communautaire — pas besoin de décimales, contrairement à un agrégat.
   rating?: number;

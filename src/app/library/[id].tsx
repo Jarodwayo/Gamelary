@@ -25,7 +25,7 @@ export default function GameDetailScreen() {
   const store = useGameStore();
   const theme = useTheme();
   const [listPickerOpen, setListPickerOpen] = useState(false);
-  const [addingHours, setAddingHours] = useState(false);
+  const [editingHours, setEditingHours] = useState(false);
   const [hoursInput, setHoursInput] = useState('');
   const [addingAchievement, setAddingAchievement] = useState(false);
   const [achievementName, setAchievementName] = useState('');
@@ -45,13 +45,17 @@ export default function GameDetailScreen() {
 
   const totalHours = hoursInPeriod(game.playSessions, 'all');
 
-  function confirmAddHours() {
+  function startEditingHours() {
+    setHoursInput(totalHours > 0 ? String(totalHours) : '');
+    setEditingHours(true);
+  }
+
+  function confirmHours() {
     const parsed = Number(hoursInput.replace(',', '.'));
-    if (Number.isFinite(parsed) && parsed > 0) {
-      store.addPlaySession(id, parsed);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      store.setTotalHours(id, parsed);
     }
-    setHoursInput('');
-    setAddingHours(false);
+    setEditingHours(false);
   }
 
   function confirmAddAchievement() {
@@ -106,7 +110,7 @@ export default function GameDetailScreen() {
       />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <ThemedView style={styles.hero}>
-          <GameCover title={game.title} size="large" />
+          <GameCover title={game.title} />
           <ThemedView style={styles.heroText}>
             <ThemedText type="subtitle">{game.title}</ThemedText>
             <ThemedText themeColor="textSecondary">
@@ -140,31 +144,38 @@ export default function GameDetailScreen() {
         {game.inLibrary && (
           <ThemedView type="backgroundElement" style={styles.section}>
             <ThemedText type="smallBold">Heures jouées</ThemedText>
-            <ThemedText type="title" style={styles.hoursValue}>
-              {formatHours(totalHours)}
-            </ThemedText>
-            {addingHours ? (
+            {editingHours ? (
+              // Champ éditable qui fixe directement le total (pas un simple
+              // incrément) : permet de corriger une saisie précédente, pas
+              // seulement d'en ajouter. Voir game-store.tsx#setTotalHours —
+              // l'historique daté (pour les statistiques) reste cohérent via
+              // une session correctrice égale à l'écart.
               <View style={styles.addHoursRow}>
                 <TextInput
                   value={hoursInput}
                   onChangeText={setHoursInput}
-                  onSubmitEditing={confirmAddHours}
+                  onSubmitEditing={confirmHours}
                   keyboardType="decimal-pad"
-                  placeholder="Ex. 2.5"
+                  placeholder="Ex. 12.5"
                   placeholderTextColor={theme.textSecondary}
                   autoFocus
                   style={[styles.hoursInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
                 />
                 <Pressable
-                  onPress={confirmAddHours}
+                  onPress={confirmHours}
                   style={[styles.addHoursConfirm, { backgroundColor: theme.accent }]}>
-                  <ThemedText style={{ color: theme.accentInk }}>Ajouter</ThemedText>
+                  <ThemedText style={{ color: theme.accentInk }}>Enregistrer</ThemedText>
                 </Pressable>
               </View>
             ) : (
-              <Pressable onPress={() => setAddingHours(true)}>
-                <ThemedText type="linkPrimary">+ Ajouter des heures</ThemedText>
-              </Pressable>
+              <>
+                <ThemedText type="title" style={styles.hoursValue}>
+                  {formatHours(totalHours)}
+                </ThemedText>
+                <Pressable onPress={startEditingHours}>
+                  <ThemedText type="linkPrimary">Modifier</ThemedText>
+                </Pressable>
+              </>
             )}
           </ThemedView>
         )}
@@ -226,36 +237,72 @@ export default function GameDetailScreen() {
 
         {/* Fonctionnalité "musique préférée" : contrairement à un lecteur
             intégré, l'app ne stocke qu'une référence au morceau (titre +
-            artiste) choisi par l'utilisateur dans la BO du jeu — pas de
-            streaming audio dans l'app, donc pas besoin des droits de
-            diffusion Spotify (Premium + SDK natif), seulement de l'API de
-            recherche. La pochette est un simple repère visuel (icône), pas
-            une vraie jaquette Spotify récupérée — la recherche in-app pour
-            choisir/changer le morceau reste à faire (voir ARCHITECTURE.md
-            §6.4), d'où le lien externe conservé. */}
+            artiste) choisi par l'utilisateur — pas de streaming audio dans
+            l'app, donc pas besoin des droits de diffusion Spotify (Premium +
+            SDK natif). tracks (la BO complète) vient de tracked-games.ts,
+            statique — seule la sélection est propre à l'utilisateur (voir
+            ARCHITECTURE.md §6.4). La pochette est un simple repère visuel
+            (icône), pas une vraie jaquette Spotify récupérée. */}
         <ThemedView type="backgroundElement" style={styles.section}>
           <ThemedText type="smallBold">Musique préférée</ThemedText>
-          {game.favoriteTrack ? (
-            <View style={styles.trackRow}>
-              <View style={[styles.trackArt, { backgroundColor: theme.backgroundSelected }]}>
-                <Ionicons name="musical-notes" size={20} color={theme.textSecondary} />
-              </View>
-              <View style={styles.trackText}>
-                <ThemedText type="smallBold" numberOfLines={1}>
-                  {game.favoriteTrack.title}
-                </ThemedText>
-                <ThemedText themeColor="textSecondary" numberOfLines={1}>
-                  {game.favoriteTrack.artist}
-                </ThemedText>
-              </View>
-            </View>
+          {game.tracks.length === 0 ? (
+            <ThemedText themeColor="textSecondary">Aucune piste disponible pour ce jeu.</ThemedText>
           ) : (
             <>
-              <ThemedText themeColor="textSecondary">Aucun morceau choisi pour ce jeu.</ThemedText>
-              <ExternalLink
-                href={`https://open.spotify.com/search/${encodeURIComponent(game.title + ' soundtrack')}`}>
-                <ThemedText type="linkPrimary">Chercher la BO sur Spotify</ThemedText>
-              </ExternalLink>
+              {game.favoriteTrack ? (
+                <View style={styles.trackRow}>
+                  <View style={[styles.trackArt, { backgroundColor: theme.backgroundSelected }]}>
+                    <Ionicons name="musical-notes" size={20} color={theme.textSecondary} />
+                  </View>
+                  <View style={styles.trackText}>
+                    <ThemedText type="smallBold" numberOfLines={1}>
+                      {game.favoriteTrack.title}
+                    </ThemedText>
+                    <ThemedText themeColor="textSecondary" numberOfLines={1}>
+                      {game.favoriteTrack.artist}
+                    </ThemedText>
+                  </View>
+                  <ExternalLink
+                    asChild
+                    href={`https://open.spotify.com/search/${encodeURIComponent(
+                      `${game.favoriteTrack.title} ${game.favoriteTrack.artist}`
+                    )}`}>
+                    <Pressable hitSlop={8}>
+                      <Ionicons name="open-outline" size={18} color={theme.textSecondary} />
+                    </Pressable>
+                  </ExternalLink>
+                </View>
+              ) : (
+                <ThemedText themeColor="textSecondary">Aucun morceau choisi pour ce jeu.</ThemedText>
+              )}
+
+              <ThemedText type="small" themeColor="textSecondary" style={styles.trackListLabel}>
+                Choisir dans la BO
+              </ThemedText>
+              {game.tracks.map((track) => {
+                const selected = track.id === game.favoriteTrack?.id;
+                return (
+                  <Pressable
+                    key={track.id}
+                    onPress={() => store.setFavoriteTrack(id, track.id)}
+                    style={styles.trackPickRow}>
+                    <View
+                      style={[
+                        styles.trackRadio,
+                        { borderColor: theme.backgroundSelected },
+                        selected && { borderColor: theme.accent },
+                      ]}>
+                      {selected && <View style={[styles.trackRadioDot, { backgroundColor: theme.accent }]} />}
+                    </View>
+                    <View style={styles.trackPickText}>
+                      <ThemedText numberOfLines={1}>{track.title}</ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                        {track.artist}
+                      </ThemedText>
+                    </View>
+                  </Pressable>
+                );
+              })}
             </>
           )}
         </ThemedView>
@@ -355,5 +402,34 @@ const styles = StyleSheet.create({
   trackText: {
     flex: 1,
     gap: Spacing.half,
+  },
+  trackListLabel: {
+    marginTop: Spacing.two,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontSize: 11,
+  },
+  trackPickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.one,
+  },
+  trackRadio: {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trackRadioDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  trackPickText: {
+    flex: 1,
+    gap: 1,
   },
 });

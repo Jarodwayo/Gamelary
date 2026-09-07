@@ -25,7 +25,7 @@ function GameRow({ id }: { id: string }) {
           { backgroundColor: theme.backgroundElement },
           pressed && styles.pressed,
         ]}>
-        <GameCover title={game.title} style={styles.cover} />
+        <GameCover title={game.title} />
         <View style={styles.text}>
           <ThemedText type="smallBold" numberOfLines={1}>
             {game.title}
@@ -98,18 +98,12 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 96,
     borderRadius: Spacing.three,
-    overflow: 'hidden',
-  },
-  cover: {
-    width: 76,
-    height: '100%',
-    borderRadius: 0,
+    padding: Spacing.two,
+    gap: Spacing.three,
   },
   text: {
     flex: 1,
-    paddingHorizontal: Spacing.three,
     gap: 2,
   },
   tertiary: {
@@ -122,7 +116,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: Spacing.three,
   },
   checkMark: {
     fontSize: 13,

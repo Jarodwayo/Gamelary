@@ -1,11 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import { trackedGames } from '@/data/tracked-games';
+import { trackedGames, trackId } from '@/data/tracked-games';
 import { slugify } from '@/lib/slug';
 import type { Achievement, CatalogGame, PlaySession } from '@/types/game';
 
-const STORAGE_KEY = 'gamelary/game-store/v2';
+const STORAGE_KEY = 'gamelary/game-store/v3';
 
 export type StoredGame = {
   id: string;
@@ -17,6 +17,10 @@ export type StoredGame = {
   inLibrary: boolean;
   stopped: boolean;
   achievements: Achievement[];
+  // Doit correspondre à l'id d'une piste de tracked-games.ts (voir trackId)
+  // — les pistes elles-mêmes ne sont pas dupliquées ici, seule la sélection
+  // de l'utilisateur l'est.
+  favoriteTrackId?: string;
   rating?: number;
   review?: string;
   playSessions: PlaySession[];
@@ -57,6 +61,9 @@ function seedStore(): StoreShape {
         name: a.name,
         unlocked: a.unlocked,
       })),
+      favoriteTrackId: tracked.favoriteTrackTitle
+        ? trackId(tracked.id, tracked.favoriteTrackTitle)
+        : undefined,
       playSessions: [],
     };
   }
@@ -76,11 +83,12 @@ type GameStoreContextValue = {
   registerCatalogGame: (game: CatalogGame) => void;
   addToLibrary: (id: string) => void;
   toggleStopped: (id: string) => void;
-  addPlaySession: (id: string, hours: number) => void;
+  setTotalHours: (id: string, totalHours: number) => void;
   setRating: (id: string, rating: number) => void;
   setReview: (id: string, review: string) => void;
   addAchievement: (id: string, name: string) => void;
   toggleAchievement: (id: string, achievementId: string) => void;
+  setFavoriteTrack: (id: string, favoriteTrackId: string | undefined) => void;
   toggleListMembership: (listId: string, gameId: string) => void;
   createList: (name: string) => string;
 };
@@ -158,11 +166,21 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           return { ...prev, games: { ...prev.games, [id]: { ...existing, stopped: !existing.stopped } } };
         });
       },
-      addPlaySession: (id: string, hours: number) => {
+      // Ajoute une session "correctrice" égale à l'écart avec le total
+      // actuel plutôt que de remplacer purement et simplement playSessions :
+      // ça garde un historique daté exploitable par les statistiques
+      // (streaks, répartition mensuelle — voir play-stats.ts) même quand
+      // l'utilisateur corrige son total au lieu d'ajouter du temps au fil
+      // de l'eau.
+      setTotalHours: (id: string, totalHours: number) => {
+        const target = Math.max(0, totalHours);
         setState((prev) => {
           const existing = prev.games[id];
-          if (!existing || !(hours > 0)) return prev;
-          const session: PlaySession = { date: new Date().toISOString(), hours };
+          if (!existing) return prev;
+          const currentTotal = existing.playSessions.reduce((sum, s) => sum + s.hours, 0);
+          const delta = target - currentTotal;
+          if (delta === 0) return prev;
+          const session: PlaySession = { date: new Date().toISOString(), hours: delta };
           return {
             ...prev,
             games: { ...prev.games, [id]: { ...existing, playSessions: [...existing.playSessions, session] } },
@@ -205,6 +223,13 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
             a.id === achievementId ? { ...a, unlocked: !a.unlocked } : a
           );
           return { ...prev, games: { ...prev.games, [id]: { ...existing, achievements } } };
+        });
+      },
+      setFavoriteTrack: (id: string, favoriteTrackId: string | undefined) => {
+        setState((prev) => {
+          const existing = prev.games[id];
+          if (!existing) return prev;
+          return { ...prev, games: { ...prev.games, [id]: { ...existing, favoriteTrackId } } };
         });
       },
       toggleListMembership: (listId: string, gameId: string) => {

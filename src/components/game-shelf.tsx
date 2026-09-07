@@ -6,7 +6,10 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 
-const CARD_WIDTH = 110;
+// Un peu plus large que la jaquette (56px, fixe — voir GameCover) pour que
+// le titre en dessous reste lisible, sans faire varier la taille de la
+// jaquette elle-même d'un écran à l'autre.
+const CARD_WIDTH = 84;
 
 export type ShelfItem = { id: string; title: string; platform?: string };
 
