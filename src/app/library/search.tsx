@@ -77,7 +77,7 @@ export default function SearchScreen() {
 
         {status === 'found' && result && (
           <Pressable
-            onPress={() => router.push(`/library/${result.id}`)}
+            onPress={() => router.push({ pathname: '/library/[id]', params: { id: result.id } })}
             style={({ pressed }) => [styles.resultRow, pressed && styles.pressed]}>
             <ThemedView style={styles.coverWrap}>
               <GameCover title={result.title} />

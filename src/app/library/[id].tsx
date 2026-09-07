@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
@@ -6,14 +7,14 @@ import { ExternalLink } from '@/components/external-link';
 import { GameCover } from '@/components/game-cover';
 import { ListPickerSheet } from '@/components/list-picker-sheet';
 import { OverflowMenu, type OverflowMenuItem } from '@/components/overflow-menu';
-import { StarRating } from '@/components/star-rating';
+import { RatingStepper } from '@/components/rating-stepper';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
 import { useGame } from '@/hooks/use-game';
-import { formatHours, hoursInPeriod } from '@/lib/hours';
+import { useTheme } from '@/hooks/use-theme';
 import { useGameStore } from '@/lib/game-store';
+import { formatHours, hoursInPeriod } from '@/lib/hours';
 
 // [id].tsx : nom de fichier expo-router pour une route dynamique. Le segment
 // d'URL /library/hollow-knight se retrouve dans useLocalSearchParams().id —
@@ -26,6 +27,8 @@ export default function GameDetailScreen() {
   const [listPickerOpen, setListPickerOpen] = useState(false);
   const [addingHours, setAddingHours] = useState(false);
   const [hoursInput, setHoursInput] = useState('');
+  const [addingAchievement, setAddingAchievement] = useState(false);
+  const [achievementName, setAchievementName] = useState('');
 
   // useGame ne renvoie null que si l'id n'existe dans aucune source connue
   // (id invalide dans l'URL, lien partagé cassé...) : ce n'est jamais l'état
@@ -40,10 +43,6 @@ export default function GameDetailScreen() {
     );
   }
 
-  const hasAchievements = game.achievementsTotal > 0;
-  const completion = hasAchievements
-    ? Math.round((game.achievementsUnlocked / game.achievementsTotal) * 100)
-    : null;
   const totalHours = hoursInPeriod(game.playSessions, 'all');
 
   function confirmAddHours() {
@@ -53,6 +52,14 @@ export default function GameDetailScreen() {
     }
     setHoursInput('');
     setAddingHours(false);
+  }
+
+  function confirmAddAchievement() {
+    if (achievementName.trim()) {
+      store.addAchievement(id, achievementName);
+    }
+    setAchievementName('');
+    setAddingAchievement(false);
   }
 
   const menuItems: OverflowMenuItem[] = [
@@ -119,7 +126,7 @@ export default function GameDetailScreen() {
 
         <ThemedView type="backgroundElement" style={styles.section}>
           <ThemedText type="smallBold">Ta note</ThemedText>
-          <StarRating value={game.rating ?? 0} onChange={(value) => store.setRating(id, value)} />
+          <RatingStepper value={game.rating ?? 0} onChange={(value) => store.setRating(id, value)} />
           <TextInput
             value={game.review ?? ''}
             onChangeText={(text) => store.setReview(id, text)}
@@ -162,21 +169,58 @@ export default function GameDetailScreen() {
           </ThemedView>
         )}
 
+        {/* En attendant une vraie API succès (Steam Web API — voir
+            ARCHITECTURE.md §6.3), l'utilisateur construit lui-même sa liste
+            de succès nommés et les coche au fur et à mesure : plus utile
+            qu'un simple ratio qui ne dit pas CE QUI a été débloqué. */}
         <ThemedView type="backgroundElement" style={styles.section}>
           <ThemedText type="smallBold">Succès</ThemedText>
-          {hasAchievements ? (
-            <>
-              <ThemedText type="title" style={styles.completionValue}>
-                {completion}%
-              </ThemedText>
-              <ThemedText themeColor="textSecondary">
-                {game.achievementsUnlocked} / {game.achievementsTotal} succès débloqués
-              </ThemedText>
-            </>
-          ) : (
+          {game.achievements.length > 0 ? (
             <ThemedText themeColor="textSecondary">
-              Aucun succès suivi pour ce jeu pour le moment.
+              {game.achievementsUnlocked} / {game.achievementsTotal} débloqués
             </ThemedText>
+          ) : (
+            <ThemedText themeColor="textSecondary">Aucun succès suivi pour ce jeu pour le moment.</ThemedText>
+          )}
+          {game.achievements.map((achievement) => (
+            <Pressable
+              key={achievement.id}
+              onPress={() => store.toggleAchievement(id, achievement.id)}
+              style={styles.achievementRow}>
+              <View
+                style={[
+                  styles.achievementCheck,
+                  { borderColor: theme.backgroundSelected },
+                  achievement.unlocked && { backgroundColor: theme.success, borderColor: theme.success },
+                ]}>
+                {achievement.unlocked && <ThemedText style={styles.achievementCheckMark}>✓</ThemedText>}
+              </View>
+              <ThemedText themeColor={achievement.unlocked ? 'text' : 'textSecondary'}>
+                {achievement.name}
+              </ThemedText>
+            </Pressable>
+          ))}
+          {addingAchievement ? (
+            <View style={styles.addHoursRow}>
+              <TextInput
+                value={achievementName}
+                onChangeText={setAchievementName}
+                onSubmitEditing={confirmAddAchievement}
+                placeholder="Nom du succès"
+                placeholderTextColor={theme.textSecondary}
+                autoFocus
+                style={[styles.hoursInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+              />
+              <Pressable
+                onPress={confirmAddAchievement}
+                style={[styles.addHoursConfirm, { backgroundColor: theme.accent }]}>
+                <ThemedText style={{ color: theme.accentInk }}>Ajouter</ThemedText>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable onPress={() => setAddingAchievement(true)}>
+              <ThemedText type="linkPrimary">+ Ajouter un succès</ThemedText>
+            </Pressable>
           )}
         </ThemedView>
 
@@ -185,21 +229,29 @@ export default function GameDetailScreen() {
             artiste) choisi par l'utilisateur dans la BO du jeu — pas de
             streaming audio dans l'app, donc pas besoin des droits de
             diffusion Spotify (Premium + SDK natif), seulement de l'API de
-            recherche. Le lien ci-dessous ouvre Spotify pour choisir/écouter,
-            et c'est cette sélection qui sera persistée plus tard (backend +
-            écriture sur `favoriteTrack`, aujourd'hui en dur dans les mocks). */}
+            recherche. La pochette est un simple repère visuel (icône), pas
+            une vraie jaquette Spotify récupérée — la recherche in-app pour
+            choisir/changer le morceau reste à faire (voir ARCHITECTURE.md
+            §6.4), d'où le lien externe conservé. */}
         <ThemedView type="backgroundElement" style={styles.section}>
           <ThemedText type="smallBold">Musique préférée</ThemedText>
           {game.favoriteTrack ? (
-            <ThemedView style={styles.trackRow}>
-              <ThemedText>{game.favoriteTrack.title}</ThemedText>
-              <ThemedText themeColor="textSecondary">{game.favoriteTrack.artist}</ThemedText>
-            </ThemedView>
+            <View style={styles.trackRow}>
+              <View style={[styles.trackArt, { backgroundColor: theme.backgroundSelected }]}>
+                <Ionicons name="musical-notes" size={20} color={theme.textSecondary} />
+              </View>
+              <View style={styles.trackText}>
+                <ThemedText type="smallBold" numberOfLines={1}>
+                  {game.favoriteTrack.title}
+                </ThemedText>
+                <ThemedText themeColor="textSecondary" numberOfLines={1}>
+                  {game.favoriteTrack.artist}
+                </ThemedText>
+              </View>
+            </View>
           ) : (
             <>
-              <ThemedText themeColor="textSecondary">
-                Aucun morceau choisi pour ce jeu.
-              </ThemedText>
+              <ThemedText themeColor="textSecondary">Aucun morceau choisi pour ce jeu.</ThemedText>
               <ExternalLink
                 href={`https://open.spotify.com/search/${encodeURIComponent(game.title + ' soundtrack')}`}>
                 <ThemedText type="linkPrimary">Chercher la BO sur Spotify</ThemedText>
@@ -241,10 +293,6 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     gap: Spacing.one,
   },
-  completionValue: {
-    fontSize: 32,
-    lineHeight: 38,
-  },
   hoursValue: {
     fontSize: 28,
     lineHeight: 34,
@@ -273,7 +321,39 @@ const styles = StyleSheet.create({
     minHeight: 60,
     textAlignVertical: 'top',
   },
+  achievementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.one,
+  },
+  achievementCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  achievementCheckMark: {
+    fontSize: 12,
+    color: '#ffffff',
+    fontWeight: '700',
+  },
   trackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  trackArt: {
+    width: 44,
+    height: 44,
+    borderRadius: Spacing.two,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trackText: {
+    flex: 1,
     gap: Spacing.half,
   },
 });

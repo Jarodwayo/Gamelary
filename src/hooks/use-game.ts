@@ -76,8 +76,11 @@ export function useGame(id: string): { game: Game | null; loading: boolean } {
       platform: stored.platform || 'Plateforme inconnue',
       inLibrary: stored.inLibrary,
       stopped: stored.stopped,
-      achievementsUnlocked: stored.achievementsUnlocked,
-      achievementsTotal: stored.achievementsTotal,
+      achievements: stored.achievements,
+      // Dérivés de la liste plutôt que stockés à part (voir types/game.ts) :
+      // ne peuvent jamais se désynchroniser du détail des succès.
+      achievementsUnlocked: stored.achievements.filter((a) => a.unlocked).length,
+      achievementsTotal: stored.achievements.length,
       favoriteTrack: tracked?.favoriteTrack,
       rating: stored.rating,
       review: stored.review,

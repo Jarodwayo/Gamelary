@@ -12,12 +12,9 @@ export default function LibraryLayout() {
     <Stack>
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="[id]" options={{ headerBackTitle: 'Bibliothèque' }} />
-      <Stack.Screen name="wishlist" options={{ title: 'Wishlist', headerBackTitle: 'Bibliothèque' }} />
-      <Stack.Screen
-        name="not-started"
-        options={{ title: 'Pas commencé', headerBackTitle: 'Bibliothèque' }}
-      />
-      {/* Le bouton de recherche flottant (voir search-fab.tsx) est visible sur
+      {/* Wishlist et "Pas commencé" sont des filtres inline sur l'écran
+          Bibliothèque (voir library/index.tsx), pas des écrans séparés. Le
+          bouton de recherche flottant (voir search-fab.tsx) est visible sur
           tous les onglets mais pousse toujours ici : plus simple et plus sûr
           qu'un écran modal à la racine (NativeTabs occupe déjà toute la
           racine, sans Stack englobant) — pousser dans la pile d'un onglet

@@ -1,41 +1,99 @@
-import { Link } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { GameGrid } from '@/components/game-grid';
+import { GameList } from '@/components/game-list';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { useGameStore } from '@/lib/game-store';
+import { useTheme } from '@/hooks/use-theme';
+import { useGameStore, type StoredGame } from '@/lib/game-store';
+
+type LibraryFilter = 'all' | 'wishlist' | 'not-started' | 'in-progress' | 'completed';
+
+const FILTERS: { key: LibraryFilter; label: string }[] = [
+  { key: 'all', label: 'Tous' },
+  { key: 'wishlist', label: 'Wishlist' },
+  { key: 'not-started', label: 'Pas commencé' },
+  { key: 'in-progress', label: 'En cours' },
+  { key: 'completed', label: 'Terminé' },
+];
+
+function isCompleted(game: StoredGame) {
+  return game.achievements.length > 0 && game.achievements.every((a) => a.unlocked);
+}
+
+function isStarted(game: StoredGame) {
+  return game.playSessions.length > 0 || game.achievements.some((a) => a.unlocked);
+}
+
+// "Pas commencé"/"En cours"/"Terminé" filtrent tous les 3 la bibliothèque
+// suivie (inLibrary) ; "Wishlist" est la seule à piocher dans une liste à
+// part (un jeu en wishlist n'est pas nécessairement suivi — voir
+// game-store.tsx §6.6). "Terminé" se base sur achievementsTotal/Unlocked,
+// donc un jeu sans succès trackés (ex. Switch) ne peut pas y apparaître —
+// limite connue tant qu'il n'y a pas de bouton "marquer comme terminé"
+// indépendant des succès.
+function filterIds(filter: LibraryFilter, games: Record<string, StoredGame>, wishlistIds: string[]): string[] {
+  const all = Object.values(games);
+  switch (filter) {
+    case 'wishlist':
+      return wishlistIds;
+    case 'not-started':
+      return all.filter((g) => g.inLibrary && !isStarted(g) && !isCompleted(g)).map((g) => g.id);
+    case 'in-progress':
+      return all.filter((g) => g.inLibrary && isStarted(g) && !isCompleted(g)).map((g) => g.id);
+    case 'completed':
+      return all.filter((g) => g.inLibrary && isCompleted(g)).map((g) => g.id);
+    case 'all':
+    default:
+      return all.filter((g) => g.inLibrary).map((g) => g.id);
+  }
+}
+
+const EMPTY_LABELS: Record<LibraryFilter, string> = {
+  all: 'Aucun jeu suivi pour le moment.',
+  wishlist: 'Ajoute un jeu à ta wishlist depuis sa fiche.',
+  'not-started': 'Tous tes jeux suivis ont au moins un peu de progression.',
+  'in-progress': 'Aucun jeu en cours pour le moment.',
+  completed: 'Aucun jeu terminé pour le moment.',
+};
 
 export default function LibraryScreen() {
   const store = useGameStore();
-  const libraryIds = Object.values(store.games)
-    .filter((game) => game.inLibrary)
-    .map((game) => game.id);
+  const theme = useTheme();
+  const [filter, setFilter] = useState<LibraryFilter>('all');
+  const ids = filterIds(filter, store.games, store.lists.wishlist?.gameIds ?? []);
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
-        <GameGrid
-          ids={libraryIds}
-          emptyLabel="Aucun jeu suivi pour le moment."
+        <GameList
+          ids={ids}
+          emptyLabel={EMPTY_LABELS[filter]}
           header={
             <View>
               <ThemedText type="title" style={styles.header}>
                 Bibliothèque
               </ThemedText>
-              <View style={styles.linksRow}>
-                <Link href="/library/wishlist" asChild>
-                  <Pressable>
-                    <ThemedText type="linkPrimary">Wishlist</ThemedText>
-                  </Pressable>
-                </Link>
-                <Link href="/library/not-started" asChild>
-                  <Pressable>
-                    <ThemedText type="linkPrimary">Pas commencé</ThemedText>
-                  </Pressable>
-                </Link>
+              <View style={styles.filterRow}>
+                {FILTERS.map(({ key, label }) => {
+                  const active = key === filter;
+                  return (
+                    <Pressable
+                      key={key}
+                      onPress={() => setFilter(key)}
+                      style={[
+                        styles.filterPill,
+                        { borderColor: theme.backgroundSelected },
+                        active && { backgroundColor: theme.accent, borderColor: theme.accent },
+                      ]}>
+                      <ThemedText type="small" themeColor={active ? 'accentInk' : 'textSecondary'}>
+                        {label}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
               </View>
             </View>
           }
@@ -57,9 +115,16 @@ const styles = StyleSheet.create({
     lineHeight: 34,
     paddingTop: Spacing.three,
   },
-  linksRow: {
+  filterRow: {
     flexDirection: 'row',
-    gap: Spacing.four,
-    paddingBottom: Spacing.two,
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+    paddingBottom: Spacing.three,
+  },
+  filterPill: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
   },
 });
