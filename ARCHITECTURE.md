@@ -34,14 +34,21 @@ avant de coder Explorer/Profil/Statistiques pour éviter de styliser chaque
   maquette pour les titres/l'UI et les nombres tabulaires respectivement,
   mais pas encore installées/câblées — voir §10, ce n'est pas ce qui
   bloquait le reste des écrans).
-- **Carte de jeu** : jaquette 3:4 (`GameCover`), coins arrondis, bordure
-  fine plutôt qu'ombre portée. Motif rangée réutilisé partout où une liste
-  de jeux défile horizontalement (`GameShelf`,
-  `src/components/game-shelf.tsx`) : titre de section en gras + scroll
-  horizontal sans indicateur visible. La grille 2 colonnes de la
-  bibliothèque (`GameGrid`, `src/components/game-grid.tsx`) reste une
-  grille — les deux composants partagent la même carte/jaquette mais pas le
-  même agencement.
+- **Carte de jeu** : jaquette 2:3 (`GameCover`), coins arrondis, bordure
+  fine plutôt qu'ombre portée. Deux agencements selon l'écran, tous deux
+  construits sur `GameCover` :
+  - **Rangée horizontale** (`GameShelf`, `src/components/game-shelf.tsx`) —
+    Explorer, Profil (Jeux suivis/Jeux préférés) : titre de section en gras
+    + chevron "›" + scroll horizontal sans indicateur visible.
+  - **Liste verticale compacte** (`GameList`, `src/components/game-list.tsx`)
+    — Bibliothèque : une ligne par jeu (jaquette ~76px de large calée sur
+    la hauteur de la ligne, titre + plateforme + heures jouées si non nulles,
+    indicateur de complétion à droite), densité d'information élevée plutôt
+    que de grandes jaquettes empilées — la bibliothèque se consulte comme une
+    liste qu'on scanne, pas une vitrine qu'on admire une jaquette à la fois.
+  `GameCover` accepte un `style` de dérogation pour ces gabarits précis
+  (largeur fixe calée sur une hauteur de ligne, etc.) au-delà des seuls
+  préréglages `small`/`large`.
 
 ## 3. Expo (managé) plutôt que React Native CLI (bare) ✅
 
@@ -99,12 +106,10 @@ src/
       cover+api.ts          route serveur : proxy + cache vers SteamGridDB
       games+api.ts          route serveur : proxy + cache vers IGDB (recherche ET rangées Explorer)
     library/
-      _layout.tsx          Stack imbriqué (liste -> fiche jeu / wishlist / pas commencé / recherche)
-      index.tsx             bibliothèque (grille de jeux suivis)
-      [id].tsx               fiche jeu (note/avis, succès, heures, musique préférée)
-      wishlist.tsx           jeux à jouer plus tard (liste intégrée "wishlist")
-      not-started.tsx        jeux suivis sans la moindre activité
-      search.tsx             recherche IGDB à la volée (bouton flottant)
+      _layout.tsx          Stack imbriqué (liste -> fiche jeu / recherche)
+      index.tsx             bibliothèque : liste compacte + filtres (Tous/Wishlist/Pas commencé/En cours/Terminé)
+      [id].tsx               fiche jeu (note/20, succès nommés, heures, musique préférée)
+      search.tsx             recherche IGDB à la volée (barre flottante)
     profile/
       _layout.tsx          Stack imbriqué (profil -> statistiques)
       index.tsx             écran profil (identité, temps de jeu, jeux suivis/préférés)
@@ -114,7 +119,7 @@ src/
   data/                accès aux données (tracked-games.ts = seed initial, API pour le reste)
   hooks/               logique réutilisable côté client (ex. useGameCover, useGame, useExploreSection)
   lib/                 utilitaires transverses + game-store.tsx (état local persisté)
-  types/               types partagés (Game, CatalogGame, PlaySession)
+  types/               types partagés (Game, CatalogGame, PlaySession, Achievement)
 ```
 
 Découplage volontaire : les écrans (`app/`) ne connaissent que le type
@@ -191,20 +196,26 @@ IGDB étant maintenant branché (§6.1), une amélioration possible serait de
 matcher par id IGDB plutôt que par nom pour fiabiliser ça — pas encore fait,
 `cover+api.ts` continue de chercher par titre indépendamment de `/api/games`.
 
-### 6.3 Succès / 100% — Steam Web API 🚧
+### 6.3 Succès — saisie manuelle ✅, Steam Web API 🚧
 
-`ISteamUserStats/GetPlayerAchievements` donne les succès débloqués et leur
-détail, mais **uniquement pour les jeux Steam PC** liés au compte Steam de
-l'utilisateur (il n'existe pas d'API publique équivalente pour PSN/Xbox).
-D'où le choix dans `Game` (`src/types/game.ts`) de stocker
-`achievementsUnlocked`/`achievementsTotal` séparément plutôt qu'un
-pourcentage déjà calculé : le pourcentage est dérivé à l'affichage
-(`library/[id].tsx`), et `achievementsTotal === 0` sert de signal explicite
-"pas de succès trackés pour ce jeu" (jeu non-Steam) plutôt qu'un 0% trompeur.
-En attendant cette intégration, ces deux champs restent en dur dans
-`tracked-games.ts` (seed du store, voir §6.6) — non éditables par
-l'utilisateur, contrairement aux heures jouées (§6.6) qui elles sont déjà
-réelles.
+`ISteamUserStats/GetPlayerAchievements` donnerait les succès débloqués,
+mais **uniquement pour les jeux Steam PC** liés au compte Steam de
+l'utilisateur (pas d'équivalent public pour PSN/Xbox) — donc pas suffisant
+comme unique source pour une appli multi-plateforme. En attendant (et pour
+rester utile même sur les plateformes sans API succès), l'utilisateur
+construit lui-même sa liste de succès **nommés** sur la fiche jeu
+(`+ Ajouter un succès`) et les coche au fur et à mesure : `Achievement`
+(`src/types/game.ts`) est `{ id, name, unlocked }`, pas juste un ratio —
+afficher *quel* succès manque est plus utile qu'un simple "28/42".
+`achievementsUnlocked`/`achievementsTotal` restent exposés sur `Game`
+(comptage de la liste, dérivé dans `useGame` — jamais stocké séparément,
+donc jamais désynchronisable) pour les écrans qui n'ont besoin que du
+total (Profil, Statistiques, filtres de bibliothèque).
+
+Quand l'intégration Steam existera, elle pourra pré-remplir cette même
+liste (noms + état) au lieu de la remplacer par un modèle différent — la
+saisie manuelle n'est donc pas qu'un bouche-trou temporaire, elle reste
+utile pour les jeux hors Steam.
 
 ### 6.4 Musique préférée — Spotify Web API (recherche uniquement) 🚧
 
@@ -218,6 +229,9 @@ Spotify" actuel (`library/[id].tsx`) ouvre l'app/le site Spotify pour que
 l'utilisateur trouve son morceau ; l'étape suivante est un écran de
 recherche in-app qui persiste juste `{ title, artist }` sur le jeu (déjà
 prêt à être stocké dans le store, voir §6.6, une fois la recherche codée).
+La pochette affichée à côté du titre/artiste (une icône sur fond neutre)
+est un simple repère visuel, pas une vraie jaquette Spotify récupérée —
+aucun appel réseau pour ça tant que la recherche in-app n'existe pas.
 
 ### 6.5 Explorer — 5 rangées IGDB ✅
 
@@ -255,26 +269,52 @@ seul blob JSON, largement suffisant pour le volume de données d'un solo
 pour l'instant.
 
 - **`games`** : un jeu par id, `inLibrary` (suivi ou simplement vu/en liste),
-  `stopped`, `achievementsUnlocked/Total`, `rating`/`review`, et
+  `stopped`, `achievements` (liste nommée, voir §6.3), `rating` (0-20,
+  saisi via `+`/`−` — pas de demi-point, une note personnelle n'a pas besoin
+  de la précision d'une moyenne communautaire) et `review`, et
   `playSessions` — des sessions **datées** (`{ date, hours }`) plutôt qu'un
   seul total cumulé : c'est ce qui permet à l'écran Statistiques de dériver
-  Semaine/Mois/Tout (`hoursInPeriod`, `src/lib/hours.ts`) à partir de
-  vraies données plutôt que d'inventer trois chiffres différents pour la
-  même métrique.
+  Semaine/Mois/Tout (`hoursInPeriod`, `src/lib/hours.ts`) et l'historique
+  mensuel/les streaks (`src/lib/play-stats.ts`) à partir de vraies données
+  plutôt que d'inventer des chiffres différents pour la même métrique.
 - **`lists`** : deux listes intégrées non supprimables (`favoris`,
   `wishlist`) plus les listes créées par l'utilisateur
   (`ListPickerSheet`, depuis le menu ⋯ de la fiche jeu). "Jeux préférés" sur
   le Profil est simplement la liste `favoris` résolue en jeux ; la Wishlist
   est volontairement une liste à part, distincte de la bibliothèque suivie
   — un jeu peut y figurer sans jamais avoir été ajouté à la bibliothèque
-  (`inLibrary: false`, achievements à 0).
+  (`inLibrary: false`, `achievements` vide).
 - Seedé une seule fois (premier lancement, avant toute écriture
-  AsyncStorage) à partir des 6 jeux de `tracked-games.ts` (voir §6.3).
+  AsyncStorage) à partir des 6 jeux de `tracked-games.ts` (voir §6.3). Clé
+  de stockage versionnée (`gamelary/game-store/v2`) : un changement de forme
+  du store (ex. le passage `achievementsUnlocked/Total` → `achievements[]`)
+  change la clé plutôt que de migrer l'ancien format — plus simple qu'un
+  vrai système de migrations pour une appli sans utilisateurs existants à
+  préserver ; à reconsidérer si l'app a de vrais utilisateurs un jour.
 
 `useGame` (`src/hooks/use-game.ts`) fait la jointure entre ce store et IGDB
 (titre/plateforme canoniques, §6.1) : le store est la seule source de
 vérité pour le rendu, IGDB ne fait qu'y écrire une fois résolu
 (`registerCatalogGame`), jamais lu directement par un écran.
+
+### 6.7 Statistiques — dérivées des sessions de jeu ✅
+
+`src/lib/play-stats.ts` calcule, à partir des mêmes `playSessions` que
+§6.6 (aucune donnée séparée à maintenir en cohérence) :
+
+- **Complétion** : succès débloqués / total sur tous les jeux suivis.
+- **Streak actuel / record** : jours consécutifs avec au moins une session
+  enregistrée (n'importe quel jeu), calculés sur l'ensemble des dates
+  distinctes — légitimement à 0 sur une installation fraîche, jamais un
+  chiffre de démonstration inventé.
+- **Répartition mensuelle** : heures par mois de l'année en cours (12
+  cases, pas une fenêtre glissante) pour le graphique en barres de
+  l'écran Statistiques.
+- **Répartition par plateforme** : heures cumulées par `platform` (le champ
+  déjà stocké sur chaque jeu) — remplace "genres" (non disponible : IGDB
+  fournit bien un champ `genres`, mais il n'est pas encore demandé dans les
+  requêtes de `games+api.ts`, et le regrouper aurait demandé un aller-retour
+  IGDB supplémentaire par jeu suivi).
 
 ## 7. Secrets API : pourquoi un petit backend est nécessaire ✅ (partiel)
 
@@ -337,29 +377,41 @@ réservés" — consultable, mais pas réutilisable sans autorisation.
 piles imbriquées), design system clair/sombre (accent/success, voir §2),
 jaquettes réelles via SteamGridDB, catalogue réel via IGDB (recherche par
 titre et 5 rangées Explorer), bibliothèque persistée localement
-(AsyncStorage) avec suivi (`inLibrary`/"Arrêter de jouer"), notation +
-avis texte par jeu, heures jouées saisies manuellement (sessions datées,
-agrégées Semaine/Mois/Tout sur l'écran Statistiques), listes personnalisées
-(Favoris et Wishlist intégrées + création libre) accessibles depuis le menu
-⋯ de la fiche jeu, recherche IGDB ponctuelle (`/library/search`, bouton
-flottant), vue "Pas commencé".
+(AsyncStorage) avec suivi (`inLibrary`/"Arrêter de jouer"), bibliothèque en
+liste compacte filtrable (Tous/Wishlist/Pas commencé/En cours/Terminé —
+voir §2), notation sur 20 + avis texte par jeu, succès nommés et cochables
+(voir §6.3), heures jouées saisies manuellement (sessions datées, agrégées
+Semaine/Mois/Tout et par mois/plateforme sur l'écran Statistiques — voir
+§6.7), listes personnalisées (Favoris et Wishlist intégrées + création
+libre) accessibles depuis le menu ⋯ de la fiche jeu, recherche IGDB
+ponctuelle (`/library/search`, derrière une barre de recherche flottante).
+
+**Bug corrigé** : les liens vers la fiche jeu (rangées Explorer, liste de
+bibliothèque, recherche) construisaient l'URL à la main
+(`` `/library/${id}` ``) — une erreur "Unmatched Route" pouvait en résulter
+selon l'id. Remplacé partout par la forme structurée
+`{ pathname: '/library/[id]', params: { id } }`, qu'expo-router encode et
+résout lui-même — plus robuste pour un segment dynamique.
 
 **Simplifications assumées pour cette itération** :
 - Le menu "⋯" de la fiche jeu (Partager/Arrêter de jouer/Ajouter à une
-  liste) et celui de la wishlist/liste sont des `Modal` React Native
-  positionnés approximativement sous le bouton, pas un vrai popover ancré
-  dynamiquement (RN n'a pas d'équivalent direct du "clic en dehors pour
-  fermer" du web sans mesure de layout supplémentaire).
-- L'écran Statistiques utilise un contrôle segmenté (Semaine/Mois/Tout)
-  plutôt que le menu "⋯" imaginé à l'étape maquette : même résultat
-  fonctionnel, sans popover à gérer pour un choix à 3 valeurs toujours
-  visible.
+  liste) et la modale de sélection de listes sont des `Modal` React Native
+  positionnés approximativement, pas un vrai popover ancré dynamiquement
+  (RN n'a pas d'équivalent direct du "clic en dehors pour fermer" du web
+  sans mesure de layout supplémentaire).
+- Le chevron "›" des rangées Explorer/Profil est pour l'instant purement
+  visuel (pas d'écran "voir tout" par section) — non demandé pour cette
+  itération.
 - Pas de vraie recommandation personnalisée (§6.5) ni de déduplication par
   id IGDB entre le catalogue découvert et `tracked-games.ts` (§6.1).
+- "Plateformes les plus jouées" plutôt que "genres" sur l'écran
+  Statistiques (voir §6.7) — la donnée existe déjà, pas besoin d'étendre
+  les requêtes IGDB pour cette itération.
 
-**Prochaines étapes** : Steam Web API (succès, nécessite un flow de
-connexion du compte Steam de l'utilisateur), recherche Spotify in-app pour
-la musique préférée, cache serveur partagé (Redis/KV) en remplacement de la
-`Map` en mémoire, installation effective de Bricolage Grotesque/IBM Plex
-Mono (`expo-font` + `@expo-google-fonts/*`, voir §2), éventuellement
-matcher les jaquettes SteamGridDB par id IGDB plutôt que par titre (§6.2).
+**Prochaines étapes** : Steam Web API (pré-remplir les succès plutôt que de
+remplacer la saisie manuelle, voir §6.3), recherche Spotify in-app pour la
+musique préférée (et une vraie pochette au lieu du repère visuel actuel),
+cache serveur partagé (Redis/KV) en remplacement de la `Map` en mémoire,
+installation effective de Bricolage Grotesque/IBM Plex Mono (`expo-font` +
+`@expo-google-fonts/*`, voir §2), éventuellement matcher les jaquettes
+SteamGridDB par id IGDB plutôt que par titre (§6.2).

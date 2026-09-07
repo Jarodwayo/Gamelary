@@ -12,32 +12,44 @@ export type PlaySession = {
   hours: number;
 };
 
+// En l'absence d'API succès réelle (Steam Web API, voir ARCHITECTURE.md
+// §6.3), l'utilisateur alimente lui-même sa liste de succès nommés et les
+// coche au fur et à mesure — plutôt qu'un simple ratio "unlocked/total" qui
+// ne dit pas CE QUI a été débloqué.
+export type Achievement = {
+  id: string;
+  name: string;
+  unlocked: boolean;
+};
+
 // Type composite assemblé par le hook useGame (src/hooks/use-game.ts) à
 // partir de plusieurs sources, jamais stocké tel quel :
-// - id/title/platform : catalogue IGDB (voir ARCHITECTURE.md §5.1), avec
+// - id/title/platform : catalogue IGDB (voir ARCHITECTURE.md §6.1), avec
 //   title/platform en repli tant qu'IGDB n'a pas répondu ou n'a pas trouvé
 //   le jeu.
-// - achievementsUnlocked/Total : à terme Steam Web API (GetPlayerAchievements,
-//   encore mocké), d'où le choix de stocker un compte brut plutôt qu'un
-//   pourcentage déjà calculé — le pourcentage est dérivé à l'affichage
-//   (voir library/[id].tsx) pour ne jamais désynchroniser les deux valeurs.
+// - achievements : liste persistée par game-store.tsx (voir ARCHITECTURE.md
+//   §6.6) ; achievementsUnlocked/Total sont dérivés de cette liste (jamais
+//   stockés séparément, pour ne jamais désynchroniser les deux).
 // - favoriteTrack : à terme résultat d'une recherche Spotify choisi par
 //   l'utilisateur (encore mocké), pas un stream — voir le commentaire dans
 //   library/[id].tsx.
 // - inLibrary/stopped/rating/review/playSessions : état propre à
-//   l'utilisateur, persisté localement par src/lib/game-store.tsx (voir
-//   ARCHITECTURE.md §5.5). Un jeu peut exister (vu dans Explorer, ajouté à
-//   une liste) sans être dans la bibliothèque suivie — d'où inLibrary
-//   distinct de la simple présence de l'id dans le store.
+//   l'utilisateur, persisté localement par src/lib/game-store.tsx. Un jeu
+//   peut exister (vu dans Explorer, ajouté à une liste) sans être dans la
+//   bibliothèque suivie — d'où inLibrary distinct de la simple présence de
+//   l'id dans le store.
 export type Game = {
   id: string;
   title: string;
   platform: string;
   inLibrary: boolean;
   stopped: boolean;
+  achievements: Achievement[];
   achievementsUnlocked: number;
   achievementsTotal: number;
   favoriteTrack?: FavoriteTrack;
+  // 0-20 (voir library/[id].tsx) : note personnelle, pas une moyenne
+  // communautaire — pas besoin de décimales, contrairement à un agrégat.
   rating?: number;
   review?: string;
   playSessions: PlaySession[];

@@ -3,9 +3,9 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 
 import { trackedGames } from '@/data/tracked-games';
 import { slugify } from '@/lib/slug';
-import type { CatalogGame, PlaySession } from '@/types/game';
+import type { Achievement, CatalogGame, PlaySession } from '@/types/game';
 
-const STORAGE_KEY = 'gamelary/game-store/v1';
+const STORAGE_KEY = 'gamelary/game-store/v2';
 
 export type StoredGame = {
   id: string;
@@ -16,8 +16,7 @@ export type StoredGame = {
   platform: string;
   inLibrary: boolean;
   stopped: boolean;
-  achievementsUnlocked: number;
-  achievementsTotal: number;
+  achievements: Achievement[];
   rating?: number;
   review?: string;
   playSessions: PlaySession[];
@@ -35,12 +34,15 @@ type StoreShape = {
   lists: Record<string, StoredList>;
 };
 
+function makeAchievementId(gameId: string, name: string): string {
+  return `${gameId}:${slugify(name)}-${Date.now().toString(36)}`;
+}
+
 // État initial avant toute lecture d'AsyncStorage (et avant que le premier
-// lancement ait rien écrit) : les 6 jeux de démonstration de
-// tracked-games.ts, plateforme vide (résolue par useGame via IGDB), aucune
-// liste peuplée. Ancien historique déjà écrit une fois -> AsyncStorage
-// prend le dessus dans le useEffect de chargement, ce seed ne sert qu'au
-// tout premier lancement.
+// lancement ait rien écrit) : les jeux de démonstration de tracked-games.ts,
+// plateforme vide (résolue par useGame via IGDB), aucune liste peuplée.
+// Ancien historique déjà écrit une fois -> AsyncStorage prend le dessus dans
+// le useEffect de chargement, ce seed ne sert qu'au tout premier lancement.
 function seedStore(): StoreShape {
   const games: Record<string, StoredGame> = {};
   for (const tracked of trackedGames) {
@@ -50,8 +52,11 @@ function seedStore(): StoreShape {
       platform: '',
       inLibrary: true,
       stopped: false,
-      achievementsUnlocked: tracked.achievementsUnlocked,
-      achievementsTotal: tracked.achievementsTotal,
+      achievements: tracked.achievements.map((a) => ({
+        id: makeAchievementId(tracked.id, a.name),
+        name: a.name,
+        unlocked: a.unlocked,
+      })),
       playSessions: [],
     };
   }
@@ -74,17 +79,19 @@ type GameStoreContextValue = {
   addPlaySession: (id: string, hours: number) => void;
   setRating: (id: string, rating: number) => void;
   setReview: (id: string, review: string) => void;
+  addAchievement: (id: string, name: string) => void;
+  toggleAchievement: (id: string, achievementId: string) => void;
   toggleListMembership: (listId: string, gameId: string) => void;
   createList: (name: string) => string;
 };
 
 const GameStoreContext = createContext<GameStoreContextValue | null>(null);
 
-// Pas de backend/compte utilisateur (voir ARCHITECTURE.md §9) : cet état
-// (bibliothèque, notes/avis, listes, sessions de jeu) vit uniquement sur
-// l'appareil via AsyncStorage — un seul blob JSON, largement suffisant pour
-// le volume de données d'un solo (quelques dizaines de jeux), pas besoin
-// d'une vraie base locale (SQLite) pour l'instant.
+// Pas de backend/compte utilisateur (voir ARCHITECTURE.md §10) : cet état
+// (bibliothèque, succès, notes/avis, listes, sessions de jeu) vit
+// uniquement sur l'appareil via AsyncStorage — un seul blob JSON, largement
+// suffisant pour le volume de données d'un solo (quelques dizaines de
+// jeux), pas besoin d'une vraie base locale (SQLite) pour l'instant.
 export function GameStoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<StoreShape>(seedStore);
   const [ready, setReady] = useState(false);
@@ -131,8 +138,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
                 platform: game.platform,
                 inLibrary: false,
                 stopped: false,
-                achievementsUnlocked: 0,
-                achievementsTotal: 0,
+                achievements: [],
                 playSessions: [],
               };
           return { ...prev, games: { ...prev.games, [game.id]: next } };
@@ -164,10 +170,11 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
         });
       },
       setRating: (id: string, rating: number) => {
+        const clamped = Math.max(0, Math.min(20, Math.round(rating)));
         setState((prev) => {
           const existing = prev.games[id];
           if (!existing) return prev;
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, rating } } };
+          return { ...prev, games: { ...prev.games, [id]: { ...existing, rating: clamped } } };
         });
       },
       setReview: (id: string, review: string) => {
@@ -175,6 +182,29 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           const existing = prev.games[id];
           if (!existing) return prev;
           return { ...prev, games: { ...prev.games, [id]: { ...existing, review } } };
+        });
+      },
+      addAchievement: (id: string, name: string) => {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        setState((prev) => {
+          const existing = prev.games[id];
+          if (!existing) return prev;
+          const achievement: Achievement = { id: makeAchievementId(id, trimmed), name: trimmed, unlocked: false };
+          return {
+            ...prev,
+            games: { ...prev.games, [id]: { ...existing, achievements: [...existing.achievements, achievement] } },
+          };
+        });
+      },
+      toggleAchievement: (id: string, achievementId: string) => {
+        setState((prev) => {
+          const existing = prev.games[id];
+          if (!existing) return prev;
+          const achievements = existing.achievements.map((a) =>
+            a.id === achievementId ? { ...a, unlocked: !a.unlocked } : a
+          );
+          return { ...prev, games: { ...prev.games, [id]: { ...existing, achievements } } };
         });
       },
       toggleListMembership: (listId: string, gameId: string) => {

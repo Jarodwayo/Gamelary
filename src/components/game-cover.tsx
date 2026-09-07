@@ -1,5 +1,5 @@
-import { Image } from 'expo-image';
-import { StyleSheet } from 'react-native';
+import { Image, type ImageStyle } from 'expo-image';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -23,6 +23,11 @@ function colorForTitle(title: string) {
 type GameCoverProps = {
   title: string;
   size?: 'small' | 'large';
+  // Échappatoire pour les contextes qui ont besoin d'un gabarit précis
+  // (rangée Explorer en 2:3, ligne compacte de bibliothèque calée sur la
+  // hauteur de la card) plutôt que les seuls préréglages small/large.
+  // Fusionné après le style de `size`, donc prioritaire dessus.
+  style?: StyleProp<ViewStyle>;
 };
 
 // Jaquette réelle (SteamGridDB, via /api/cover) avec repli sur un
@@ -30,7 +35,7 @@ type GameCoverProps = {
 // jaquette n'a été trouvée, ou si le jeu n'a pas encore été recherché. Le
 // placeholder n'est donc pas juste une étape temporaire du projet : il reste
 // l'état d'erreur/chargement permanent du composant.
-export function GameCover({ title, size = 'small' }: GameCoverProps) {
+export function GameCover({ title, size = 'small', style }: GameCoverProps) {
   const { url, loading } = useGameCover(title);
 
   const initials = title
@@ -47,12 +52,21 @@ export function GameCover({ title, size = 'small' }: GameCoverProps) {
     // expo-image gère lui-même le cache mémoire + disque des images
     // distantes : pas besoin de logique de cache supplémentaire côté client
     // pour éviter de retélécharger la même jaquette à chaque affichage.
-    return <Image source={{ uri: url }} style={[styles.cover, sizeStyle]} contentFit="cover" />;
+    // Le style passé par l'appelant ne porte que des propriétés de mise en
+    // page (width/height/borderRadius) valables aussi bien pour ImageStyle
+    // que ViewStyle ; le cast n'élargit rien de plus que ça.
+    return (
+      <Image
+        source={{ uri: url }}
+        style={[styles.cover, sizeStyle, style as StyleProp<ImageStyle>]}
+        contentFit="cover"
+      />
+    );
   }
 
   return (
     <ThemedView
-      style={[styles.cover, sizeStyle, { backgroundColor: colorForTitle(title) }]}
+      style={[styles.cover, sizeStyle, style, { backgroundColor: colorForTitle(title) }]}
       accessibilityLabel={loading ? `Chargement de la jaquette de ${title}` : undefined}>
       <ThemedText style={size === 'large' ? styles.textLarge : styles.textSmall}>
         {initials}
@@ -69,11 +83,11 @@ const styles = StyleSheet.create({
   },
   small: {
     width: '100%',
-    aspectRatio: 3 / 4,
+    aspectRatio: 2 / 3,
   },
   large: {
-    width: 160,
-    aspectRatio: 3 / 4,
+    width: 110,
+    aspectRatio: 2 / 3,
   },
   textSmall: {
     color: '#ffffff',
@@ -82,7 +96,7 @@ const styles = StyleSheet.create({
   },
   textLarge: {
     color: '#ffffff',
-    fontSize: 36,
+    fontSize: 28,
     fontWeight: '700',
   },
 });
