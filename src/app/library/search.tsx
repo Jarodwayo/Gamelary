@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, InteractionManager, Pressable, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameCover } from '@/components/game-cover';
@@ -25,6 +25,16 @@ export default function SearchScreen() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<SearchStatus>('idle');
   const [result, setResult] = useState<SearchResult | null>(null);
+  const inputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    // autoFocus seul est peu fiable juste après une transition de pile
+    // (le clavier peut ne pas s'ouvrir tant que l'animation de push n'est
+    // pas terminée) : on attend explicitement la fin des interactions avant
+    // de forcer le focus.
+    const task = InteractionManager.runAfterInteractions(() => inputRef.current?.focus());
+    return () => task.cancel();
+  }, []);
 
   async function runSearch() {
     const trimmed = query.trim();
@@ -57,6 +67,7 @@ export default function SearchScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
         <TextInput
+          ref={inputRef}
           value={query}
           onChangeText={setQuery}
           onSubmitEditing={runSearch}
@@ -64,7 +75,6 @@ export default function SearchScreen() {
           placeholder="Titre d'un jeu"
           placeholderTextColor={theme.textSecondary}
           style={[styles.input, { color: theme.text, borderColor: theme.backgroundElement }]}
-          autoFocus
         />
 
         {status === 'loading' && <ActivityIndicator style={styles.spinner} color={theme.accent} />}
@@ -79,9 +89,7 @@ export default function SearchScreen() {
           <Pressable
             onPress={() => router.push({ pathname: '/library/[id]', params: { id: result.id } })}
             style={({ pressed }) => [styles.resultRow, pressed && styles.pressed]}>
-            <ThemedView style={styles.coverWrap}>
-              <GameCover title={result.title} />
-            </ThemedView>
+            <GameCover title={result.title} />
             <ThemedView style={styles.resultText}>
               <ThemedText type="smallBold">{result.title}</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
@@ -122,9 +130,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-  },
-  coverWrap: {
-    width: 64,
   },
   resultText: {
     flex: 1,

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 
-import { getTrackedGameById } from '@/data/tracked-games';
+import { getTrackedGameById, trackId } from '@/data/tracked-games';
 import { apiUrl } from '@/lib/api-url';
 import { useGameStore } from '@/lib/game-store';
-import type { Game } from '@/types/game';
+import type { Game, Track } from '@/types/game';
 
 type IgdbLookup = { title: string; platform: string } | null;
 
@@ -69,6 +69,16 @@ export function useGame(id: string): { game: Game | null; loading: boolean } {
 
   if (!stored) return { game: null, loading: false };
 
+  // tracks vient de tracked-games.ts (statique, la bande originale ne
+  // change pas), avec les mêmes ids que ceux utilisés pour seeder/écrire
+  // favoriteTrackId (voir trackId, partagé avec game-store.tsx) — sans ça,
+  // la sélection stockée ne retrouverait jamais la bonne piste.
+  const tracks: Track[] = (tracked?.tracks ?? []).map((track) => ({
+    id: trackId(stored.id, track.title),
+    title: track.title,
+    artist: track.artist,
+  }));
+
   return {
     game: {
       id: stored.id,
@@ -81,7 +91,8 @@ export function useGame(id: string): { game: Game | null; loading: boolean } {
       // ne peuvent jamais se désynchroniser du détail des succès.
       achievementsUnlocked: stored.achievements.filter((a) => a.unlocked).length,
       achievementsTotal: stored.achievements.length,
-      favoriteTrack: tracked?.favoriteTrack,
+      tracks,
+      favoriteTrack: tracks.find((track) => track.id === stored.favoriteTrackId),
       rating: stored.rating,
       review: stored.review,
       playSessions: stored.playSessions,

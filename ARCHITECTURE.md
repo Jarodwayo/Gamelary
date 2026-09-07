@@ -34,21 +34,22 @@ avant de coder Explorer/Profil/Statistiques pour éviter de styliser chaque
   maquette pour les titres/l'UI et les nombres tabulaires respectivement,
   mais pas encore installées/câblées — voir §10, ce n'est pas ce qui
   bloquait le reste des écrans).
-- **Carte de jeu** : jaquette 2:3 (`GameCover`), coins arrondis, bordure
-  fine plutôt qu'ombre portée. Deux agencements selon l'écran, tous deux
-  construits sur `GameCover` :
+- **Carte de jeu** : `GameCover` (`src/components/game-cover.tsx`) rend la
+  jaquette à une **taille fixe unique dans toute l'app** (56×74, coins 8px),
+  sans prop `size`/`style` pour la moduler — ni ratio 2:3 approximatif ni
+  gabarits `small`/`large` comme dans une itération précédente, qui avaient
+  fini par produire des jaquettes incohérentes (démesurées sur certains
+  écrans) faute d'un point de vérité unique. Deux agencements réutilisent
+  cette même jaquette sans jamais la redimensionner :
   - **Rangée horizontale** (`GameShelf`, `src/components/game-shelf.tsx`) —
     Explorer, Profil (Jeux suivis/Jeux préférés) : titre de section en gras
-    + chevron "›" + scroll horizontal sans indicateur visible.
+    + chevron "›" + scroll horizontal sans indicateur visible ; la colonne
+    de chaque carte (84px) est un peu plus large que la jaquette pour que
+    le titre en dessous reste lisible, sans agrandir la jaquette elle-même.
   - **Liste verticale compacte** (`GameList`, `src/components/game-list.tsx`)
-    — Bibliothèque : une ligne par jeu (jaquette ~76px de large calée sur
-    la hauteur de la ligne, titre + plateforme + heures jouées si non nulles,
-    indicateur de complétion à droite), densité d'information élevée plutôt
-    que de grandes jaquettes empilées — la bibliothèque se consulte comme une
-    liste qu'on scanne, pas une vitrine qu'on admire une jaquette à la fois.
-  `GameCover` accepte un `style` de dérogation pour ces gabarits précis
-  (largeur fixe calée sur une hauteur de ligne, etc.) au-delà des seuls
-  préréglages `small`/`large`.
+    — Bibliothèque : une ligne par jeu (jaquette + titre + plateforme +
+    heures jouées si non nulles + indicateur de complétion à droite),
+    densité d'information élevée plutôt que de grandes jaquettes empilées.
 
 ## 3. Expo (managé) plutôt que React Native CLI (bare) ✅
 
@@ -217,21 +218,25 @@ liste (noms + état) au lieu de la remplacer par un modèle différent — la
 saisie manuelle n'est donc pas qu'un bouche-trou temporaire, elle reste
 utile pour les jeux hors Steam.
 
-### 6.4 Musique préférée — Spotify Web API (recherche uniquement) 🚧
+### 6.4 Musique préférée — liste + sélection ✅, Spotify Web API 🚧
 
 Décision produit importante : l'app ne **joue pas** la musique, elle stocke
-juste une référence (titre + artiste) choisie par l'utilisateur dans la BO
-du jeu. Conséquence technique : pas besoin de Spotify Premium ni du SDK de
-lecture (qui impose des contraintes fortes côté mobile) — seule l'API de
-recherche (`/v1/search`) est nécessaire, avec un flow *Client Credentials*
-(pas de connexion utilisateur Spotify requise). Le lien "Chercher sur
-Spotify" actuel (`library/[id].tsx`) ouvre l'app/le site Spotify pour que
-l'utilisateur trouve son morceau ; l'étape suivante est un écran de
-recherche in-app qui persiste juste `{ title, artist }` sur le jeu (déjà
-prêt à être stocké dans le store, voir §6.6, une fois la recherche codée).
-La pochette affichée à côté du titre/artiste (une icône sur fond neutre)
-est un simple repère visuel, pas une vraie jaquette Spotify récupérée —
-aucun appel réseau pour ça tant que la recherche in-app n'existe pas.
+juste une référence (titre + artiste) à un morceau choisi par l'utilisateur.
+`Track` (`src/types/game.ts`) sépare deux choses : `Game.tracks` est la
+bande originale complète du jeu (statique, seedée depuis `tracked-games.ts`
+— même principe que les succès, voir §6.3), `Game.favoriteTrack` est
+**la** piste que l'utilisateur a choisie dans cette liste (son id persisté
+dans le store, résolu dans `useGame`). La fiche jeu affiche la sélection en
+tête (avec un lien "ouvrir sur Spotify" pour l'écouter) puis la liste
+complète en dessous pour en choisir une autre — un vrai sélecteur, pas
+seulement un lien de recherche externe.
+
+Pas de SDK de lecture (contraintes fortes côté mobile, licence Premium) ni
+de streaming dans l'app — seule l'API de recherche Spotify (`/v1/search`,
+flow *Client Credentials*) permettrait, plus tard, de peupler `tracks`
+automatiquement depuis le vrai catalogue Spotify au lieu d'une liste
+saisie en dur ; la pochette affichée reste en attendant un simple repère
+visuel (icône), pas une vraie jaquette récupérée.
 
 ### 6.5 Explorer — 5 rangées IGDB ✅
 
@@ -269,14 +274,21 @@ seul blob JSON, largement suffisant pour le volume de données d'un solo
 pour l'instant.
 
 - **`games`** : un jeu par id, `inLibrary` (suivi ou simplement vu/en liste),
-  `stopped`, `achievements` (liste nommée, voir §6.3), `rating` (0-20,
-  saisi via `+`/`−` — pas de demi-point, une note personnelle n'a pas besoin
-  de la précision d'une moyenne communautaire) et `review`, et
-  `playSessions` — des sessions **datées** (`{ date, hours }`) plutôt qu'un
-  seul total cumulé : c'est ce qui permet à l'écran Statistiques de dériver
+  `stopped`, `achievements` (liste nommée, voir §6.3), `favoriteTrackId`
+  (référence vers une piste de `tracked-games.ts`, voir §6.4 — jamais la
+  piste elle-même dupliquée dans le store), `rating` (0-20, saisi via
+  `+`/`−` — pas de demi-point, une note personnelle n'a pas besoin de la
+  précision d'une moyenne communautaire) et `review`, et `playSessions` —
+  des sessions **datées** (`{ date, hours }`) plutôt qu'un seul total
+  cumulé : c'est ce qui permet à l'écran Statistiques de dériver
   Semaine/Mois/Tout (`hoursInPeriod`, `src/lib/hours.ts`) et l'historique
   mensuel/les streaks (`src/lib/play-stats.ts`) à partir de vraies données
   plutôt que d'inventer des chiffres différents pour la même métrique.
+  L'action `setTotalHours(id, total)` (le total affiché/modifiable sur la
+  fiche jeu, voir §6.6 plus bas) n'écrase pas `playSessions` : elle y
+  ajoute une session "correctrice" égale à l'écart avec le total actuel,
+  ce qui garde l'historique daté exploitable même quand l'utilisateur
+  corrige son total au lieu d'ajouter du temps au fil de l'eau.
 - **`lists`** : deux listes intégrées non supprimables (`favoris`,
   `wishlist`) plus les listes créées par l'utilisateur
   (`ListPickerSheet`, depuis le menu ⋯ de la fiche jeu). "Jeux préférés" sur
@@ -286,11 +298,12 @@ pour l'instant.
   (`inLibrary: false`, `achievements` vide).
 - Seedé une seule fois (premier lancement, avant toute écriture
   AsyncStorage) à partir des 6 jeux de `tracked-games.ts` (voir §6.3). Clé
-  de stockage versionnée (`gamelary/game-store/v2`) : un changement de forme
-  du store (ex. le passage `achievementsUnlocked/Total` → `achievements[]`)
-  change la clé plutôt que de migrer l'ancien format — plus simple qu'un
-  vrai système de migrations pour une appli sans utilisateurs existants à
-  préserver ; à reconsidérer si l'app a de vrais utilisateurs un jour.
+  de stockage versionnée (`gamelary/game-store/v3`) : un changement de forme
+  du store (ex. le passage `achievementsUnlocked/Total` → `achievements[]`,
+  ou l'ajout de `favoriteTrackId`) change la clé plutôt que de migrer
+  l'ancien format — plus simple qu'un vrai système de migrations pour une
+  appli sans utilisateurs existants à préserver ; à reconsidérer si l'app a
+  de vrais utilisateurs un jour.
 
 `useGame` (`src/hooks/use-game.ts`) fait la jointure entre ce store et IGDB
 (titre/plateforme canoniques, §6.1) : le store est la seule source de
@@ -375,23 +388,37 @@ réservés" — consultable, mais pas réutilisable sans autorisation.
 
 **Fait** : scaffold Expo + TypeScript, navigation complète (3 onglets +
 piles imbriquées), design system clair/sombre (accent/success, voir §2),
-jaquettes réelles via SteamGridDB, catalogue réel via IGDB (recherche par
-titre et 5 rangées Explorer), bibliothèque persistée localement
-(AsyncStorage) avec suivi (`inLibrary`/"Arrêter de jouer"), bibliothèque en
-liste compacte filtrable (Tous/Wishlist/Pas commencé/En cours/Terminé —
-voir §2), notation sur 20 + avis texte par jeu, succès nommés et cochables
-(voir §6.3), heures jouées saisies manuellement (sessions datées, agrégées
-Semaine/Mois/Tout et par mois/plateforme sur l'écran Statistiques — voir
-§6.7), listes personnalisées (Favoris et Wishlist intégrées + création
-libre) accessibles depuis le menu ⋯ de la fiche jeu, recherche IGDB
-ponctuelle (`/library/search`, derrière une barre de recherche flottante).
+jaquettes réelles via SteamGridDB affichées via un unique composant
+`GameCover` de taille fixe (56×74, voir §2 — plus de variation de taille
+d'un écran à l'autre), catalogue réel via IGDB (recherche par titre et 5
+rangées Explorer), bibliothèque persistée localement (AsyncStorage) avec
+suivi (`inLibrary`/"Arrêter de jouer"), bibliothèque en liste compacte
+filtrable (Tous/Wishlist/Pas commencé/En cours/Terminé — voir §2), notation
+sur 20 + avis texte par jeu, succès nommés et cochables (voir §6.3), heures
+jouées **directement modifiables** (total éditable en un tap, voir §6.6 —
+agrégées Semaine/Mois/Tout et par mois/plateforme sur l'écran Statistiques,
+voir §6.7), bande originale complète par jeu avec sélection de la piste
+favorite depuis un vrai sélecteur en liste sur la fiche jeu (voir §6.4),
+listes personnalisées (Favoris et Wishlist intégrées + création libre)
+accessibles depuis le menu ⋯ de la fiche jeu, recherche IGDB ponctuelle
+(`/library/search`, ouverte depuis un bouton icône dédié en bas à droite,
+clavier ouvert automatiquement).
 
-**Bug corrigé** : les liens vers la fiche jeu (rangées Explorer, liste de
-bibliothèque, recherche) construisaient l'URL à la main
-(`` `/library/${id}` ``) — une erreur "Unmatched Route" pouvait en résulter
-selon l'id. Remplacé partout par la forme structurée
-`{ pathname: '/library/[id]', params: { id } }`, qu'expo-router encode et
-résout lui-même — plus robuste pour un segment dynamique.
+**Bugs corrigés** :
+- Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,
+  recherche) construisaient l'URL à la main (`` `/library/${id}` ``) — une
+  erreur "Unmatched Route" pouvait en résulter selon l'id. Remplacé partout
+  par la forme structurée `{ pathname: '/library/[id]', params: { id } }`,
+  qu'expo-router encode et résout lui-même — plus robuste pour un segment
+  dynamique.
+- `GameCover` acceptait une taille et un style par consommateur (`size`,
+  `style`), ce qui avait fini par produire des jaquettes de tailles très
+  différentes selon l'écran (Explorer et l'onglet "En cours" de la
+  Bibliothèque affichaient des jaquettes plein écran au lieu du format
+  compact de la fiche jeu). Corrigé en supprimant ces props : `GameCover`
+  n'a plus qu'une seule taille fixe (56×74, rayon 8), non configurable —
+  et tous ses consommateurs (`GameList`, `GameShelf`, recherche, fiche jeu)
+  ont été audités pour ne plus lui passer d'override.
 
 **Simplifications assumées pour cette itération** :
 - Le menu "⋯" de la fiche jeu (Partager/Arrêter de jouer/Ajouter à une

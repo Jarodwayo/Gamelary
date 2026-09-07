@@ -14,7 +14,6 @@ function GameRow({ id }: { id: string }) {
   const theme = useTheme();
   if (!game) return null;
 
-  const completed = game.achievementsTotal > 0 && game.achievementsUnlocked === game.achievementsTotal;
   const totalHours = hoursInPeriod(game.playSessions, 'all');
 
   return (
@@ -25,7 +24,7 @@ function GameRow({ id }: { id: string }) {
           { backgroundColor: theme.backgroundElement },
           pressed && styles.pressed,
         ]}>
-        <GameCover title={game.title} style={styles.cover} />
+        <GameCover title={game.title} />
         <View style={styles.text}>
           <ThemedText type="smallBold" numberOfLines={1}>
             {game.title}
@@ -43,14 +42,6 @@ function GameRow({ id }: { id: string }) {
             </ThemedText>
           )}
         </View>
-        <View
-          style={[
-            styles.checkCircle,
-            { borderColor: completed ? theme.success : theme.backgroundSelected },
-            completed && { backgroundColor: theme.success },
-          ]}>
-          {completed && <ThemedText style={styles.checkMark}>✓</ThemedText>}
-        </View>
       </Pressable>
     </Link>
   );
@@ -63,9 +54,11 @@ type GameListProps = {
 };
 
 // Liste verticale compacte (bibliothèque) : une ligne = jaquette + texte
-// empilé + indicateur de complétion, plutôt que la grille de grandes
-// jaquettes d'avant — densité d'information plus élevée, scroll léger.
-// Distincte de GameShelf (rangées horizontales d'Explorer/Profil).
+// empilé (titre/plateforme/heures), plutôt que la grille de grandes
+// jaquettes d'avant — densité d'information plus élevée, scroll léger. La
+// coche verte de complétion est réservée aux succès individuels de la
+// fiche jeu (voir library/[id].tsx), pas répétée ici. Distincte de
+// GameShelf (rangées horizontales d'Explorer/Profil).
 export function GameList({ ids, emptyLabel, header }: GameListProps) {
   return (
     <FlatList
@@ -98,36 +91,16 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 96,
     borderRadius: Spacing.three,
-    overflow: 'hidden',
-  },
-  cover: {
-    width: 76,
-    height: '100%',
-    borderRadius: 0,
+    padding: Spacing.two,
+    gap: Spacing.three,
   },
   text: {
     flex: 1,
-    paddingHorizontal: Spacing.three,
     gap: 2,
   },
   tertiary: {
     opacity: 0.65,
-  },
-  checkCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 999,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.three,
-  },
-  checkMark: {
-    fontSize: 13,
-    color: '#ffffff',
-    fontWeight: '700',
   },
   pressed: {
     opacity: 0.8,
