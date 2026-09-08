@@ -15,6 +15,9 @@ import { useGame } from '@/hooks/use-game';
 import { useTheme } from '@/hooks/use-theme';
 import { useGameStore } from '@/lib/game-store';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
+import { steamApiUrl } from '@/lib/steam-api-url';
+
+type SteamAchievement = { apiname: string; name: string; unlocked: boolean };
 
 // [id].tsx : nom de fichier expo-router pour une route dynamique. Le segment
 // d'URL /library/hollow-knight se retrouve dans useLocalSearchParams().id —
@@ -29,6 +32,8 @@ export default function GameDetailScreen() {
   const [hoursInput, setHoursInput] = useState('');
   const [addingAchievement, setAddingAchievement] = useState(false);
   const [achievementName, setAchievementName] = useState('');
+  const [importingAchievements, setImportingAchievements] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   // useGame ne renvoie null que si l'id n'existe dans aucune source connue
   // (id invalide dans l'URL, lien partagé cassé...) : ce n'est jamais l'état
@@ -64,6 +69,35 @@ export default function GameDetailScreen() {
     }
     setAchievementName('');
     setAddingAchievement(false);
+  }
+
+  // gamelary-api (backend Express séparé — voir ARCHITECTURE.md §6.3) :
+  // remplace la liste de succès par celle de Steam plutôt que de la
+  // fusionner avec les entrées manuelles (voir importAchievements,
+  // game-store.tsx). Ne s'affiche que si les trois conditions sont réunies
+  // (app id Steam connu, compte Steam lié, backend déployé) — sinon la
+  // saisie manuelle reste le seul chemin, comme avant cette intégration.
+  const steamAchievementsUrl =
+    game.steamAppId && store.settings.steamId64
+      ? steamApiUrl(`/api/steam/achievements?appid=${game.steamAppId}&steamid=${store.settings.steamId64}`)
+      : null;
+
+  async function importFromSteam() {
+    if (!steamAchievementsUrl) return;
+    setImportingAchievements(true);
+    setImportError(null);
+    try {
+      const response = await fetch(steamAchievementsUrl);
+      const data: { achievements?: SteamAchievement[]; error?: string } = await response.json();
+      if (!response.ok || !data.achievements) {
+        throw new Error(data.error ?? 'Erreur inconnue');
+      }
+      store.importAchievements(id, data.achievements);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Erreur inconnue');
+    } finally {
+      setImportingAchievements(false);
+    }
   }
 
   const menuItems: OverflowMenuItem[] = [
@@ -211,6 +245,18 @@ export default function GameDetailScreen() {
               </ThemedText>
             </Pressable>
           ))}
+          {steamAchievementsUrl ? (
+            <Pressable onPress={importFromSteam} disabled={importingAchievements}>
+              <ThemedText type="linkPrimary">
+                {importingAchievements ? 'Import en cours…' : 'Pré-remplir depuis Steam'}
+              </ThemedText>
+            </Pressable>
+          ) : null}
+          {importError ? (
+            <ThemedText type="small" themeColor="textSecondary">
+              {importError}
+            </ThemedText>
+          ) : null}
           {addingAchievement ? (
             <View style={styles.addHoursRow}>
               <TextInput

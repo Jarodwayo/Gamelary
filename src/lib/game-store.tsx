@@ -5,7 +5,7 @@ import { trackedGames, trackId } from '@/data/tracked-games';
 import { slugify } from '@/lib/slug';
 import type { Achievement, CatalogGame, PlaySession } from '@/types/game';
 
-const STORAGE_KEY = 'gamelary/game-store/v4';
+const STORAGE_KEY = 'gamelary/game-store/v5';
 
 export type StoredGame = {
   id: string;
@@ -38,9 +38,18 @@ export type StoredList = {
   gameIds: string[];
 };
 
+// Réglages globaux, pas propres à un jeu — pour l'instant seulement le
+// SteamID64 de l'utilisateur (voir setSteamId64 ci-dessous), donc un simple
+// objet plutôt qu'une nouvelle table ; à faire grossir si d'autres réglages
+// s'ajoutent.
+type Settings = {
+  steamId64?: string;
+};
+
 type StoreShape = {
   games: Record<string, StoredGame>;
   lists: Record<string, StoredList>;
+  settings: Settings;
 };
 
 function makeAchievementId(gameId: string, name: string): string {
@@ -78,6 +87,7 @@ function seedStore(): StoreShape {
       favoris: { id: 'favoris', name: 'Favoris', builtin: true, gameIds: [] },
       wishlist: { id: 'wishlist', name: 'Wishlist', builtin: true, gameIds: [] },
     },
+    settings: {},
   };
 }
 
@@ -85,6 +95,7 @@ type GameStoreContextValue = {
   ready: boolean;
   games: Record<string, StoredGame>;
   lists: Record<string, StoredList>;
+  settings: Settings;
   registerCatalogGame: (game: CatalogGame) => void;
   addToLibrary: (id: string) => void;
   toggleStopped: (id: string) => void;
@@ -93,6 +104,8 @@ type GameStoreContextValue = {
   setReview: (id: string, review: string) => void;
   addAchievement: (id: string, name: string) => void;
   toggleAchievement: (id: string, achievementId: string) => void;
+  importAchievements: (id: string, achievements: { apiname: string; name: string; unlocked: boolean }[]) => void;
+  setSteamId64: (steamId64: string | undefined) => void;
   setFavoriteTrack: (id: string, favoriteTrackId: string | undefined) => void;
   toggleListMembership: (listId: string, gameId: string) => void;
   createList: (name: string) => string;
@@ -236,6 +249,25 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           return { ...prev, games: { ...prev.games, [id]: { ...existing, achievements } } };
         });
       },
+      // Remplace entièrement la liste par celle de Steam (source faisant
+      // autorité une fois le compte lié) plutôt que de la fusionner avec les
+      // entrées ajoutées à la main : évite les doublons "même succès, deux
+      // fois" si l'utilisateur avait déjà saisi certains noms manuellement.
+      // Id dérivé de `apiname` (stable côté Steam) plutôt que du timestamp
+      // utilisé par addAchievement : un second import du même jeu retombe
+      // sur les mêmes ids au lieu d'empiler des doublons.
+      importAchievements: (id: string, achievements: { apiname: string; name: string; unlocked: boolean }[]) => {
+        setState((prev) => {
+          const existing = prev.games[id];
+          if (!existing) return prev;
+          const imported: Achievement[] = achievements.map((a) => ({
+            id: `${id}:steam:${a.apiname}`,
+            name: a.name,
+            unlocked: a.unlocked,
+          }));
+          return { ...prev, games: { ...prev.games, [id]: { ...existing, achievements: imported } } };
+        });
+      },
       setFavoriteTrack: (id: string, favoriteTrackId: string | undefined) => {
         setState((prev) => {
           const existing = prev.games[id];
@@ -261,12 +293,18 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
         }));
         return id;
       },
+      // Pas de vraie authentification (voir ARCHITECTURE.md §9) : l'utilisateur
+      // colle lui-même son SteamID64 (Profil, "Lier mon compte Steam"), utilisé
+      // pour appeler gamelary-api (voir §6.3) — jamais vérifié côté serveur.
+      setSteamId64: (steamId64: string | undefined) => {
+        setState((prev) => ({ ...prev, settings: { ...prev.settings, steamId64 } }));
+      },
     }),
     []
   );
 
   const value = useMemo<GameStoreContextValue>(
-    () => ({ ready, games: state.games, lists: state.lists, ...actions }),
+    () => ({ ready, games: state.games, lists: state.lists, settings: state.settings, ...actions }),
     [ready, state, actions]
   );
 

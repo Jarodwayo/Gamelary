@@ -219,15 +219,14 @@ détour par Steam plutôt qu'IGDB directement. Limite résiduelle : un jeu
 sans app id Steam (exclusivité console) retombe toujours sur la recherche
 floue par titre, sans désambiguïsation.
 
-### 6.3 Succès — saisie manuelle ✅, Steam Web API 🚧
+### 6.3 Succès — saisie manuelle ✅, pré-remplissage Steam ✅ (code prêt, backend pas encore déployé)
 
-`ISteamUserStats/GetPlayerAchievements` donnerait les succès débloqués,
-mais **uniquement pour les jeux Steam PC** liés au compte Steam de
-l'utilisateur (pas d'équivalent public pour PSN/Xbox) — donc pas suffisant
-comme unique source pour une appli multi-plateforme. En attendant (et pour
-rester utile même sur les plateformes sans API succès), l'utilisateur
-construit lui-même sa liste de succès **nommés** sur la fiche jeu
-(`+ Ajouter un succès`) et les coche au fur et à mesure : `Achievement`
+`ISteamUserStats/GetPlayerAchievements` donne les succès débloqués, mais
+**uniquement pour les jeux Steam PC** liés au compte Steam de l'utilisateur
+(pas d'équivalent public pour PSN/Xbox) — donc pas suffisant comme unique
+source pour une appli multi-plateforme. L'utilisateur reste donc libre de
+construire lui-même sa liste de succès **nommés** sur la fiche jeu
+(`+ Ajouter un succès`) et de les cocher au fur et à mesure : `Achievement`
 (`src/types/game.ts`) est `{ id, name, unlocked }`, pas juste un ratio —
 afficher *quel* succès manque est plus utile qu'un simple "28/42".
 `achievementsUnlocked`/`achievementsTotal` restent exposés sur `Game`
@@ -235,12 +234,41 @@ afficher *quel* succès manque est plus utile qu'un simple "28/42".
 donc jamais désynchronisable) pour les écrans qui n'ont besoin que du
 total (Profil, Statistiques, filtres de bibliothèque).
 
-Quand l'intégration Steam existera, elle pourra pré-remplir cette même
-liste (noms + état) au lieu de la remplacer par un modèle différent — la
-saisie manuelle n'est donc pas qu'un bouche-trou temporaire, elle reste
-utile pour les jeux hors Steam.
+**Pré-remplissage Steam** — [gamelary-api](https://github.com/Jarodwayo/gamelary-api),
+un **second projet** Node.js/Express séparé de Gamelary, pas une route
+`expo-router` de plus. Raison : contrairement à IGDB/SteamGridDB (en-tête
+`Authorization: Bearer`/`Client-ID`), la Steam Web API n'accepte sa clé
+**qu'en paramètre d'URL** (`?key=...`), un mode que le système
+d'identifiants managés utilisé pour ce projet ne sait pas injecter —
+d'où ce petit service à part, où `STEAM_API_KEY` est une variable
+d'environnement classique lue par le code (voir le README de ce repo pour
+le détail et le déploiement Render). `GET /api/steam/achievements?appid=&
+steamid=` y fusionne `GetSchemaForGame` (noms/descriptions) et
+`GetPlayerAchievements` (état débloqué) en la forme attendue par
+`Achievement`.
 
-### 6.4 Musique préférée — liste + sélection ✅, Spotify Web API 🚧
+Côté Gamelary : `store.settings.steamId64` (Profil, "Lier mon compte
+Steam" — pas de vraie authentification, l'utilisateur colle lui-même son
+SteamID64) et `Game.steamAppId` (§6.1) sont les deux informations
+nécessaires pour appeler ce backend. `steamApiUrl` (`src/lib/
+steam-api-url.ts`) résout son URL depuis `EXPO_PUBLIC_STEAM_API_URL`
+(valeur publique — juste l'URL Render, jamais un secret) et renvoie `null`
+tant qu'elle n'est pas configurée : le bouton "Pré-remplir depuis Steam"
+de la fiche jeu ne s'affiche que si les trois conditions sont réunies
+(app id Steam connu, compte lié, backend déployé), sinon la saisie
+manuelle reste le seul chemin, exactement comme avant cette intégration.
+`store.importAchievements` **remplace** entièrement la liste par celle de
+Steam (source faisant autorité une fois le compte lié) plutôt que de la
+fusionner avec les entrées manuelles, avec un id dérivé de l'`apiname`
+Steam (stable) pour qu'un second import ne duplique rien.
+
+Statut réel : le code (backend + intégration client) est écrit et le
+backend testé en local (clé factice, erreur amont Steam propre) — non
+testé de bout en bout avec une vraie clé/un vrai compte, et pas encore
+déployé sur Render, faute d'accès en écriture de cette session au repo
+`gamelary-api` (permission GitHub à accorder séparément, voir §10).
+
+### 6.4 Musique préférée — liste + sélection ✅, Spotify Web API ❌ abandonné
 
 Décision produit importante : l'app ne **joue pas** la musique, elle stocke
 juste une référence (titre + artiste) à un morceau choisi par l'utilisateur.
@@ -255,10 +283,17 @@ seulement un lien de recherche externe.
 
 Pas de SDK de lecture (contraintes fortes côté mobile, licence Premium) ni
 de streaming dans l'app — seule l'API de recherche Spotify (`/v1/search`,
-flow *Client Credentials*) permettrait, plus tard, de peupler `tracks`
+flow *Client Credentials*) aurait permis de peupler `tracks`
 automatiquement depuis le vrai catalogue Spotify au lieu d'une liste
-saisie en dur ; la pochette affichée reste en attendant un simple repère
-visuel (icône), pas une vraie jaquette récupérée.
+saisie en dur. Tentative faite puis abandonnée : la création d'app Spotify
+Developer a été bloquée ("Your application is blocked from accessing the
+Web API since you do not have a Spotify Premium subscription") malgré le
+fait que seule l'API de recherche était visée, jamais la lecture — Spotify
+semble désormais exiger Premium même pour ce flow, contrairement à ce qui
+était attendu. Décision : abandonné plutôt que de dépendre d'un abonnement
+payant pour une fonctionnalité annexe. La liste de pistes seedée à la main
+dans `tracked-games.ts` et la pochette en simple repère visuel restent
+donc l'état définitif de cette itération, pas une étape temporaire.
 
 ### 6.5 Explorer — 5 rangées IGDB ✅
 
@@ -331,14 +366,18 @@ pour l'instant.
   est volontairement une liste à part, distincte de la bibliothèque suivie
   — un jeu peut y figurer sans jamais avoir été ajouté à la bibliothèque
   (`inLibrary: false`, `achievements` vide).
+- **`settings`** : réglages globaux, pas propres à un jeu — pour l'instant
+  seulement `steamId64` (Profil, "Lier mon compte Steam"), utilisé pour
+  appeler `gamelary-api` (voir §6.3). Pas une vraie authentification :
+  l'utilisateur colle lui-même son SteamID64, jamais vérifié.
 - Seedé une seule fois (premier lancement, avant toute écriture
   AsyncStorage) à partir des 6 jeux de `tracked-games.ts` (voir §6.3). Clé
-  de stockage versionnée (`gamelary/game-store/v3`) : un changement de forme
+  de stockage versionnée (`gamelary/game-store/v5`) : un changement de forme
   du store (ex. le passage `achievementsUnlocked/Total` → `achievements[]`,
-  ou l'ajout de `favoriteTrackId`) change la clé plutôt que de migrer
-  l'ancien format — plus simple qu'un vrai système de migrations pour une
-  appli sans utilisateurs existants à préserver ; à reconsidérer si l'app a
-  de vrais utilisateurs un jour.
+  l'ajout de `favoriteTrackId`, `steamAppId` ou `settings`) change la clé
+  plutôt que de migrer l'ancien format — plus simple qu'un vrai système de
+  migrations pour une appli sans utilisateurs existants à préserver ; à
+  reconsidérer si l'app a de vrais utilisateurs un jour.
 
 `useGame` (`src/hooks/use-game.ts`) fait la jointure entre ce store et IGDB
 (titre/plateforme canoniques, §6.1) : le store est la seule source de
@@ -443,7 +482,9 @@ matchées par app id Steam quand IGDB le référence (voir §6.2, plus fiable
 qu'une recherche par titre), déduplication du catalogue découvert avec
 `tracked-games.ts` (`resolveCatalogId`, voir §6.1), rangée "Recommandé pour
 toi" personnalisée par la plateforme la plus jouée de la bibliothèque
-suivie (voir §6.5).
+suivie (voir §6.5), champ "Lier mon compte Steam" sur le Profil et
+pré-remplissage des succès depuis Steam sur la fiche jeu (voir §6.3 —
+code écrit et testé, backend `gamelary-api` pas encore déployé).
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,
@@ -474,22 +515,34 @@ suivie (voir §6.5).
   Statistiques (voir §6.7) — la donnée existe déjà, pas besoin d'étendre
   les requêtes IGDB pour cette itération.
 
-**Bloqué en attente de credentials** (voir §7 — ces secrets ne peuvent pas
-vivre côté client, et ne sont pas injectés par le proxy réseau de cet
-environnement de dev comme le sont IGDB/SteamGridDB) :
-- **Steam Web API** — pré-remplirait les succès (voir §6.3) plutôt que la
-  saisie manuelle actuelle ; nécessite une clé `ISteamUserStats` côté
-  serveur, en plus d'un moyen de lier le compte Steam de l'utilisateur (pas
-  de compte utilisateur du tout pour l'instant, voir §10).
-- **Spotify Web API** — recherche in-app pour peupler `tracks` depuis le
-  vrai catalogue Spotify et afficher une vraie pochette (voir §6.4) ;
-  nécessite un client id/secret Spotify (flow *Client Credentials*) côté
-  serveur.
-- **Cache serveur partagé (Redis/KV)** — remplacerait la `Map` en mémoire
-  de `games+api.ts`/`cover+api.ts` (voir §8), qui ne survit pas à un
-  redémarrage et ne serait pas partagée si l'app scalait à plusieurs
-  instances (suffisant pour une démo solo) ; nécessite une instance
-  Redis/KV et ses credentials de connexion.
+**Steam Web API — code prêt, déploiement bloqué** (voir §6.3) : le backend
+[gamelary-api](https://github.com/Jarodwayo/gamelary-api) et l'intégration
+côté Gamelary (champ SteamID64 sur le Profil, bouton "Pré-remplir depuis
+Steam" sur la fiche jeu) sont écrits et le backend testé en local. Reste
+bloqué sur deux points, aucun des deux n'étant un manque de code :
+1. Cette session n'a pas les droits d'écriture GitHub sur ce nouveau repo
+   (l'app Claude n'y est pas installée) — le premier commit ne peut donc
+   pas être poussé depuis ici, à débloquer en autorisant l'app sur ce repo
+   ou en le poussant manuellement.
+2. Une fois poussé, il reste à le déployer (Render, voir le README du
+   repo) et à renseigner `STEAM_API_KEY` (clé personnelle Steam, dans les
+   variables d'environnement Render — jamais dans ce sandbox ni dans un
+   repo Git) et `EXPO_PUBLIC_STEAM_API_URL` côté Gamelary (l'URL Render
+   obtenue).
+
+**Spotify Web API — abandonné** (voir §6.4) : Spotify bloque la création
+de l'app Developer sans abonnement Premium, y compris pour le flow
+recherche seule (pas de lecture prévue dans Gamelary). Décision : ne pas
+dépendre d'un abonnement payant pour une fonctionnalité annexe — la liste
+de pistes seedée à la main reste l'état définitif de cette itération.
+
+**Cache serveur partagé (Redis/KV) — bloqué en attente de credentials**
+(voir §7-§8) : remplacerait la `Map` en mémoire de `games+api.ts`/
+`cover+api.ts`, qui ne survit pas à un redémarrage et ne serait pas
+partagée si l'app scalait à plusieurs instances (suffisant pour une démo
+solo) ; nécessite une instance Redis/KV et ses credentials de connexion,
+non injectés par le proxy réseau de cet environnement de dev comme le sont
+IGDB/SteamGridDB.
 
 **Prochaines étapes** (pas de blocage technique, juste pas encore fait) :
 éventuellement un vrai popover ancré pour le menu "⋯"/sélecteur de listes
