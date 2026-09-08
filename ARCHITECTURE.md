@@ -284,7 +284,10 @@ d'environnement classique lue par le code (voir le README de ce repo pour
 le détail et le déploiement Render). `GET /api/steam/achievements?appid=&
 steamid=` y fusionne `GetSchemaForGame` (noms/descriptions) et
 `GetPlayerAchievements` (état débloqué) en la forme attendue par
-`Achievement`.
+`Achievement`, avec un cache Redis partagé (`REDIS_URL`, voir §8) — schéma
+7 jours, succès du joueur 5 minutes — et repli automatique sur une `Map`
+en mémoire si Redis est injoignable, jamais de requête en échec pour une
+panne de cache.
 
 Côté Gamelary : `store.settings.steamId64` (Profil, "Lier mon compte
 Steam" — pas de vraie authentification, l'utilisateur colle lui-même son
@@ -505,14 +508,17 @@ source, donc le TTL (durée de vie) diffère aussi.
 | Rangées Explorer | change modérément (classements, sorties) | ✅ cache serveur (`Map`, TTL 6h, `games+api.ts`) + cache mémoire client (`useExploreSection`), bien plus court que la recherche par titre |
 | Jaquettes SteamGridDB | statique | ✅ cache serveur (`Map`, TTL 7 jours, `cover+api.ts`) + cache disque client via `expo-image` (déjà utilisé dans le projet, gère automatiquement mémoire + disque pour les images distantes) + cache mémoire client (`useGameCover`) |
 | Bibliothèque/notes/heures/listes | change à chaque interaction utilisateur | ✅ pas un cache réseau — persistance locale directe (AsyncStorage, voir §6.6) |
-| Succès Steam | change quand l'utilisateur joue | cache court (quelques minutes) ou rafraîchissement manuel, jamais de cache long 🚧 |
-| Recherche Spotify | éphémère, propre à la session de recherche | pas de cache — seule la sélection finale (`{ title, artist }`) sera persistée sur le jeu 🚧 |
+| Schéma des succès Steam (noms/descriptions) | quasi statique | ✅ cache serveur Redis, TTL 7 jours (`gamelary-api`, voir §6.3) |
+| Succès débloqués du joueur | change quand l'utilisateur joue | ✅ cache serveur Redis, TTL 5 minutes (`gamelary-api`, voir §6.3) |
 
-Limite assumée du cache serveur actuel : une simple `Map` en mémoire ne
-survit pas à un redémarrage et ne serait pas partagée entre plusieurs
-instances si l'app scale — suffisant pour une seule instance de dev/démo,
-mais à remplacer par un vrai cache partagé (Redis/KV) avant une mise en
-production sérieuse.
+Limite assumée du cache serveur de Gamelary lui-même (`games+api.ts`/
+`cover+api.ts`) : une simple `Map` en mémoire ne survit pas à un
+redémarrage et ne serait pas partagée entre plusieurs instances si l'app
+scale — suffisant pour une seule instance de dev/démo, mais à remplacer
+par un vrai cache partagé (Redis/KV) avant une mise en production
+sérieuse ; voir §10 pour le detail de ce qui bloque encore ça ici.
+`gamelary-api` (repo séparé, voir §6.3) n'a plus cette limite : son cache
+Redis est déjà branché et testé.
 
 Côté client, [TanStack Query](https://tanstack.com/query) est envisagé pour
 gérer le cache/refetch/état de chargement des appels au backend (pattern
@@ -626,13 +632,24 @@ recherche seule (pas de lecture prévue dans Gamelary). Décision : ne pas
 dépendre d'un abonnement payant pour une fonctionnalité annexe — la liste
 de pistes seedée à la main reste l'état définitif de cette itération.
 
-**Cache serveur partagé (Redis/KV) — bloqué en attente de credentials**
-(voir §7-§8) : remplacerait la `Map` en mémoire de `games+api.ts`/
-`cover+api.ts`, qui ne survit pas à un redémarrage et ne serait pas
-partagée si l'app scalait à plusieurs instances (suffisant pour une démo
-solo) ; nécessite une instance Redis/KV et ses credentials de connexion,
-non injectés par le proxy réseau de cet environnement de dev comme le sont
-IGDB/SteamGridDB.
+**Cache serveur partagé (Redis)** : câblé côté
+[gamelary-api](https://github.com/Jarodwayo/gamelary-api) (`src/cache.js`)
+— `REDIS_URL` configurée sur Render, schéma des succès et succès du joueur
+mis en cache dans Redis au lieu d'une `Map` locale au process, avec repli
+automatique et silencieux sur cette même `Map` si Redis est injoignable
+(jamais de requête en échec pour une panne de cache). Testé en local avec
+un vrai serveur Redis avant déploiement (écriture/lecture/TTL, et bascule
+propre en cas de connexion refusée).
+
+Toujours **bloqué en attente de credentials** côté Gamelary lui-même : la
+`Map` en mémoire de `games+api.ts`/`cover+api.ts` (voir §7-§8), qui ne
+survit pas à un redémarrage et ne serait pas partagée si l'app scalait à
+plusieurs instances (suffisant pour une démo solo), reste en l'état —
+nécessite une instance Redis/KV et ses credentials de connexion pour CE
+service-là, non injectés par le proxy réseau de cet environnement de dev
+comme le sont IGDB/SteamGridDB. Le même mécanisme que `gamelary-api`
+(repli sur la Map en mémoire) s'y transposerait directement le jour où ces
+credentials seraient disponibles ici aussi.
 
 **Prochaines étapes** (pas de blocage technique, juste pas encore fait) :
 éventuellement un vrai popover ancré pour le menu "⋯"/sélecteur de listes
