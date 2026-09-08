@@ -85,6 +85,12 @@ export function useGame(id: string): { game: Game | null; loading: boolean } {
     artist: track.artist,
   }));
 
+  // Repli défensif (voir normalizeLoadedState, game-store.tsx) : ce champ
+  // devrait toujours être un tableau à ce stade, mais une donnée persistée
+  // par une version antérieure du store ne l'a pas forcément — mieux vaut
+  // un jeu affiché sans succès qu'un plantage sur `.length`/`.filter`.
+  const achievements = stored.achievements ?? [];
+
   return {
     game: {
       id: stored.id,
@@ -93,16 +99,16 @@ export function useGame(id: string): { game: Game | null; loading: boolean } {
       steamAppId: stored.steamAppId,
       inLibrary: stored.inLibrary,
       stopped: stored.stopped,
-      achievements: stored.achievements,
+      achievements,
       // Dérivés de la liste plutôt que stockés à part (voir types/game.ts) :
       // ne peuvent jamais se désynchroniser du détail des succès.
-      achievementsUnlocked: stored.achievements.filter((a) => a.unlocked).length,
-      achievementsTotal: stored.achievements.length,
+      achievementsUnlocked: achievements.filter((a) => a.unlocked).length,
+      achievementsTotal: achievements.length,
       tracks,
       favoriteTrack: tracks.find((track) => track.id === stored.favoriteTrackId),
       rating: stored.rating,
       review: stored.review,
-      playSessions: stored.playSessions,
+      playSessions: stored.playSessions ?? [],
     },
     loading,
   };
