@@ -94,6 +94,31 @@ function seedStore(): StoreShape {
   };
 }
 
+// Frontière système (voir AGENTS.md/le principe du projet : valider aux
+// frontières, faire confiance au code interne) : ce qui sort d'AsyncStorage
+// n'est jamais garanti conforme au shape actuel de StoredGame — un blob
+// écrit par une version antérieure du store (avant l'ajout de tel champ),
+// une écriture partielle, ou tout simplement un JSON corrompu peut manquer
+// `achievements`/`playSessions`, provoquant un crash sur `.length`/`.map`
+// bien plus loin dans l'app (fiche jeu, filtres de bibliothèque) sans lien
+// évident avec la vraie cause. Corrigé une seule fois ici, à la lecture,
+// plutôt que de parsemer des `?? []` dans chaque écran qui lit ces champs.
+function normalizeLoadedState(parsed: Partial<StoreShape>): StoreShape {
+  const games: Record<string, StoredGame> = {};
+  for (const [id, game] of Object.entries(parsed.games ?? {})) {
+    games[id] = {
+      ...game,
+      achievements: Array.isArray(game.achievements) ? game.achievements : [],
+      playSessions: Array.isArray(game.playSessions) ? game.playSessions : [],
+    };
+  }
+  return {
+    games,
+    lists: parsed.lists ?? {},
+    settings: parsed.settings ?? {},
+  };
+}
+
 type GameStoreContextValue = {
   ready: boolean;
   games: Record<string, StoredGame>;
@@ -129,7 +154,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((raw) => {
-        if (raw) setState(JSON.parse(raw) as StoreShape);
+        if (raw) setState(normalizeLoadedState(JSON.parse(raw)));
       })
       .catch(() => {
         // Lecture impossible (stockage indisponible/corrompu) : on repart du
