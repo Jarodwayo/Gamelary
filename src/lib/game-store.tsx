@@ -57,13 +57,16 @@ function makeAchievementId(gameId: string, name: string): string {
 }
 
 // État initial avant toute lecture d'AsyncStorage (et avant que le premier
-// lancement ait rien écrit) : les jeux de démonstration de tracked-games.ts,
-// plateforme vide (résolue par useGame via IGDB), aucune liste peuplée.
-// Ancien historique déjà écrit une fois -> AsyncStorage prend le dessus dans
-// le useEffect de chargement, ce seed ne sert qu'au tout premier lancement.
+// lancement ait rien écrit) : les jeux de démonstration de tracked-games.ts
+// (demoSeed: true seulement — les autres entrées n'y sont que pour leur
+// bande originale curatée, voir tracked-games.ts, pas pour peupler la
+// bibliothèque de démo), plateforme vide (résolue par useGame via IGDB),
+// aucune liste peuplée. Ancien historique déjà écrit une fois -> AsyncStorage
+// prend le dessus dans le useEffect de chargement, ce seed ne sert qu'au
+// tout premier lancement.
 function seedStore(): StoreShape {
   const games: Record<string, StoredGame> = {};
-  for (const tracked of trackedGames) {
+  for (const tracked of trackedGames.filter((game) => game.demoSeed)) {
     games[tracked.id] = {
       id: tracked.id,
       title: tracked.igdbTitle,
