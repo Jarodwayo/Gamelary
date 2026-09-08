@@ -262,11 +262,17 @@ Steam (source faisant autorité une fois le compte lié) plutôt que de la
 fusionner avec les entrées manuelles, avec un id dérivé de l'`apiname`
 Steam (stable) pour qu'un second import ne duplique rien.
 
-Statut réel : le code (backend + intégration client) est écrit et le
-backend testé en local (clé factice, erreur amont Steam propre) — non
-testé de bout en bout avec une vraie clé/un vrai compte, et pas encore
-déployé sur Render, faute d'accès en écriture de cette session au repo
-`gamelary-api` (permission GitHub à accorder séparément, voir §10).
+Statut réel : `gamelary-api` est poussé sur GitHub et déployé sur Render
+(`https://gamelary-api.onrender.com`), `EXPO_PUBLIC_STEAM_API_URL` est
+configurée côté Gamelary (`.env` à la racine — valeur publique, pas un
+secret, voir `src/lib/steam-api-url.ts`) et vérifiée présente dans le
+bundle client compilé. Non vérifié depuis ce sandbox : le proxy réseau de
+cet environnement de dev n'autorise que `api.igdb.com`/
+`www.steamgriddb.com` en sortie, pas `onrender.com` — impossible d'y
+confirmer que le service répond ou qu'un vrai SteamID64 renvoie de vrais
+succès. À vérifier depuis un appareil réel (le endpoint `GET /` doit
+répondre `{"status":"ok","service":"gamelary-api"}`, puis le bouton
+"Pré-remplir depuis Steam" sur une fiche jeu ayant un `steamAppId`).
 
 ### 6.4 Musique préférée — liste + sélection ✅, Spotify Web API ❌ abandonné
 
@@ -483,8 +489,9 @@ qu'une recherche par titre), déduplication du catalogue découvert avec
 `tracked-games.ts` (`resolveCatalogId`, voir §6.1), rangée "Recommandé pour
 toi" personnalisée par la plateforme la plus jouée de la bibliothèque
 suivie (voir §6.5), champ "Lier mon compte Steam" sur le Profil et
-pré-remplissage des succès depuis Steam sur la fiche jeu (voir §6.3 —
-code écrit et testé, backend `gamelary-api` pas encore déployé).
+pré-remplissage des succès depuis Steam sur la fiche jeu, backend
+`gamelary-api` déployé sur Render (voir §6.3 — non vérifié en conditions
+réelles depuis ce sandbox, voir §10).
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,
@@ -515,20 +522,15 @@ code écrit et testé, backend `gamelary-api` pas encore déployé).
   Statistiques (voir §6.7) — la donnée existe déjà, pas besoin d'étendre
   les requêtes IGDB pour cette itération.
 
-**Steam Web API — code prêt, déploiement bloqué** (voir §6.3) : le backend
-[gamelary-api](https://github.com/Jarodwayo/gamelary-api) et l'intégration
-côté Gamelary (champ SteamID64 sur le Profil, bouton "Pré-remplir depuis
-Steam" sur la fiche jeu) sont écrits et le backend testé en local. Reste
-bloqué sur deux points, aucun des deux n'étant un manque de code :
-1. Cette session n'a pas les droits d'écriture GitHub sur ce nouveau repo
-   (l'app Claude n'y est pas installée) — le premier commit ne peut donc
-   pas être poussé depuis ici, à débloquer en autorisant l'app sur ce repo
-   ou en le poussant manuellement.
-2. Une fois poussé, il reste à le déployer (Render, voir le README du
-   repo) et à renseigner `STEAM_API_KEY` (clé personnelle Steam, dans les
-   variables d'environnement Render — jamais dans ce sandbox ni dans un
-   repo Git) et `EXPO_PUBLIC_STEAM_API_URL` côté Gamelary (l'URL Render
-   obtenue).
+**Steam Web API — déployé, non vérifié en conditions réelles depuis ce
+sandbox** (voir §6.3) : le backend
+[gamelary-api](https://github.com/Jarodwayo/gamelary-api) est poussé et
+déployé sur Render, `EXPO_PUBLIC_STEAM_API_URL` configurée côté Gamelary.
+Le proxy réseau de cet environnement de dev n'autorise pas `onrender.com`
+en sortie (seulement `api.igdb.com`/`www.steamgriddb.com`) — la vérification
+de bout en bout (le service répond, `STEAM_API_KEY` est bien configurée sur
+Render, un vrai SteamID64 renvoie de vrais succès) reste à faire depuis un
+appareil réel.
 
 **Spotify Web API — abandonné** (voir §6.4) : Spotify bloque la création
 de l'app Developer sans abonnement Premium, y compris pour le flow
