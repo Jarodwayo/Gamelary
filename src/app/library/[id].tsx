@@ -248,7 +248,9 @@ export default function GameDetailScreen() {
           {steamAchievementsUrl ? (
             <Pressable onPress={importFromSteam} disabled={importingAchievements}>
               <ThemedText type="linkPrimary">
-                {importingAchievements ? 'Import en cours…' : 'Pré-remplir depuis Steam'}
+                {importingAchievements
+                  ? 'Import en cours (jusqu’à 1 min si le service vient de se réveiller)…'
+                  : 'Pré-remplir depuis Steam'}
               </ThemedText>
             </Pressable>
           ) : null}
