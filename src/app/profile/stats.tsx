@@ -71,7 +71,7 @@ export default function StatsScreen() {
           </ThemedText>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cardsRow}>
             <StatCard label="Heures jouées" value={formatHours(totalHoursAll)} />
-            <StatCard label="Jeux suivis" value={String(libraryGames.length)} />
+            <StatCard label="Jeux joués" value={String(libraryGames.length)} />
             <StatCard label="Complétion" value={`${completion}%`} />
             <StatCard label="Streak actuel" value={`🌱 ${currentStreak}j`} />
             <StatCard label="Streak record" value={`🏆 ${longestStreak}j`} />

@@ -24,8 +24,11 @@ export type GridItem = { id: string; title: string; steamAppId?: number; hours?:
 // Largeur calculée en JS (pas en %) plutôt que flex:1 par carte : une
 // dernière ligne incomplète (ex. 7 jeux sur 3 colonnes) ne doit pas étirer
 // les 1-2 cartes restantes plus larges que les autres — chaque carte garde
-// toujours exactement la même largeur, complète ou non.
-function useGridItemWidth() {
+// toujours exactement la même largeur, complète ou non. Exportée : la
+// rangée "Jeux joués" du Profil (GameShelf, voir game-shelf.tsx) réutilise
+// ce même calcul pour que ses cartes fassent exactement la même taille que
+// la grille de Bibliothèque/Explorer, plutôt qu'une largeur choisie à part.
+export function useGridItemWidth() {
   const { width } = useWindowDimensions();
   const totalGap = Spacing.three * (NUM_COLUMNS - 1);
   const totalPadding = Spacing.three * 2;

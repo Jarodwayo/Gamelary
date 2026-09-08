@@ -36,7 +36,9 @@ function ExploreGridSection({ section, title }: { section: ExploreSection; title
   const { games, loading } = useExploreSection(section);
   return (
     <ThemedView style={styles.gridSection}>
-      <ThemedText type="smallBold" style={styles.gridSectionTitle}>
+      {/* Accent plutôt que le texte par défaut : cohérent avec FeaturedShelf
+          (voir game-shelf.tsx) — meilleur contraste en sombre. */}
+      <ThemedText type="smallBold" themeColor="accent" style={styles.gridSectionTitle}>
         {title}
       </ThemedText>
       <GameGrid items={games} emptyLabel={loading ? 'Chargement…' : 'Rien à afficher pour le moment.'} />
