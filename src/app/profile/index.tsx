@@ -1,11 +1,12 @@
 import { Link } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameShelf } from '@/components/game-shelf';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
 import { useGameStore } from '@/lib/game-store';
@@ -25,6 +26,20 @@ export default function ProfileScreen() {
   const favoriteGames = favoriteIds.map((id) => store.games[id]).filter((game): game is NonNullable<typeof game> => Boolean(game));
 
   const totalHours = libraryGames.reduce((sum, game) => sum + hoursInPeriod(game.playSessions, 'all'), 0);
+
+  const [editingSteamId, setEditingSteamId] = useState(false);
+  const [steamIdInput, setSteamIdInput] = useState('');
+
+  function startEditingSteamId() {
+    setSteamIdInput(store.settings.steamId64 ?? '');
+    setEditingSteamId(true);
+  }
+
+  function confirmSteamId() {
+    const trimmed = steamIdInput.trim();
+    store.setSteamId64(trimmed || undefined);
+    setEditingSteamId(false);
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -85,6 +100,48 @@ export default function ProfileScreen() {
             items={favoriteGames}
             emptyLabel="Ajoute un jeu à tes favoris depuis sa fiche."
           />
+
+          <ThemedView type="backgroundElement" style={styles.steamSection}>
+            <ThemedText type="smallBold">Compte Steam</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              Permet de pré-remplir les succès des jeux Steam depuis la fiche jeu.
+            </ThemedText>
+
+            {editingSteamId ? (
+              <View style={styles.steamEditRow}>
+                <TextInput
+                  value={steamIdInput}
+                  onChangeText={setSteamIdInput}
+                  onSubmitEditing={confirmSteamId}
+                  placeholder="SteamID64 (ex. 76561197960287930)"
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="number-pad"
+                  style={[styles.steamInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                />
+                <Pressable onPress={confirmSteamId} hitSlop={8}>
+                  <ThemedText type="linkPrimary">Enregistrer</ThemedText>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.steamRow}>
+                <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.steamValue}>
+                  {store.settings.steamId64 ?? 'Non lié'}
+                </ThemedText>
+                <Pressable onPress={startEditingSteamId} hitSlop={8}>
+                  <ThemedText type="linkPrimary">
+                    {store.settings.steamId64 ? 'Modifier' : 'Lier mon compte Steam'}
+                  </ThemedText>
+                </Pressable>
+                {store.settings.steamId64 ? (
+                  <Pressable onPress={() => store.setSteamId64(undefined)} hitSlop={8}>
+                    <ThemedText type="link" themeColor="textSecondary">
+                      Délier
+                    </ThemedText>
+                  </Pressable>
+                ) : null}
+              </View>
+            )}
+          </ThemedView>
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -138,8 +195,40 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 22,
     lineHeight: 26,
+    // Nombre tabulaire (voir ARCHITECTURE.md §2) : IBM Plex Mono plutôt
+    // que la police de titre habituelle, en dehors du type="subtitle".
+    fontFamily: Fonts.mono.semiBold,
   },
   pressed: {
     opacity: 0.7,
+  },
+  steamSection: {
+    marginHorizontal: Spacing.three,
+    borderRadius: Spacing.three,
+    padding: Spacing.three,
+    gap: Spacing.one,
+  },
+  steamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    marginTop: Spacing.one,
+  },
+  steamValue: {
+    flex: 1,
+  },
+  steamEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginTop: Spacing.one,
+  },
+  steamInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+    fontSize: 14,
   },
 });

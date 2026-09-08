@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 // Note sur 20 plutôt que 5 étoiles : 20 étoiles tapables serait illisible,
@@ -49,5 +49,6 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     minWidth: 64,
     textAlign: 'center',
+    fontFamily: Fonts.mono.semiBold,
   },
 });

@@ -7,6 +7,18 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
+import {
+  BricolageGrotesque_400Regular,
+  BricolageGrotesque_500Medium,
+  BricolageGrotesque_600SemiBold,
+  BricolageGrotesque_700Bold,
+} from '@expo-google-fonts/bricolage-grotesque';
+import {
+  IBMPlexMono_400Regular,
+  IBMPlexMono_500Medium,
+  IBMPlexMono_600SemiBold,
+} from '@expo-google-fonts/ibm-plex-mono';
+
 // Voir ARCHITECTURE.md §2 (identité visuelle) : bibliothèque de jeux vue
 // comme une étagère plutôt qu'un tableau de données. accent (or "trophée
 // débloqué") est l'unique couleur interactive (onglet actif, liens,
@@ -39,30 +51,39 @@ export const Colors = {
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
+// Bricolage Grotesque (titres/UI) + IBM Plex Mono (nombres tabulaires —
+// heures, notes, stats), chargées via expo-font/@expo-google-fonts (voir
+// FontsToLoad ci-dessous et src/app/_layout.tsx). Une famille par poids :
+// contrairement aux polices système, une police custom chargée par nom ne
+// se réinterprète pas selon `fontWeight`, donc ThemedText choisit
+// directement la bonne famille plutôt que de poser fontWeight à côté.
+export const Fonts = {
+  sans: {
+    regular: 'BricolageGrotesque_400Regular',
+    medium: 'BricolageGrotesque_500Medium',
+    semiBold: 'BricolageGrotesque_600SemiBold',
+    bold: 'BricolageGrotesque_700Bold',
   },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
+  mono: {
+    regular: 'IBMPlexMono_400Regular',
+    medium: 'IBMPlexMono_500Medium',
+    semiBold: 'IBMPlexMono_600SemiBold',
   },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
+} as const;
+
+// Passé tel quel à useFonts() dans le layout racine — un seul point de
+// vérité pour la liste des polices à charger, pour ne pas la dupliquer/
+// désynchroniser des noms de famille utilisés ci-dessus (les clés doivent
+// correspondre exactement aux valeurs de `Fonts`).
+export const FontsToLoad = {
+  BricolageGrotesque_400Regular,
+  BricolageGrotesque_500Medium,
+  BricolageGrotesque_600SemiBold,
+  BricolageGrotesque_700Bold,
+  IBMPlexMono_400Regular,
+  IBMPlexMono_500Medium,
+  IBMPlexMono_600SemiBold,
+};
 
 export const Spacing = {
   half: 2,

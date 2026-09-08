@@ -33,9 +33,12 @@ const COVER_HEIGHT = 74;
 // placeholder coloré (couleur + initiales) pendant le chargement, si aucune
 // jaquette n'a été trouvée, ou si le jeu n'a pas encore été recherché. Le
 // placeholder n'est donc pas juste une étape temporaire du projet : il reste
-// l'état d'erreur/chargement permanent du composant.
-export function GameCover({ title }: { title: string }) {
-  const { url, loading } = useGameCover(title);
+// l'état d'erreur/chargement permanent du composant. steamAppId (optionnel,
+// résolu depuis IGDB) affine la correspondance côté SteamGridDB — ce n'est
+// pas une prop de présentation, ça ne rouvre donc pas la porte au problème
+// de tailles incohérentes que la suppression de size/style a réglé.
+export function GameCover({ title, steamAppId }: { title: string; steamAppId?: number }) {
+  const { url, loading } = useGameCover(title, steamAppId);
 
   const initials = title
     .split(' ')

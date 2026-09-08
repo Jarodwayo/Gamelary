@@ -163,3 +163,18 @@ export const trackedGames: TrackedGame[] = [
 export function getTrackedGameById(id: string): TrackedGame | undefined {
   return trackedGames.find((game) => game.id === id);
 }
+
+// Point de vérité unique pour dériver l'id d'un jeu découvert via IGDB
+// (rangées Explorer, recherche) — utilisé par games+api.ts et
+// library/search.tsx plutôt que d'appeler slugify() séparément à chaque
+// endroit. Certains ids de tracked-games.ts sont volontairement plus courts
+// que le titre IGDB (ex. zelda-botw vs "The Legend of Zelda: Breath of the
+// Wild") : sans cette correspondance par titre, le même jeu vu dans
+// Explorer aurait fini sous un second id slugifié, dupliqué dans la
+// bibliothèque (démo avec succès/pistes déjà seedées d'un côté, entrée vide
+// de l'autre) au lieu de rejoindre l'entrée existante.
+export function resolveCatalogId(title: string): string {
+  const normalized = title.trim().toLowerCase();
+  const match = trackedGames.find((game) => game.igdbTitle.toLowerCase() === normalized);
+  return match ? match.id : slugify(title);
+}
