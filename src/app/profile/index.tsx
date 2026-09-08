@@ -53,13 +53,19 @@ export default function ProfileScreen() {
     setEditingSteamId(false);
   }
 
-  // Contenu de chaque option pas encore développé (pas d'écran "Paramètres
-  // du profil"/"Paramètres"/"Aide" dédié) — seule l'interface du menu est
-  // demandée pour cette itération, voir ARCHITECTURE.md §9/§10.
+  // Contenu de chaque option pas encore développé (pas d'écran "Partager le
+  // profil"/"Paramètres"/"Modifier le profil"/liste/"Aide" dédié, pas de
+  // compte à déconnecter — voir ARCHITECTURE.md §9) — seule l'interface du
+  // menu est demandée pour cette itération, voir §10. "Se déconnecter" en
+  // dernier et marqué `destructive` (voir overflow-menu.tsx) : séparé
+  // visuellement du reste, comme une action irréversible.
   const profileMenuItems: OverflowMenuItem[] = [
-    { key: 'profile-settings', label: 'Paramètres du profil', onPress: () => {} },
-    { key: 'settings', label: 'Paramètres', onPress: () => {} },
-    { key: 'help', label: 'Aide', onPress: () => {} },
+    { key: 'share-profile', label: 'Partager le profil', icon: 'share-outline', onPress: () => {} },
+    { key: 'settings', label: 'Paramètres', icon: 'settings-outline', onPress: () => {} },
+    { key: 'edit-profile', label: 'Modifier le profil', icon: 'pencil-outline', onPress: () => {} },
+    { key: 'create-list', label: 'Créer une liste', icon: 'add-outline', onPress: () => {} },
+    { key: 'help', label: 'Aide et idées', icon: 'bulb-outline', onPress: () => {} },
+    { key: 'sign-out', label: 'Se déconnecter', icon: 'log-out-outline', destructive: true, onPress: () => {} },
   ];
   // Sous topRow (TOP_ROW_PADDING_TOP + hauteur d'icône 24px), pour ancrer le
   // menu juste sous le bouton plutôt qu'à la hauteur (différente) de la

@@ -622,10 +622,13 @@ taille de carte que "Jeux joués", troisième rangée Profil "Jeux terminés à
 100%" (jeux dont tous les succès suivis sont cochés — voir §6.6), compteur
 de jeux à côté du titre de chaque rangée du Profil (avant le chevron, même
 motif que les apps de séries/films), menu "⋯" du Profil (`OverflowMenu`,
-même composant que celui de la fiche jeu, avec une icône Ionicons et une
-position d'ancrage configurables) symétrique à la cloche de notification —
-interface seulement, ses options ("Paramètres du profil", "Paramètres",
-"Aide") n'ouvrent encore rien (pas d'écran dédié), et champ SteamID64 gardé
+même composant que celui de la fiche jeu, désormais capable d'afficher une
+icône par option et de marquer l'une d'elles `destructive`) symétrique à la
+cloche de notification, avec ses 6 options (Partager le profil/
+Paramètres/Modifier le profil/Créer une liste/Aide et idées/Se déconnecter,
+ce dernier en rouge — nouvelle couleur `danger`, voir §2 — et séparé du
+reste par une ligne) — interface seulement, aucune n'ouvre encore rien
+(pas d'écran dédié, ni de compte à déconnecter), et champ SteamID64 gardé
 visible au-dessus du clavier pendant la saisie (`automaticallyAdjustKeyboardInsets`
 sur le `ScrollView` du Profil).
 
@@ -687,10 +690,11 @@ sur le `ScrollView` du Profil).
   positionnés approximativement, pas un vrai popover ancré dynamiquement
   (RN n'a pas d'équivalent direct du "clic en dehors pour fermer" du web
   sans mesure de layout supplémentaire). Le nouveau menu "⋯" du Profil
-  réutilise ce même composant (`OverflowMenu`) ; ses trois options
-  ("Paramètres du profil", "Paramètres", "Aide") sont pour l'instant des
-  entrées sans effet (pas d'écran associé) — seule l'interface du menu
-  était demandée pour cette itération.
+  réutilise ce même composant (`OverflowMenu`) ; ses 6 options (Partager le
+  profil/Paramètres/Modifier le profil/Créer une liste/Aide et idées/Se
+  déconnecter) sont pour l'instant des entrées sans effet (pas d'écran
+  associé, pas de compte à déconnecter) — seule l'interface du menu était
+  demandée pour cette itération.
 - Le chevron "›" du Profil (`GameShelf`, Jeux joués/Jeux préférés) est
   pour l'instant purement visuel (pas d'écran "voir tout") — non demandé
   pour cette itération. Les rangées d'Explorer n'en ont plus du tout

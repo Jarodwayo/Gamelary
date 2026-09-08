@@ -22,8 +22,10 @@ import {
 // Voir ARCHITECTURE.md §2 (identité visuelle) : bibliothèque de jeux vue
 // comme une étagère plutôt qu'un tableau de données. accent (or "trophée
 // débloqué") est l'unique couleur interactive (onglet actif, liens,
-// notation) ; success (vert sauge) ne sert qu'au sens "terminé"/"vu" — les
-// deux ne doivent jamais se substituer l'un à l'autre.
+// notation) ; success (vert sauge) ne sert qu'au sens "terminé"/"vu" ;
+// danger (rouge) uniquement pour une action destructive/irréversible (ex.
+// "Se déconnecter" dans le menu du Profil) — les trois ne doivent jamais se
+// substituer l'un à l'autre.
 export const Colors = {
   light: {
     text: '#1C1A1F',
@@ -36,6 +38,7 @@ export const Colors = {
     // jamais un texte/icône ordinaire sur le fond normal de l'écran.
     accentInk: '#ffffff',
     success: '#3F8A5D',
+    danger: '#C1443B',
   },
   dark: {
     text: '#F5F1EC',
@@ -46,6 +49,7 @@ export const Colors = {
     accent: '#E8A33D',
     accentInk: '#17130A',
     success: '#5FAE7B',
+    danger: '#E2665C',
   },
 } as const;
 
