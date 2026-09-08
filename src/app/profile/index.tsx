@@ -76,13 +76,18 @@ export default function ProfileScreen() {
           </View>
 
           <View style={styles.statsRow}>
+            {/* Link asChild clone son enfant direct via Slot, qui gère mal un
+                style dynamique par callback ({pressed} => {...}) sur cette
+                carte-là précisément — même famille de bug que les tableaux
+                de styles (voir game-grid.tsx/game-shelf.tsx) : la case
+                perdait silencieusement fond/coins/padding, flottant sans
+                fond à côté de "Jeux joués". Un objet statique (pas de
+                callback, pas de retour visuel au tap) est le seul pattern
+                vérifié fiable ici — les deux cases partagent maintenant
+                exactement la même structure interne (en-tête + valeur) pour
+                rester à la même taille. */}
             <Link href="/profile/stats" asChild>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.statTile,
-                  { backgroundColor: theme.backgroundElement },
-                  pressed && styles.pressed,
-                ]}>
+              <Pressable style={{ ...styles.statTile, backgroundColor: theme.backgroundElement }}>
                 <View style={styles.statTileHeader}>
                   <ThemedText type="small" themeColor="textSecondary">
                     Temps de jeu
@@ -96,20 +101,29 @@ export default function ProfileScreen() {
             </Link>
 
             <ThemedView type="backgroundElement" style={styles.statTile}>
-              <ThemedText type="small" themeColor="textSecondary">
-                Jeux joués
-              </ThemedText>
+              <View style={styles.statTileHeader}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Jeux joués
+                </ThemedText>
+              </View>
               <ThemedText type="subtitle" style={styles.statValue}>
                 {libraryGames.length}
               </ThemedText>
             </ThemedView>
           </View>
 
-          <GameShelf title="Jeux suivis" items={libraryGames} emptyLabel="Aucun jeu suivi pour le moment." />
+          <GameShelf
+            title="Jeux joués"
+            items={libraryGames}
+            size="large"
+            emptyLabel="Aucun jeu joué pour le moment."
+            emptyAction={{ label: 'Explorer des jeux', href: '/explorer' }}
+          />
           <GameShelf
             title="Jeux préférés"
             items={favoriteGames}
-            emptyLabel="Ajoute un jeu à tes favoris depuis sa fiche."
+            emptyLabel="Aucun jeu préféré pour le moment."
+            emptyAction={{ label: 'Explorer des jeux', href: '/explorer' }}
           />
 
           <ThemedView type="backgroundElement" style={styles.steamSection}>
@@ -172,12 +186,12 @@ const styles = StyleSheet.create({
   },
   topRow: {
     paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.two,
+    paddingTop: Spacing.four,
   },
   identity: {
     alignItems: 'center',
     gap: Spacing.one,
-    paddingTop: Spacing.two,
+    paddingTop: Spacing.three,
   },
   avatar: {
     width: 64,

@@ -86,14 +86,57 @@ avant de coder Explorer/Profil/Statistiques pour éviter de styliser chaque
   sont non nulles, mais plus la plateforme non plus (retirée des deux
   écrans, contrairement à Profil qui la garde, voir plus bas).
 - **Rangée horizontale** (`GameShelf`, `src/components/game-shelf.tsx`) —
-  Profil (Jeux suivis/Jeux préférés) uniquement désormais : titre de
+  Profil ("Jeux joués"/"Jeux préférés") uniquement désormais : titre de
   section en gras + chevron "›" + scroll horizontal sans indicateur
   visible, plateforme affichée sous le titre (seul contexte à la garder).
-  `FeaturedShelf` (même fichier) est la variante utilisée par "Recommandé
-  pour toi" sur Explorer : cartes `GameCoverFeatured` (plus grandes) avec
-  un badge ("Recommandé") superposé sur la jaquette, jamais de plateforme
-  — délibérément distincte de la grille des 4 autres rangées Explorer
-  plutôt qu'une carte de plus parmi d'autres.
+  Prop `size` ('small', par défaut — utilisée par "Jeux préférés' — ou
+  'large' — "Jeux joués") : cartes `LargeShelfCard` à la même largeur que
+  `GameGrid` (`useGridItemWidth`, exportée depuis `game-grid.tsx` — un seul
+  point de vérité pour cette taille, pas une valeur choisie à part), mais
+  toujours dans un scroll horizontal, pas une grille qui retourne à la
+  ligne (le Profil reste un aperçu). `emptyAction` (optionnel) affiche un
+  lien vers Explorer sous le message d'état vide — un nouvel utilisateur
+  sans jeu joué/favori voit un vrai point de départ plutôt qu'un texte
+  explicatif suivi de rien à faire. `FeaturedShelf` (même fichier) est la
+  variante utilisée par "Recommandé pour toi" sur Explorer : cartes
+  `GameCoverFeatured` (plus grandes) avec un badge ("Recommandé") superposé
+  sur la jaquette, jamais de plateforme — délibérément distincte de la
+  grille des 4 autres rangées Explorer plutôt qu'une carte de plus parmi
+  d'autres. Titres de section en accent (`FeaturedShelf`, et les 4 rangées
+  génériques d'Explorer) plutôt que la couleur de texte par défaut :
+  manquaient de contraste en sombre (blanc/gris clair sur fond quasi noir),
+  et l'accent est déjà la couleur du badge "Recommandé"/du cœur favori —
+  cohérence en plus de la lisibilité. Les titres de Profil ("Jeux joués"/
+  "Jeux préférés") gardent la couleur par défaut, non concernés par ce
+  changement.
+
+**`<Link asChild>` et styles dynamiques — piège React Native/expo-router
+récurrent** : `Link asChild` clone son enfant direct via `Slot`, qui ne
+gère de façon fiable qu'un `style` **objet statique** sur ce enfant. Deux
+variantes du même problème rencontrées ce round, sur des composants
+différents :
+- Un `style` sous forme de **tableau** (`[styles.x, condition && styles.y]`)
+  fait planter le rendu web ("You are passing an array of styles to a
+  child of `<Slot>`" — voir §10, `GameGrid`).
+- Un `style` sous forme de **fonction** (`({pressed}) => ({...})`, même
+  quand elle renvoie un objet propre, sans tableau) ne plante pas mais
+  applique la largeur/le fond de façon incohérente selon la position de la
+  carte dans une liste horizontale (`FlatList horizontal`) — chaque carte
+  affectée retombant sur la taille de son propre contenu. Trouvé sur
+  `LargeShelfCard` (Profil, "Jeux joués" : les cartes rétrécissaient une
+  par une après les deux premières) et sur la carte "Temps de jeu" du
+  Profil (fond/coins/padding disparus, alors que "Jeux joués" juste à côté,
+  un simple `ThemedView` non concerné par `Link asChild`, restait correct).
+
+Le seul pattern vérifié fiable : un objet **littéral**, calculé à chaque
+rendu si besoin (`{ ...styles.x, largeurDynamique }`), jamais enveloppé
+dans un tableau ni dans une fonction — au prix de renoncer au retour
+visuel "opacité au clic" (`pressed`) sur ces cartes précises, qui n'a pas
+paru essentiel comparé à la fiabilité de la mise en page. `GameGridCard`
+(`game-grid.tsx`) suit ce pattern depuis le début et n'a jamais eu ce
+problème ; `ShelfCard`/`LargeShelfCard`/`FeaturedCard`
+(`game-shelf.tsx`) et la carte "Temps de jeu" du Profil ont été alignés
+dessus après coup.
 
 ## 3. Expo (managé) plutôt que React Native CLI (bare) ✅
 
@@ -302,7 +345,13 @@ manuelle reste le seul chemin, exactement comme avant cette intégration.
 `store.importAchievements` **remplace** entièrement la liste par celle de
 Steam (source faisant autorité une fois le compte lié) plutôt que de la
 fusionner avec les entrées manuelles, avec un id dérivé de l'`apiname`
-Steam (stable) pour qu'un second import ne duplique rien.
+Steam (stable) pour qu'un second import ne duplique rien. Remplacer étant
+irréversible pour des succès cochés à la main, une confirmation
+(`Alert.alert`) s'affiche avant l'import **seulement** si la liste actuelle
+n'est pas vide — un premier import sur un jeu sans succès suivis n'a rien à
+perdre, pas besoin de confirmer. Pendant l'import, un `ActivityIndicator`
+accompagne le libellé déjà explicite du bouton (délai possible au réveil
+du service, voir plus bas).
 
 Statut réel : `gamelary-api` est poussé sur GitHub, déployé sur Render
 (`https://gamelary-api.onrender.com`) et **vérifié fonctionnel de bout en
@@ -560,9 +609,15 @@ câblée (voir §2), jaquettes SteamGridDB matchées par app id Steam quand
 IGDB le référence (voir §6.2, plus fiable qu'une recherche par titre),
 déduplication du catalogue découvert avec `tracked-games.ts`
 (`resolveCatalogId`, voir §6.1), champ "Lier mon compte Steam" sur le
-Profil et pré-remplissage des succès depuis Steam sur la fiche jeu, backend
-`gamelary-api` déployé sur Render et vérifié fonctionnel de bout en bout
-sur appareil réel (voir §6.3).
+Profil (modifiable/effaçable directement, pas besoin de tout
+réinitialiser — vérifié en direct) et pré-remplissage des succès depuis
+Steam sur la fiche jeu (spinner + confirmation avant d'écraser des succès
+déjà cochés, voir §6.3), backend `gamelary-api` déployé sur Render et
+vérifié fonctionnel de bout en bout sur appareil réel (voir §6.3), "Jeux
+joués" du Profil (renommé depuis "Jeux suivis") à la même taille de carte
+que Bibliothèque/Explorer, états vides avec lien vers Explorer ("Jeux
+joués"/"Jeux préférés" du Profil), titres de section Explorer en accent
+pour le contraste en sombre (voir §2).
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,
@@ -596,6 +651,16 @@ sur appareil réel (voir §6.3).
   resserrant le `lineHeight` de cette lettre au `fontSize` et en désactivant
   `includeFontPadding` (Android ajoute sinon un padding vertical au rendu
   du texte, avec le même effet).
+- Toujours sur `<Link asChild>`, un `style` sous forme de fonction
+  (`({ pressed }) => ({...})`) — donc pas un tableau, cette fois — ne fait
+  pas planter le rendu mais s'applique de façon incohérente sur les cartes
+  d'une `FlatList` horizontale : trouvé sur "Jeux joués" du Profil (cartes
+  à des largeurs différentes selon le titre, retombant sur la taille de
+  leur propre contenu) et sur la case "Temps de jeu" (fond/padding
+  manquants, visible sur appareil réel à côté de "Jeux joués" qui lui en
+  avait). Même famille de piège que le style en tableau ci-dessus, seul
+  fix vérifié fiable dans les deux cas : un objet statique, sans callback
+  ni retour visuel au tap — voir §2.
 
 **Simplifications assumées pour cette itération** :
 - Le menu "⋯" de la fiche jeu (Partager/Arrêter de jouer/Ajouter à une
@@ -603,7 +668,7 @@ sur appareil réel (voir §6.3).
   positionnés approximativement, pas un vrai popover ancré dynamiquement
   (RN n'a pas d'équivalent direct du "clic en dehors pour fermer" du web
   sans mesure de layout supplémentaire).
-- Le chevron "›" du Profil (`GameShelf`, Jeux suivis/Jeux préférés) est
+- Le chevron "›" du Profil (`GameShelf`, Jeux joués/Jeux préférés) est
   pour l'instant purement visuel (pas d'écran "voir tout") — non demandé
   pour cette itération. Les rangées d'Explorer n'en ont plus du tout
   depuis leur passage en grille/mise en avant (voir §2, §6.5) — la grille

@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
 
 import { ExternalLink } from '@/components/external-link';
 import { GameCover } from '@/components/game-cover';
@@ -98,6 +98,30 @@ export default function GameDetailScreen() {
       setImportError(error instanceof Error ? error.message : 'Erreur inconnue');
     } finally {
       setImportingAchievements(false);
+    }
+  }
+
+  // importAchievements remplace entièrement la liste (voir game-store.tsx) :
+  // un import par erreur écraserait silencieusement des succès cochés à la
+  // main. On ne demande confirmation que s'il y a réellement quelque chose
+  // à perdre (liste non vide) — un premier import sur un jeu sans succès
+  // suivis n'a rien à confirmer. hasExistingAchievements capture le
+  // booléen ici (où `game` est déjà non-null) : TypeScript ne fait pas
+  // persister ce narrowing dans une fonction imbriquée définie plus loin.
+  const hasExistingAchievements = game.achievements.length > 0;
+
+  function handleImportPress() {
+    if (hasExistingAchievements) {
+      Alert.alert(
+        'Remplacer les succès existants ?',
+        'Ça va remplacer tes succès actuels par ceux importés depuis Steam.',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Continuer', style: 'destructive', onPress: importFromSteam },
+        ]
+      );
+    } else {
+      importFromSteam();
     }
   }
 
@@ -263,7 +287,11 @@ export default function GameDetailScreen() {
             </Pressable>
           ))}
           {steamAchievementsUrl ? (
-            <Pressable onPress={importFromSteam} disabled={importingAchievements}>
+            <Pressable
+              onPress={handleImportPress}
+              disabled={importingAchievements}
+              style={styles.importRow}>
+              {importingAchievements ? <ActivityIndicator size="small" color={theme.accent} /> : null}
               <ThemedText type="linkPrimary">
                 {importingAchievements
                   ? 'Import en cours (jusqu’à 1 min si le service vient de se réveiller)…'
@@ -381,6 +409,11 @@ export default function GameDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  importRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
   },
   content: {
     padding: Spacing.three,
