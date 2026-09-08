@@ -1,9 +1,11 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 export type OverflowMenuItem = { key: string; label: string; onPress: () => void };
 
@@ -12,20 +14,32 @@ export type OverflowMenuItem = { key: string; label: string; onPress: () => void
 // direct du "clic en dehors pour fermer" du web sans écouteur global, un
 // Modal plein écran donne ce comportement gratuitement (le fond fait office
 // de zone de fermeture). Position approximative sous le bouton (pas de
-// mesure dynamique de son ancrage) : suffisant tant que ce menu n'apparaît
-// qu'au même endroit (en-tête de la fiche jeu).
-export function OverflowMenu({ items }: { items: OverflowMenuItem[] }) {
+// mesure dynamique de son ancrage), réglable via `anchorTop` : le bouton
+// n'apparaît pas toujours à la même hauteur selon l'écran (en-tête de la
+// fiche jeu vs. Profil, voir profile/index.tsx). `icon` optionnel (sinon le
+// glyphe "⋯" par défaut) pour matcher un bouton Ionicons voisin, comme la
+// cloche de notification du Profil.
+export function OverflowMenu({
+  items,
+  icon,
+  anchorTop = 54,
+}: {
+  items: OverflowMenuItem[];
+  icon?: keyof typeof Ionicons.glyphMap;
+  anchorTop?: number;
+}) {
   const [open, setOpen] = useState(false);
+  const theme = useTheme();
 
   return (
     <>
       <Pressable onPress={() => setOpen(true)} hitSlop={8} accessibilityLabel="Plus d'options">
-        <ThemedText type="subtitle">⋯</ThemedText>
+        {icon ? <Ionicons name={icon} size={24} color={theme.text} /> : <ThemedText type="subtitle">⋯</ThemedText>}
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
-          <View style={styles.anchor}>
+          <View style={[styles.anchor, { top: anchorTop }]}>
             <Pressable onPress={(event) => event.stopPropagation()}>
               <ThemedView type="backgroundElement" style={styles.menu}>
                 {items.map((item) => (
