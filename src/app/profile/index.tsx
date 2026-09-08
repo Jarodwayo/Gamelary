@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameShelf } from '@/components/game-shelf';
+import { OverflowMenu, type OverflowMenuItem } from '@/components/overflow-menu';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Fonts, Spacing } from '@/constants/theme';
@@ -18,6 +19,11 @@ import { useGameStore } from '@/lib/game-store';
 const DISPLAY_NAME = 'Joueur';
 const DISPLAY_HANDLE = '@joueur';
 
+// Un peu plus que Spacing.four : la cloche/le menu du haut restaient trop
+// collés en haut de l'écran (SafeAreaView sans l'edge 'top', voir plus
+// bas) — ajustement fin, pas un repositionnement radical.
+const TOP_ROW_PADDING_TOP = Spacing.five;
+
 export default function ProfileScreen() {
   const store = useGameStore();
   const theme = useTheme();
@@ -25,6 +31,11 @@ export default function ProfileScreen() {
   const libraryGames = games.filter((game) => game.inLibrary);
   const favoriteIds = store.lists.favoris?.gameIds ?? [];
   const favoriteGames = favoriteIds.map((id) => store.games[id]).filter((game): game is NonNullable<typeof game> => Boolean(game));
+  // "100%" = au moins un succès suivi, et tous cochés — un jeu sans aucun
+  // succès saisi n'est pas "terminé", juste pas encore renseigné.
+  const completedGames = libraryGames.filter(
+    (game) => game.achievements.length > 0 && game.achievements.every((a) => a.unlocked)
+  );
 
   const totalHours = libraryGames.reduce((sum, game) => sum + hoursInPeriod(game.playSessions, 'all'), 0);
 
@@ -42,16 +53,42 @@ export default function ProfileScreen() {
     setEditingSteamId(false);
   }
 
+  // Contenu de chaque option pas encore développé (pas d'écran "Paramètres
+  // du profil"/"Paramètres"/"Aide" dédié) — seule l'interface du menu est
+  // demandée pour cette itération, voir ARCHITECTURE.md §9/§10.
+  const profileMenuItems: OverflowMenuItem[] = [
+    { key: 'profile-settings', label: 'Paramètres du profil', onPress: () => {} },
+    { key: 'settings', label: 'Paramètres', onPress: () => {} },
+    { key: 'help', label: 'Aide', onPress: () => {} },
+  ];
+  // Sous topRow (TOP_ROW_PADDING_TOP + hauteur d'icône 24px), pour ancrer le
+  // menu juste sous le bouton plutôt qu'à la hauteur (différente) de la
+  // fiche jeu (voir overflow-menu.tsx, valeur par défaut 54).
+  const topRowMenuAnchorTop = TOP_ROW_PADDING_TOP + 24 + Spacing.two;
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
-        <ScrollView contentContainerStyle={styles.content}>
+        {/* automaticallyAdjustKeyboardInsets (iOS) : sans lui, le champ
+            SteamID64 (tout en bas du ScrollView, voir steamSection) se
+            retrouvait caché sous le clavier numérique dès la saisie — les
+            chiffres tapés s'affichaient bien dans le champ, mais le champ
+            lui-même n'était plus visible pour les relire/les corriger. RN
+            décale et fait défiler automatiquement vers le champ actif
+            plutôt qu'un KeyboardAvoidingView manuel ici. */}
+        <ScrollView contentContainerStyle={styles.content} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
           <View style={styles.topRow}>
             <Link href="/profile/notifications" asChild>
               <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="Notifications">
                 <Ionicons name="notifications-outline" size={24} color={theme.text} />
               </Pressable>
             </Link>
+            {/* Symétrique de la cloche : même ligne, même marge horizontale
+                (topRow.paddingHorizontal, commune aux deux) que la cloche
+                à gauche. Options pas encore branchées (pas d'écrans dédiés
+                pour l'instant) — seule l'interface du menu est demandée à
+                ce stade. */}
+            <OverflowMenu icon="ellipsis-horizontal" anchorTop={topRowMenuAnchorTop} items={profileMenuItems} />
           </View>
 
           <View style={styles.identity}>
@@ -122,8 +159,15 @@ export default function ProfileScreen() {
           <GameShelf
             title="Jeux préférés"
             items={favoriteGames}
+            size="large"
             emptyLabel="Aucun jeu préféré pour le moment."
             emptyAction={{ label: 'Explorer des jeux', href: '/explorer' }}
+          />
+          <GameShelf
+            title="Jeux terminés à 100%"
+            items={completedGames}
+            size="large"
+            emptyLabel="Aucun jeu terminé à 100% pour le moment."
           />
 
           <ThemedView type="backgroundElement" style={styles.steamSection}>
@@ -141,6 +185,7 @@ export default function ProfileScreen() {
                   placeholder="SteamID64 (ex. 76561197960287930)"
                   placeholderTextColor={theme.textSecondary}
                   keyboardType="number-pad"
+                  autoFocus
                   style={[styles.steamInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
                 />
                 <Pressable onPress={confirmSteamId} hitSlop={8}>
@@ -185,8 +230,14 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
   },
   topRow: {
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.four,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    // Même paddingHorizontal des deux côtés : garde la cloche (gauche) et
+    // le menu "⋯" (droite) à une marge symétrique par construction, plutôt
+    // que deux valeurs choisies séparément.
+    paddingHorizontal: Spacing.four,
+    paddingTop: TOP_ROW_PADDING_TOP,
   },
   identity: {
     alignItems: 'center',
@@ -239,9 +290,6 @@ const styles = StyleSheet.create({
     // Nombre tabulaire (voir ARCHITECTURE.md §2) : IBM Plex Mono plutôt
     // que la police de titre habituelle, en dehors du type="subtitle".
     fontFamily: Fonts.mono.semiBold,
-  },
-  pressed: {
-    opacity: 0.7,
   },
   steamSection: {
     marginHorizontal: Spacing.three,

@@ -617,7 +617,17 @@ vérifié fonctionnel de bout en bout sur appareil réel (voir §6.3), "Jeux
 joués" du Profil (renommé depuis "Jeux suivis") à la même taille de carte
 que Bibliothèque/Explorer, états vides avec lien vers Explorer ("Jeux
 joués"/"Jeux préférés" du Profil), titres de section Explorer en accent
-pour le contraste en sombre (voir §2).
+pour le contraste en sombre (voir §2), "Jeux préférés" du Profil à la même
+taille de carte que "Jeux joués", troisième rangée Profil "Jeux terminés à
+100%" (jeux dont tous les succès suivis sont cochés — voir §6.6), compteur
+de jeux à côté du titre de chaque rangée du Profil (avant le chevron, même
+motif que les apps de séries/films), menu "⋯" du Profil (`OverflowMenu`,
+même composant que celui de la fiche jeu, avec une icône Ionicons et une
+position d'ancrage configurables) symétrique à la cloche de notification —
+interface seulement, ses options ("Paramètres du profil", "Paramètres",
+"Aide") n'ouvrent encore rien (pas d'écran dédié), et champ SteamID64 gardé
+visible au-dessus du clavier pendant la saisie (`automaticallyAdjustKeyboardInsets`
+sur le `ScrollView` du Profil).
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,
@@ -661,13 +671,26 @@ pour le contraste en sombre (voir §2).
   avait). Même famille de piège que le style en tableau ci-dessus, seul
   fix vérifié fiable dans les deux cas : un objet statique, sans callback
   ni retour visuel au tap — voir §2.
+- Le champ de saisie du SteamID64 (Profil) se retrouvait caché sous le
+  clavier numérique pendant la frappe : les chiffres tapés s'y affichaient
+  bien (le `TextInput` est correctement contrôlé), mais le champ étant tout
+  en bas d'un long `ScrollView`, rien ne le faisait remonter au-dessus du
+  clavier — impossible de relire/corriger sans tout effacer. Corrigé avec
+  `automaticallyAdjustKeyboardInsets` sur le `ScrollView` du Profil (décale
+  et fait défiler automatiquement vers le champ actif, sans
+  `KeyboardAvoidingView` manuel) et `autoFocus` sur le champ pour l'amener
+  hors champ dès l'entrée en édition.
 
 **Simplifications assumées pour cette itération** :
 - Le menu "⋯" de la fiche jeu (Partager/Arrêter de jouer/Ajouter à une
   liste) et la modale de sélection de listes sont des `Modal` React Native
   positionnés approximativement, pas un vrai popover ancré dynamiquement
   (RN n'a pas d'équivalent direct du "clic en dehors pour fermer" du web
-  sans mesure de layout supplémentaire).
+  sans mesure de layout supplémentaire). Le nouveau menu "⋯" du Profil
+  réutilise ce même composant (`OverflowMenu`) ; ses trois options
+  ("Paramètres du profil", "Paramètres", "Aide") sont pour l'instant des
+  entrées sans effet (pas d'écran associé) — seule l'interface du menu
+  était demandée pour cette itération.
 - Le chevron "›" du Profil (`GameShelf`, Jeux joués/Jeux préférés) est
   pour l'instant purement visuel (pas d'écran "voir tout") — non demandé
   pour cette itération. Les rangées d'Explorer n'en ont plus du tout

@@ -102,7 +102,15 @@ export function GameShelf({ title, items, emptyLabel, emptyAction, onSeeAll, siz
         style={styles.shelfHead}
         accessibilityRole={onSeeAll ? 'button' : undefined}>
         <ThemedText type="smallBold">{title}</ThemedText>
-        <ThemedText themeColor="textSecondary">›</ThemedText>
+        {/* Compteur avant le chevron, même motif que les apps de séries/
+            films pour une catégorie ("Séries    124 ›") : le nombre de jeux
+            de la rangée plutôt qu'un simple chevron nu. */}
+        <View style={styles.shelfHeadCount}>
+          <ThemedText type="small" themeColor="textSecondary">
+            {items.length}
+          </ThemedText>
+          <ThemedText themeColor="textSecondary">›</ThemedText>
+        </View>
       </Pressable>
       {items.length === 0 && emptyLabel ? (
         <View style={styles.emptyWrap}>
@@ -211,6 +219,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.three,
+  },
+  shelfHeadCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
   },
   emptyWrap: {
     paddingHorizontal: Spacing.three,
