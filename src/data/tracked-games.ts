@@ -33,12 +33,20 @@ export type TrackedGame = {
   // pré-sélectionne un favori par défaut pour la démo (l'utilisateur peut
   // en choisir un autre depuis la fiche jeu). Absent = aucun favori choisi.
   favoriteTrackTitle?: string;
+  // true = fait partie des jeux ajoutés à la bibliothèque dès le premier
+  // lancement (voir seedStore, game-store.tsx). false/absent = bande
+  // originale curatée disponible si l'utilisateur tombe sur ce jeu via
+  // Explorer/recherche (voir resolveCatalogId plus bas), mais pas ajouté
+  // d'office — une entrée ici n'implique pas automatiquement une place
+  // dans la bibliothèque de démonstration.
+  demoSeed?: boolean;
 };
 
 export const trackedGames: TrackedGame[] = [
   {
     id: 'hollow-knight',
     igdbTitle: 'Hollow Knight',
+    demoSeed: true,
     achievements: [
       { name: 'Old Nail', unlocked: true },
       { name: 'Sharpened Nail', unlocked: true },
@@ -54,6 +62,8 @@ export const trackedGames: TrackedGame[] = [
       { title: 'Hollow Knight', artist: 'Christopher Larkin' },
       { title: 'City of Tears', artist: 'Christopher Larkin' },
       { title: 'Greenpath', artist: 'Christopher Larkin' },
+      { title: 'Resting Grounds', artist: 'Christopher Larkin' },
+      { title: "Grimm's Theme", artist: 'Christopher Larkin' },
       { title: 'Hornet', artist: 'Christopher Larkin' },
       { title: 'Radiance', artist: 'Christopher Larkin' },
     ],
@@ -61,6 +71,7 @@ export const trackedGames: TrackedGame[] = [
   },
   {
     id: 'elden-ring',
+    demoSeed: true,
     igdbTitle: 'Elden Ring',
     achievements: [
       { name: 'Age of Fracture', unlocked: true },
@@ -77,6 +88,7 @@ export const trackedGames: TrackedGame[] = [
     tracks: [
       { title: 'Main Theme', artist: 'Yuka Kitamura' },
       { title: 'Great Runes', artist: 'Yuka Kitamura' },
+      { title: 'Leyndell, Royal Capital', artist: 'Yuka Kitamura' },
       { title: 'Malenia, Blade of Miquella', artist: 'Yuka Kitamura' },
       { title: 'Radagon and the Elden Beast', artist: 'Yuka Kitamura' },
       { title: 'Godrick the Grafted', artist: 'Shoi Miyazawa' },
@@ -84,6 +96,7 @@ export const trackedGames: TrackedGame[] = [
   },
   {
     id: 'celeste',
+    demoSeed: true,
     igdbTitle: 'Celeste',
     achievements: [
       { name: 'Forsaken City', unlocked: true },
@@ -98,12 +111,14 @@ export const trackedGames: TrackedGame[] = [
       { title: 'First Steps', artist: 'Lena Raine' },
       { title: 'Resurrections', artist: 'Lena Raine' },
       { title: 'Anxiety', artist: 'Lena Raine' },
+      { title: 'Confronting Myself', artist: 'Lena Raine' },
       { title: 'Golden', artist: 'Lena Raine' },
     ],
     favoriteTrackTitle: 'Reach for the Summit',
   },
   {
     id: 'hades',
+    demoSeed: true,
     igdbTitle: 'Hades',
     achievements: [
       { name: 'First Escape Attempt', unlocked: true },
@@ -120,6 +135,7 @@ export const trackedGames: TrackedGame[] = [
       { title: 'In the Blood', artist: 'Darren Korb' },
       { title: 'God of the Dead', artist: 'Darren Korb' },
       { title: 'The Unseen Ones', artist: 'Darren Korb' },
+      { title: 'Lament of Orpheus', artist: 'Darren Korb' },
       { title: 'Rally the Sirens', artist: 'Darren Korb' },
       { title: 'Good Riddance', artist: 'Darren Korb' },
     ],
@@ -127,6 +143,7 @@ export const trackedGames: TrackedGame[] = [
   },
   {
     id: 'zelda-botw',
+    demoSeed: true,
     igdbTitle: 'The Legend of Zelda: Breath of the Wild',
     achievements: [],
     tracks: [
@@ -134,11 +151,13 @@ export const trackedGames: TrackedGame[] = [
       { title: 'Hyrule Field', artist: 'Manaka Kataoka' },
       { title: 'Rito Village', artist: 'Manaka Kataoka' },
       { title: "Kass' Theme", artist: 'Manaka Kataoka' },
+      { title: 'Gerudo Town', artist: 'Manaka Kataoka' },
       { title: "Zelda's Lament", artist: 'Manaka Kataoka' },
     ],
   },
   {
     id: 'stardew-valley',
+    demoSeed: true,
     igdbTitle: 'Stardew Valley',
     achievements: [
       { name: 'Greenhorn', unlocked: true },
@@ -153,10 +172,60 @@ export const trackedGames: TrackedGame[] = [
     tracks: [
       { title: 'Stardew Valley Overture', artist: 'ConcernedApe' },
       { title: 'Pelican Town', artist: 'ConcernedApe' },
+      { title: 'Spring (The Valley Comes Alive)', artist: 'ConcernedApe' },
       { title: "It's Rainin' Cats and Dogs...", artist: 'ConcernedApe' },
       { title: "The Ocean's Dreams", artist: 'ConcernedApe' },
       { title: 'The Smell of Fall Air', artist: 'ConcernedApe' },
     ],
+  },
+  {
+    id: 'the-witcher-3-wild-hunt',
+    igdbTitle: 'The Witcher 3: Wild Hunt',
+    achievements: [],
+    tracks: [
+      { title: 'The Trail', artist: 'Percival' },
+      { title: 'Geralt of Rivia', artist: 'Marcin Przybyłowicz' },
+      { title: 'Silver for Monsters', artist: 'Percival' },
+      { title: 'Steel for Humans', artist: 'Percival' },
+      { title: 'Ladies of the Wood', artist: 'Percival' },
+    ],
+    favoriteTrackTitle: 'The Trail',
+  },
+  {
+    id: 'undertale',
+    igdbTitle: 'Undertale',
+    achievements: [],
+    tracks: [
+      { title: 'Once Upon a Time', artist: 'Toby Fox' },
+      { title: 'Megalovania', artist: 'Toby Fox' },
+      { title: 'Snowdin Town', artist: 'Toby Fox' },
+      { title: 'His Theme', artist: 'Toby Fox' },
+      { title: 'Hopes and Dreams', artist: 'Toby Fox' },
+    ],
+    favoriteTrackTitle: 'Megalovania',
+  },
+  {
+    id: 'cuphead',
+    igdbTitle: 'Cuphead',
+    achievements: [],
+    tracks: [
+      { title: "Don't Deal with the Devil", artist: 'Kristofer Maddigan' },
+      { title: 'Floral Fury', artist: 'Kristofer Maddigan' },
+      { title: 'Fiery Frolic', artist: 'Kristofer Maddigan' },
+      { title: "Threatenin' Zeppelin", artist: 'Kristofer Maddigan' },
+    ],
+  },
+  {
+    id: 'journey',
+    igdbTitle: 'Journey',
+    achievements: [],
+    tracks: [
+      { title: 'Nascence', artist: 'Austin Wintory' },
+      { title: 'The Call', artist: 'Austin Wintory' },
+      { title: 'Apotheosis', artist: 'Austin Wintory' },
+      { title: 'I Was Born for This', artist: 'Austin Wintory' },
+    ],
+    favoriteTrackTitle: 'I Was Born for This',
   },
 ];
 

@@ -39,22 +39,61 @@ avant de coder Explorer/Profil/Statistiques pour éviter de styliser chaque
   ne rend rien tant que les polices ne sont pas prêtes — le splash natif
   reste affiché le temps du chargement plutôt que de montrer un flash de
   police système avant bascule sur la police custom.
-- **Carte de jeu** : `GameCover` (`src/components/game-cover.tsx`) rend la
-  jaquette à une **taille fixe unique dans toute l'app** (56×74, coins 8px),
-  sans prop `size`/`style` pour la moduler — ni ratio 2:3 approximatif ni
-  gabarits `small`/`large` comme dans une itération précédente, qui avaient
-  fini par produire des jaquettes incohérentes (démesurées sur certains
-  écrans) faute d'un point de vérité unique. Deux agencements réutilisent
-  cette même jaquette sans jamais la redimensionner :
-  - **Rangée horizontale** (`GameShelf`, `src/components/game-shelf.tsx`) —
-    Explorer, Profil (Jeux suivis/Jeux préférés) : titre de section en gras
-    + chevron "›" + scroll horizontal sans indicateur visible ; la colonne
-    de chaque carte (84px) est un peu plus large que la jaquette pour que
-    le titre en dessous reste lisible, sans agrandir la jaquette elle-même.
-  - **Liste verticale compacte** (`GameList`, `src/components/game-list.tsx`)
-    — Bibliothèque : une ligne par jeu (jaquette + titre + plateforme +
-    heures jouées si non nulles + indicateur de complétion à droite),
-    densité d'information élevée plutôt que de grandes jaquettes empilées.
+- **Carte de jeu** (`src/components/game-cover.tsx`) : trois tailles fixes
+  déclarées une seule fois, chacune sans prop `size`/`style` pour la
+  moduler au cas par cas — ni ratio approximatif ni gabarits ad hoc par
+  écran comme dans une itération précédente, qui avaient fini par produire
+  des jaquettes incohérentes (démesurées sur certains écrans) faute d'un
+  point de vérité unique par contexte. Les trois partagent la même logique
+  de chargement/repli (`CoverImageOrPlaceholder`, factorisée une seule
+  fois) : jaquette réelle si `/api/cover` en a trouvé une, sinon
+  placeholder coloré + initiales (couleur dérivée d'un hash du titre) —
+  avec repli automatique sur ce même placeholder si l'image trouvée existe
+  bien mais échoue à charger (`onError`), pas seulement si elle est
+  introuvable.
+  - **`GameCover`** (56×74, coins 8px) — recherche, fiche jeu : la seule
+    à garder une taille strictement fixe en pixels, ces deux écrans ne
+    listant jamais plusieurs jeux côte à côte.
+  - **`GameCoverGrid`** (`width: 100%`, ratio 2:3, coins 10px) — grille
+    murale (`GameGrid`, voir plus bas) : pas de largeur fixe en pixels,
+    c'est la grille (3 colonnes fixes partout où elle est utilisée) qui la
+    détermine, jamais un appelant au cas par cas.
+  - **`GameCoverFeatured`** (140×210, coins 12px) — rangée "Recommandé pour
+    toi" d'Explorer (`FeaturedShelf`, voir plus bas), seule mise en avant
+    plus grande que le reste.
+- **Titres longs** (`formatGameTitle`, `src/lib/game-title.ts`) : beaucoup
+  de titres suivent "Titre : Sous-titre" (éditions/remasters/AAA récents) ;
+  le retour à la ligne naturel d'un `Text` (au premier espace qui déborde)
+  tombait souvent au milieu du sous-titre plutôt qu'après les deux-points,
+  illisible dans une carte étroite. Retour à la ligne forcé juste après le
+  premier ":" rencontré plutôt que laissé au hasard — jamais de
+  `numberOfLines` sur ces titres (un plafond de lignes fixe tronquait un
+  sous-titre long en plein mot dès qu'il dépassait la limite), un titre
+  long doit toujours se lire en entier.
+- **Grille murale** (`GameGrid`, `src/components/game-grid.tsx`) —
+  Bibliothèque (tous les onglets) et Explorer (sauf "Recommandé pour toi") :
+  3 colonnes, largeur de carte calculée en JS (`useWindowDimensions`,
+  pas en `%`) plutôt qu'un `FlatList numColumns` — évite le piège classique
+  d'une dernière ligne incomplète qui étire ses 1-2 cartes restantes plus
+  large que les autres ; chaque carte garde toujours exactement la même
+  largeur, complète ou non. Un simple `View` en `flexWrap` plutôt qu'un
+  `FlatList` virtualisé : une bibliothèque perso reste de taille modeste
+  (quelques dizaines de jeux), pas besoin de virtualisation, et ça évite
+  d'imbriquer un `FlatList` dans le `ScrollView` d'Explorer (avertissement
+  React Native classique sur les listes virtualisées imbriquées de même
+  orientation). Ni plateforme ni heures affichées sur les cartes Explorer
+  (seulement le titre) — Bibliothèque garde les heures jouées quand elles
+  sont non nulles, mais plus la plateforme non plus (retirée des deux
+  écrans, contrairement à Profil qui la garde, voir plus bas).
+- **Rangée horizontale** (`GameShelf`, `src/components/game-shelf.tsx`) —
+  Profil (Jeux suivis/Jeux préférés) uniquement désormais : titre de
+  section en gras + chevron "›" + scroll horizontal sans indicateur
+  visible, plateforme affichée sous le titre (seul contexte à la garder).
+  `FeaturedShelf` (même fichier) est la variante utilisée par "Recommandé
+  pour toi" sur Explorer : cartes `GameCoverFeatured` (plus grandes) avec
+  un badge ("Recommandé") superposé sur la jaquette, jamais de plateforme
+  — délibérément distincte de la grille des 4 autres rangées Explorer
+  plutôt qu'une carte de plus parmi d'autres.
 
 ## 3. Expo (managé) plutôt que React Native CLI (bare) ✅
 
@@ -219,7 +258,7 @@ détour par Steam plutôt qu'IGDB directement. Limite résiduelle : un jeu
 sans app id Steam (exclusivité console) retombe toujours sur la recherche
 floue par titre, sans désambiguïsation.
 
-### 6.3 Succès — saisie manuelle ✅, pré-remplissage Steam ✅ (code prêt, backend pas encore déployé)
+### 6.3 Succès — saisie manuelle ✅, pré-remplissage Steam ✅
 
 `ISteamUserStats/GetPlayerAchievements` donne les succès débloqués, mais
 **uniquement pour les jeux Steam PC** liés au compte Steam de l'utilisateur
@@ -262,11 +301,18 @@ Steam (source faisant autorité une fois le compte lié) plutôt que de la
 fusionner avec les entrées manuelles, avec un id dérivé de l'`apiname`
 Steam (stable) pour qu'un second import ne duplique rien.
 
-Statut réel : le code (backend + intégration client) est écrit et le
-backend testé en local (clé factice, erreur amont Steam propre) — non
-testé de bout en bout avec une vraie clé/un vrai compte, et pas encore
-déployé sur Render, faute d'accès en écriture de cette session au repo
-`gamelary-api` (permission GitHub à accorder séparément, voir §10).
+Statut réel : `gamelary-api` est poussé sur GitHub, déployé sur Render
+(`https://gamelary-api.onrender.com`) et **vérifié fonctionnel de bout en
+bout sur appareil réel** — `EXPO_PUBLIC_STEAM_API_URL` configurée côté
+Gamelary (`.env` à la racine — valeur publique, pas un secret, voir
+`src/lib/steam-api-url.ts`), import de vrais succès depuis un vrai compte
+Steam confirmé. Seul point notable : le premier import après une période
+d'inactivité peut prendre jusqu'à une minute (mise en veille de l'offre
+gratuite Render, le service redémarre au premier appel) — signalé
+explicitement dans le libellé du bouton pendant l'import plutôt que de
+laisser l'utilisateur croire à un blocage. Ce comportement n'a pas pu être
+observé depuis ce sandbox : son proxy réseau n'autorise que
+`api.igdb.com`/`www.steamgriddb.com` en sortie, pas `onrender.com`.
 
 ### 6.4 Musique préférée — liste + sélection ✅, Spotify Web API ❌ abandonné
 
@@ -291,9 +337,21 @@ Web API since you do not have a Spotify Premium subscription") malgré le
 fait que seule l'API de recherche était visée, jamais la lecture — Spotify
 semble désormais exiger Premium même pour ce flow, contrairement à ce qui
 était attendu. Décision : abandonné plutôt que de dépendre d'un abonnement
-payant pour une fonctionnalité annexe. La liste de pistes seedée à la main
-dans `tracked-games.ts` et la pochette en simple repère visuel restent
-donc l'état définitif de cette itération, pas une étape temporaire.
+payant pour une fonctionnalité annexe.
+
+En remplacement : sélection **manuelle et curatée** — vrais titres/
+compositeurs vérifiés (pas de placeholder du type "Track 1"), saisis à la
+main dans `tracked-games.ts` pour chaque jeu couvert, plutôt qu'une API.
+Limite assumée : ça ne peut couvrir que les jeux effectivement curatés là
+(10 actuellement — les 6 jeux de démo + The Witcher 3: Wild Hunt, Undertale,
+Cuphead, Journey, choisis pour la fiabilité de leurs informations
+publiques), pas les jeux découverts via Explorer/recherche en dehors de
+cette liste (`Game.tracks` reste vide pour eux, voir `useGame`) — élargir
+cette liste reste une simple question de temps de curation, pas un
+obstacle technique. `demoSeed` (voir `tracked-games.ts`) distingue les jeux
+ajoutés d'office à la bibliothèque de démo (les 6 premiers) de ceux qui
+n'ont qu'une bande originale curatée prête si l'utilisateur les rencontre
+autrement.
 
 ### 6.5 Explorer — 5 rangées IGDB ✅
 
@@ -324,6 +382,10 @@ résultats de deux utilisateurs aux bibliothèques différentes.
 
 "Jeux joués par tes amis" volontairement absent de cette liste : ça suppose
 un système de comptes/amis qui n'existe pas encore.
+
+Affichage : "Recommandé pour toi" seule à rester une rangée horizontale
+mise en avant (`FeaturedShelf`), les 4 autres rejoignent une grille murale
+(`GameGrid`) — voir §2 pour le détail des deux composants.
 
 Chaque rangée (`useExploreSection`, `src/hooks/use-explore.ts`) enregistre
 au passage les jeux reçus dans le store (`registerCatalogGame`) : un jeu vu
@@ -365,13 +427,19 @@ pour l'instant.
   le Profil est simplement la liste `favoris` résolue en jeux ; la Wishlist
   est volontairement une liste à part, distincte de la bibliothèque suivie
   — un jeu peut y figurer sans jamais avoir été ajouté à la bibliothèque
-  (`inLibrary: false`, `achievements` vide).
+  (`inLibrary: false`, `achievements` vide). Bascule directe pour `favoris`
+  spécifiquement : icône cœur sur la fiche jeu (`toggleListMembership
+  ('favoris', id)`), en plus de l'entrée générique "Ajouter à une liste" du
+  menu ⋯ — sans ce bouton dédié, marquer un favori demandait de passer par
+  le sélecteur de listes complet pour une action très fréquente.
 - **`settings`** : réglages globaux, pas propres à un jeu — pour l'instant
   seulement `steamId64` (Profil, "Lier mon compte Steam"), utilisé pour
   appeler `gamelary-api` (voir §6.3). Pas une vraie authentification :
   l'utilisateur colle lui-même son SteamID64, jamais vérifié.
 - Seedé une seule fois (premier lancement, avant toute écriture
-  AsyncStorage) à partir des 6 jeux de `tracked-games.ts` (voir §6.3). Clé
+  AsyncStorage) à partir des jeux `demoSeed: true` de `tracked-games.ts`
+  (voir §6.3 et §6.4) — les autres entrées curatées n'y sont que pour leur
+  bande originale, pas ajoutées d'office à la bibliothèque de démo. Clé
   de stockage versionnée (`gamelary/game-store/v5`) : un changement de forme
   du store (ex. le passage `achievementsUnlocked/Total` → `achievements[]`,
   l'ajout de `favoriteTrackId`, `steamAppId` ou `settings`) change la clé
@@ -462,29 +530,33 @@ réservés" — consultable, mais pas réutilisable sans autorisation.
 
 **Fait** : scaffold Expo + TypeScript, navigation complète (3 onglets +
 piles imbriquées), design system clair/sombre (accent/success, voir §2),
-jaquettes réelles via SteamGridDB affichées via un unique composant
-`GameCover` de taille fixe (56×74, voir §2 — plus de variation de taille
-d'un écran à l'autre), catalogue réel via IGDB (recherche par titre et 5
-rangées Explorer), bibliothèque persistée localement (AsyncStorage) avec
-suivi (`inLibrary`/"Arrêter de jouer"), bibliothèque en liste compacte
-filtrable (Tous/Wishlist/Pas commencé/En cours/Terminé — voir §2), notation
-sur 20 + avis texte par jeu, succès nommés et cochables (voir §6.3), heures
-jouées **directement modifiables** (total éditable en un tap, voir §6.6 —
-agrégées Semaine/Mois/Tout et par mois/plateforme sur l'écran Statistiques,
-voir §6.7), bande originale complète par jeu avec sélection de la piste
-favorite depuis un vrai sélecteur en liste sur la fiche jeu (voir §6.4),
-listes personnalisées (Favoris et Wishlist intégrées + création libre)
-accessibles depuis le menu ⋯ de la fiche jeu, recherche IGDB ponctuelle
-(`/library/search`, ouverte depuis un bouton icône dédié en bas à droite,
-clavier ouvert automatiquement), typographie Bricolage Grotesque/IBM Plex
-Mono effectivement installée et câblée (voir §2), jaquettes SteamGridDB
-matchées par app id Steam quand IGDB le référence (voir §6.2, plus fiable
-qu'une recherche par titre), déduplication du catalogue découvert avec
-`tracked-games.ts` (`resolveCatalogId`, voir §6.1), rangée "Recommandé pour
-toi" personnalisée par la plateforme la plus jouée de la bibliothèque
-suivie (voir §6.5), champ "Lier mon compte Steam" sur le Profil et
-pré-remplissage des succès depuis Steam sur la fiche jeu (voir §6.3 —
-code écrit et testé, backend `gamelary-api` pas encore déployé).
+jaquettes réelles via SteamGridDB avec repli automatique sur placeholder si
+l'image échoue à charger (voir §2), catalogue réel via IGDB (recherche par
+titre et 5 rangées Explorer), bibliothèque persistée localement
+(AsyncStorage) avec suivi (`inLibrary`/"Arrêter de jouer"), Bibliothèque et
+Explorer en **grille murale 3 colonnes** filtrable
+(Tous/Wishlist/Pas commencé/En cours/Terminé — voir §2), rangée "Recommandé
+pour toi" mise en avant à part de cette grille (plus grande, badge, voir
+§6.5), titres longs ("Titre : Sous-titre") toujours lisibles en entier
+(retour à la ligne forcé après les deux-points, jamais tronqués — voir §2),
+notation sur 20 + avis texte par jeu, succès nommés et cochables (voir
+§6.3), heures jouées **directement modifiables** (total éditable en un tap,
+voir §6.6 — agrégées Semaine/Mois/Tout et par mois/plateforme sur l'écran
+Statistiques, voir §6.7), bande originale par jeu avec sélection de piste
+favorite (10 jeux curatés, voir §6.4) et bouton cœur dédié sur la fiche jeu
+pour les favoris (voir §6.6), listes personnalisées (Favoris et Wishlist
+intégrées + création libre) accessibles depuis le menu ⋯ de la fiche jeu,
+recherche IGDB ponctuelle (`/library/search`, ouverte depuis un bouton
+icône dédié en bas à droite, clavier ouvert automatiquement), icône
+notification sur le Profil (écran toujours vide pour l'instant, voir §10),
+typographie Bricolage Grotesque/IBM Plex Mono effectivement installée et
+câblée (voir §2), jaquettes SteamGridDB matchées par app id Steam quand
+IGDB le référence (voir §6.2, plus fiable qu'une recherche par titre),
+déduplication du catalogue découvert avec `tracked-games.ts`
+(`resolveCatalogId`, voir §6.1), champ "Lier mon compte Steam" sur le
+Profil et pré-remplissage des succès depuis Steam sur la fiche jeu, backend
+`gamelary-api` déployé sur Render et vérifié fonctionnel de bout en bout
+sur appareil réel (voir §6.3).
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,
@@ -495,12 +567,29 @@ code écrit et testé, backend `gamelary-api` pas encore déployé).
   dynamique.
 - `GameCover` acceptait une taille et un style par consommateur (`size`,
   `style`), ce qui avait fini par produire des jaquettes de tailles très
-  différentes selon l'écran (Explorer et l'onglet "En cours" de la
-  Bibliothèque affichaient des jaquettes plein écran au lieu du format
-  compact de la fiche jeu). Corrigé en supprimant ces props : `GameCover`
-  n'a plus qu'une seule taille fixe (56×74, rayon 8), non configurable —
-  et tous ses consommateurs (`GameList`, `GameShelf`, recherche, fiche jeu)
-  ont été audités pour ne plus lui passer d'override.
+  différentes selon l'écran. Corrigé en remplaçant ces props par trois
+  composants séparés (`GameCover`/`GameCoverGrid`/`GameCoverFeatured`),
+  chacun avec sa propre taille fixe non configurable, réutilisés
+  exactement là où ils correspondent au bon agencement — voir §2.
+- Sur `<Link asChild>`, un enfant direct (`Pressable`) avec un `style` sous
+  forme de tableau (`[styles.card, { width }]`) fait planter le rendu web
+  ("You are passing an array of styles to a child of `<Slot>`") — trouvé en
+  testant la nouvelle grille dans un navigateur réel. Corrigé en fusionnant
+  le style en un seul objet (`{ ...styles.card, width }`) plutôt qu'un
+  tableau, dans `GameGrid`.
+- Un titre affiché avec `numberOfLines` fixe (ex. 2 ou 3) pouvait tronquer
+  un sous-titre long en plein mot dès qu'il dépassait le nombre de lignes
+  autorisées, malgré le retour à la ligne forcé après les deux-points.
+  Retiré des cartes de grille et de la rangée mise en avant : un titre long
+  doit toujours se lire en entier.
+- L'initiale de l'avatar (Profil) était rognée par le cercle qui la
+  contient : `type="subtitle"` porte un `lineHeight` (44) pensé pour un
+  vrai sous-titre multi-mots, pas pour une seule lettre centrée dans un
+  cercle de 64px, ce que la police custom (Bricolage Grotesque, voir §2)
+  a rendu plus visible qu'avec les polices système précédentes. Corrigé en
+  resserrant le `lineHeight` de cette lettre au `fontSize` et en désactivant
+  `includeFontPadding` (Android ajoute sinon un padding vertical au rendu
+  du texte, avec le même effet).
 
 **Simplifications assumées pour cette itération** :
 - Le menu "⋯" de la fiche jeu (Partager/Arrêter de jouer/Ajouter à une
@@ -508,27 +597,28 @@ code écrit et testé, backend `gamelary-api` pas encore déployé).
   positionnés approximativement, pas un vrai popover ancré dynamiquement
   (RN n'a pas d'équivalent direct du "clic en dehors pour fermer" du web
   sans mesure de layout supplémentaire).
-- Le chevron "›" des rangées Explorer/Profil est pour l'instant purement
-  visuel (pas d'écran "voir tout" par section) — non demandé pour cette
-  itération.
+- Le chevron "›" du Profil (`GameShelf`, Jeux suivis/Jeux préférés) est
+  pour l'instant purement visuel (pas d'écran "voir tout") — non demandé
+  pour cette itération. Les rangées d'Explorer n'en ont plus du tout
+  depuis leur passage en grille/mise en avant (voir §2, §6.5) — la grille
+  affiche déjà plusieurs jeux à la fois, l'affordance "voir tout" a moins
+  de sens qu'avant.
 - "Plateformes les plus jouées" plutôt que "genres" sur l'écran
   Statistiques (voir §6.7) — la donnée existe déjà, pas besoin d'étendre
   les requêtes IGDB pour cette itération.
-
-**Steam Web API — code prêt, déploiement bloqué** (voir §6.3) : le backend
-[gamelary-api](https://github.com/Jarodwayo/gamelary-api) et l'intégration
-côté Gamelary (champ SteamID64 sur le Profil, bouton "Pré-remplir depuis
-Steam" sur la fiche jeu) sont écrits et le backend testé en local. Reste
-bloqué sur deux points, aucun des deux n'étant un manque de code :
-1. Cette session n'a pas les droits d'écriture GitHub sur ce nouveau repo
-   (l'app Claude n'y est pas installée) — le premier commit ne peut donc
-   pas être poussé depuis ici, à débloquer en autorisant l'app sur ce repo
-   ou en le poussant manuellement.
-2. Une fois poussé, il reste à le déployer (Render, voir le README du
-   repo) et à renseigner `STEAM_API_KEY` (clé personnelle Steam, dans les
-   variables d'environnement Render — jamais dans ce sandbox ni dans un
-   repo Git) et `EXPO_PUBLIC_STEAM_API_URL` côté Gamelary (l'URL Render
-   obtenue).
+- Icône notification (Profil, en haut à gauche) : l'écran qu'elle ouvre
+  est toujours vide ("Aucune notification") puisqu'il n'y a pas de système
+  d'abonnés pour produire de vraies notifications (voir "Plus tard" ci-
+  dessous) — ajoutée maintenant pour ne pas avoir à retoucher la
+  navigation quand ce système arrivera. Limite connue, web uniquement : le
+  fallback web de la barre d'onglets (`app-tabs.web.tsx`) est un bandeau
+  `position: absolute` superposé en haut de chaque écran, qui recouvre
+  cette icône (et plus généralement le tout début du contenu de tout
+  écran) sur cette plateforme — sans effet sur natif (barre d'onglets
+  réellement en bas, aucun élément ne recouvre le haut de l'écran), la
+  plateforme visée en priorité (voir §1) ; non corrigé ici, la même
+  superposition affecte déjà tous les titres de page sur web et
+  dépasserait la portée de cette itération.
 
 **Spotify Web API — abandonné** (voir §6.4) : Spotify bloque la création
 de l'app Developer sans abonnement Premium, y compris pour le flow
@@ -547,6 +637,21 @@ IGDB/SteamGridDB.
 **Prochaines étapes** (pas de blocage technique, juste pas encore fait) :
 éventuellement un vrai popover ancré pour le menu "⋯"/sélecteur de listes
 plutôt que le `Modal` positionné approximativement actuel, un écran "voir
-tout" derrière le chevron "›" des rangées, étendre les requêtes IGDB avec
+tout" derrière le chevron "›" du Profil, étendre les requêtes IGDB avec
 `genres` pour afficher de vrais genres sur l'écran Statistiques plutôt que
-les plateformes.
+les plateformes, étendre la bande originale curatée (§6.4) à davantage de
+jeux.
+
+**Plus tard (backlog, pas pour cette itération)** :
+- **Système d'abonnés/abonnements entre utilisateurs** — condition
+  préalable à de vraies notifications d'activité (l'icône du Profil,
+  voir plus haut, et les compteurs "Abonnements"/"Abonné" figés à 0
+  existent déjà côté UI, en attente de ce système) et à "Jeux joués par
+  tes amis" sur Explorer (voir §6.5).
+- **Connexion/création de compte** (Google, numéro de téléphone, ou email
+  classique) — condition préalable à tout ce qui précède : sans compte,
+  pas de notion d'"abonné à qui" ; c'est aussi ce qui manque pour que
+  l'app cesse d'être mono-utilisateur (voir §9/§10, `DISPLAY_NAME`
+  actuellement une constante) et pour que `store.settings.steamId64`
+  devienne une vraie liaison de compte plutôt qu'un champ collé à la
+  main.

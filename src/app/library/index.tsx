@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { GameList } from '@/components/game-list';
+import { GameGrid, type GridItem } from '@/components/game-grid';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useGameStore, type StoredGame } from '@/lib/game-store';
+import { hoursInPeriod } from '@/lib/hours';
 
 type LibraryFilter = 'all' | 'wishlist' | 'not-started' | 'in-progress' | 'completed';
 
@@ -64,40 +65,54 @@ export default function LibraryScreen() {
   const theme = useTheme();
   const [filter, setFilter] = useState<LibraryFilter>('all');
   const ids = filterIds(filter, store.games, store.lists.wishlist?.gameIds ?? []);
+  // Pas de platform (voir GridItem, game-grid.tsx — retiré volontairement
+  // des cartes de grille) ; hours vient de playSessions, jamais stocké à
+  // part, comme partout ailleurs dans l'app.
+  const items: GridItem[] = ids
+    .map((id) => store.games[id])
+    .filter((game): game is StoredGame => Boolean(game))
+    .map((game) => ({
+      id: game.id,
+      title: game.title,
+      steamAppId: game.steamAppId,
+      hours: hoursInPeriod(game.playSessions, 'all'),
+    }));
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
-        <GameList
-          ids={ids}
-          emptyLabel={EMPTY_LABELS[filter]}
-          header={
-            <View>
-              <ThemedText type="title" style={styles.header}>
-                Bibliothèque
-              </ThemedText>
-              <View style={styles.filterRow}>
-                {FILTERS.map(({ key, label }) => {
-                  const active = key === filter;
-                  return (
-                    <Pressable
-                      key={key}
-                      onPress={() => setFilter(key)}
-                      style={[
-                        styles.filterPill,
-                        { borderColor: theme.backgroundSelected },
-                        active && { backgroundColor: theme.accent, borderColor: theme.accent },
-                      ]}>
-                      <ThemedText type="small" themeColor={active ? 'accentInk' : 'textSecondary'}>
-                        {label}
-                      </ThemedText>
-                    </Pressable>
-                  );
-                })}
+        <ScrollView contentContainerStyle={styles.content}>
+          <GameGrid
+            items={items}
+            emptyLabel={EMPTY_LABELS[filter]}
+            header={
+              <View>
+                <ThemedText type="title" style={styles.header}>
+                  Bibliothèque
+                </ThemedText>
+                <View style={styles.filterRow}>
+                  {FILTERS.map(({ key, label }) => {
+                    const active = key === filter;
+                    return (
+                      <Pressable
+                        key={key}
+                        onPress={() => setFilter(key)}
+                        style={[
+                          styles.filterPill,
+                          { borderColor: theme.backgroundSelected },
+                          active && { backgroundColor: theme.accent, borderColor: theme.accent },
+                        ]}>
+                        <ThemedText type="small" themeColor={active ? 'accentInk' : 'textSecondary'}>
+                          {label}
+                        </ThemedText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
-            </View>
-          }
-        />
+            }
+          />
+        </ScrollView>
       </SafeAreaView>
     </ThemedView>
   );
@@ -110,15 +125,20 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
+  content: {
+    paddingBottom: BottomTabInset + Spacing.four,
+  },
   header: {
     fontSize: 28,
     lineHeight: 34,
+    paddingHorizontal: Spacing.three,
     paddingTop: Spacing.three,
   },
   filterRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.three,
   },
   filterPill: {

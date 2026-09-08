@@ -49,6 +49,7 @@ export default function GameDetailScreen() {
   }
 
   const totalHours = hoursInPeriod(game.playSessions, 'all');
+  const isFavorite = store.lists.favoris?.gameIds.includes(id) ?? false;
 
   function startEditingHours() {
     setHoursInput(totalHours > 0 ? String(totalHours) : '');
@@ -152,6 +153,22 @@ export default function GameDetailScreen() {
               {game.stopped ? ' · Arrêté' : ''}
             </ThemedText>
           </ThemedView>
+          {/* "Jeux préférés" du Profil (voir profile/index.tsx) est la liste
+              intégrée `favoris` résolue en jeux — ce bouton en est le seul
+              point d'entrée direct depuis la fiche jeu (jusqu'ici accessible
+              uniquement via "Ajouter à une liste" dans le menu ⋯). */}
+          <Pressable
+            onPress={() => store.toggleListMembership('favoris', id)}
+            hitSlop={8}
+            style={styles.favoriteButton}
+            accessibilityRole="button"
+            accessibilityLabel={isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}>
+            <Ionicons
+              name={isFavorite ? 'heart' : 'heart-outline'}
+              size={26}
+              color={isFavorite ? theme.accent : theme.textSecondary}
+            />
+          </Pressable>
         </ThemedView>
 
         {!game.inLibrary && (
@@ -248,7 +265,9 @@ export default function GameDetailScreen() {
           {steamAchievementsUrl ? (
             <Pressable onPress={importFromSteam} disabled={importingAchievements}>
               <ThemedText type="linkPrimary">
-                {importingAchievements ? 'Import en cours…' : 'Pré-remplir depuis Steam'}
+                {importingAchievements
+                  ? 'Import en cours (jusqu’à 1 min si le service vient de se réveiller)…'
+                  : 'Pré-remplir depuis Steam'}
               </ThemedText>
             </Pressable>
           ) : null}
@@ -375,6 +394,9 @@ const styles = StyleSheet.create({
   heroText: {
     gap: Spacing.half,
     flexShrink: 1,
+  },
+  favoriteButton: {
+    alignSelf: 'flex-start',
   },
   primaryButton: {
     borderRadius: 999,

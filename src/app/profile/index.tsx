@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -45,9 +46,19 @@ export default function ProfileScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
         <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.topRow}>
+            <Link href="/profile/notifications" asChild>
+              <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="Notifications">
+                <Ionicons name="notifications-outline" size={24} color={theme.text} />
+              </Pressable>
+            </Link>
+          </View>
+
           <View style={styles.identity}>
             <View style={[styles.avatar, { backgroundColor: theme.backgroundSelected }]}>
-              <ThemedText type="subtitle">{DISPLAY_NAME.charAt(0).toUpperCase()}</ThemedText>
+              <ThemedText type="subtitle" style={styles.avatarInitial}>
+                {DISPLAY_NAME.charAt(0).toUpperCase()}
+              </ThemedText>
             </View>
             <ThemedText type="subtitle">{DISPLAY_NAME}</ThemedText>
             <ThemedText themeColor="textSecondary">{DISPLAY_HANDLE}</ThemedText>
@@ -159,10 +170,14 @@ const styles = StyleSheet.create({
     paddingBottom: BottomTabInset + Spacing.four,
     gap: Spacing.four,
   },
+  topRow: {
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
+  },
   identity: {
     alignItems: 'center',
     gap: Spacing.one,
-    paddingTop: Spacing.four,
+    paddingTop: Spacing.two,
   },
   avatar: {
     width: 64,
@@ -171,6 +186,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.one,
+    overflow: 'hidden',
+  },
+  // type="subtitle" (voir themed-text.tsx) porte un lineHeight (44) pensé
+  // pour un vrai sous-titre multi-mots, pas pour une seule lettre centrée
+  // dans un cercle de 64px : combiné à la police custom (Bricolage
+  // Grotesque, voir §2), ça poussait le glyphe visuellement vers le haut,
+  // rogné par le cercle. lineHeight resserré au fontSize + includeFontPadding
+  // à false (Android ajoute sinon un padding vertical au rendu du texte,
+  // avec le même effet) recentrent la lettre correctement.
+  avatarInitial: {
+    lineHeight: 32,
+    includeFontPadding: false,
   },
   followRow: {
     flexDirection: 'row',
