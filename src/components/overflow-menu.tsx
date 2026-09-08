@@ -7,7 +7,20 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export type OverflowMenuItem = { key: string; label: string; onPress: () => void };
+export type OverflowMenuItem = {
+  key: string;
+  label: string;
+  onPress: () => void;
+  // Icône optionnelle (ex. menu du Profil, voir profile/index.tsx) — le
+  // menu de la fiche jeu (library/[id].tsx) n'en passe pas, purement
+  // textuel, les deux cohabitent dans le même composant.
+  icon?: keyof typeof Ionicons.glyphMap;
+  // Action destructive/irréversible (ex. "Se déconnecter") : texte en
+  // rouge et séparée visuellement des autres options par une ligne, plutôt
+  // que noyée dans la même liste — évite un tap accidentel qui la
+  // confondrait avec une option anodine.
+  destructive?: boolean;
+};
 
 // Bouton "⋯" + menu déroulant. Rendu dans un Modal transparent plutôt qu'un
 // simple View positionné en absolute : React Native n'a pas d'équivalent
@@ -42,17 +55,37 @@ export function OverflowMenu({
           <View style={[styles.anchor, { top: anchorTop }]}>
             <Pressable onPress={(event) => event.stopPropagation()}>
               <ThemedView type="backgroundElement" style={styles.menu}>
-                {items.map((item) => (
-                  <Pressable
-                    key={item.key}
-                    onPress={() => {
-                      setOpen(false);
-                      item.onPress();
-                    }}
-                    style={styles.item}>
-                    <ThemedText>{item.label}</ThemedText>
-                  </Pressable>
-                ))}
+                {items.map((item, index) => {
+                  const previousDestructive = index > 0 && items[index - 1].destructive;
+                  return (
+                    <Pressable
+                      key={item.key}
+                      onPress={() => {
+                        setOpen(false);
+                        item.onPress();
+                      }}
+                      style={[
+                        styles.item,
+                        // Séparateur juste avant la première option destructive
+                        // (et seulement là) : le groupe d'actions normales et
+                        // l'action destructive doivent rester visuellement
+                        // distincts, pas une ligne entre chaque option.
+                        item.destructive && !previousDestructive
+                          ? [styles.destructiveGroup, { borderTopColor: theme.backgroundSelected }]
+                          : null,
+                      ]}>
+                      {item.icon ? (
+                        <Ionicons
+                          name={item.icon}
+                          size={18}
+                          color={item.destructive ? theme.danger : theme.text}
+                          style={styles.itemIcon}
+                        />
+                      ) : null}
+                      <ThemedText themeColor={item.destructive ? 'danger' : undefined}>{item.label}</ThemedText>
+                    </Pressable>
+                  );
+                })}
               </ThemedView>
             </Pressable>
           </View>
@@ -72,7 +105,7 @@ const styles = StyleSheet.create({
     right: Spacing.three,
   },
   menu: {
-    minWidth: 180,
+    minWidth: 220,
     borderRadius: Spacing.three,
     paddingVertical: Spacing.one,
     shadowColor: '#000',
@@ -82,7 +115,17 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   item: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
+  },
+  itemIcon: {
+    marginRight: Spacing.two,
+  },
+  destructiveGroup: {
+    marginTop: Spacing.one,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: Spacing.two + Spacing.one,
   },
 });
