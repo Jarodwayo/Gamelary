@@ -19,10 +19,42 @@ const STEAMGRIDDB_BASE = 'https://www.steamgriddb.com/api/v2';
 
 type SteamGridDbSearchResult = { id: number; name: string };
 type SteamGridDbGrid = { url: string; thumb: string };
+type SteamGridDbGame = { id: number; name: string };
 
-async function fetchCoverFromSteamGridDb(title: string, apiKey: string): Promise<string | null> {
-  const headers = { Authorization: `Bearer ${apiKey}` };
+async function fetchGridUrl(steamGridDbId: number, headers: HeadersInit): Promise<string | null> {
+  // Format portrait 600x900 = le format "grid" standard des bibliothèques
+  // de jeux (Steam, GOG Galaxy...), donc celui qu'on veut pour nos cartes
+  // de jeu. nsfw/humor à false pour rester sur des jaquettes officielles.
+  const gridsResponse = await fetch(
+    `${STEAMGRIDDB_BASE}/grids/game/${steamGridDbId}?dimensions=600x900&nsfw=false&humor=false`,
+    { headers }
+  );
+  if (!gridsResponse.ok) {
+    throw new Error(`SteamGridDB grids a échoué (${gridsResponse.status})`);
+  }
+  const gridsJson: { data: SteamGridDbGrid[] } = await gridsResponse.json();
+  return gridsJson.data[0]?.url ?? null;
+}
 
+// Correspondance exacte par app id Steam (résolu côté client depuis les
+// external_games d'IGDB, voir games+api.ts) : SteamGridDB expose bien
+// `/games/steam/{appid}` (vérifié en direct), contrairement à `/games/igdb/
+// {id}` qui n'existe pas côté SteamGridDB malgré son nom — donc ce détour
+// par Steam est le seul chemin fiable pour éviter la recherche floue.
+async function fetchCoverBySteamAppId(steamAppId: number, headers: HeadersInit): Promise<string | null> {
+  const gameResponse = await fetch(`${STEAMGRIDDB_BASE}/games/steam/${steamAppId}`, { headers });
+  if (gameResponse.status === 404) return null;
+  if (!gameResponse.ok) {
+    throw new Error(`SteamGridDB games/steam a échoué (${gameResponse.status})`);
+  }
+  const gameJson: { success: boolean; data?: SteamGridDbGame } = await gameResponse.json();
+  if (!gameJson.success || !gameJson.data) return null;
+  return fetchGridUrl(gameJson.data.id, headers);
+}
+
+// Repli par recherche floue sur le titre, pour les jeux sans app id Steam
+// (exclusivités console) ou pas encore résolus côté IGDB.
+async function fetchCoverByTitle(title: string, headers: HeadersInit): Promise<string | null> {
   const searchResponse = await fetch(
     `${STEAMGRIDDB_BASE}/search/autocomplete/${encodeURIComponent(title)}`,
     { headers }
@@ -33,32 +65,28 @@ async function fetchCoverFromSteamGridDb(title: string, apiKey: string): Promise
   const searchJson: { data: SteamGridDbSearchResult[] } = await searchResponse.json();
   // On prend le premier résultat : l'autocomplete de SteamGridDB trie déjà
   // par pertinence. Limite connue : pas de désambiguïsation (ex. "Hollow" vs
-  // "Hollow Knight") — un vrai matching passerait par l'id IGDB une fois
-  // cette intégration en place.
+  // "Hollow Knight") — d'où la préférence pour fetchCoverBySteamAppId quand
+  // l'app id Steam est disponible.
   const bestMatch = searchJson.data[0];
   if (!bestMatch) return null;
-
-  // Format portrait 600x900 = le format "grid" standard des bibliothèques
-  // de jeux (Steam, GOG Galaxy...), donc celui qu'on veut pour nos cartes
-  // de jeu. nsfw/humor à false pour rester sur des jaquettes officielles.
-  const gridsResponse = await fetch(
-    `${STEAMGRIDDB_BASE}/grids/game/${bestMatch.id}?dimensions=600x900&nsfw=false&humor=false`,
-    { headers }
-  );
-  if (!gridsResponse.ok) {
-    throw new Error(`SteamGridDB grids a échoué (${gridsResponse.status})`);
-  }
-  const gridsJson: { data: SteamGridDbGrid[] } = await gridsResponse.json();
-  return gridsJson.data[0]?.url ?? null;
+  return fetchGridUrl(bestMatch.id, headers);
 }
 
 export async function GET(request: Request) {
-  const title = new URL(request.url).searchParams.get('title');
+  const params = new URL(request.url).searchParams;
+  const title = params.get('title');
+  const steamAppIdParam = params.get('steamAppId');
+  const steamAppId = steamAppIdParam ? Number(steamAppIdParam) : null;
+
   if (!title) {
     return Response.json({ error: 'Paramètre "title" requis' }, { status: 400 });
   }
 
-  const cacheKey = title.trim().toLowerCase();
+  // steamAppId (précis) l'emporte sur le titre dans la clé de cache : deux
+  // titres différents partageant un app id (rare) doivent pointer vers la
+  // même jaquette ; à défaut, on retombe sur le titre normalisé.
+  const cacheKey =
+    steamAppId && Number.isFinite(steamAppId) ? `steam:${steamAppId}` : `title:${title.trim().toLowerCase()}`;
   const cached = coverCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return Response.json({ url: cached.url });
@@ -72,9 +100,13 @@ export async function GET(request: Request) {
     // être configurée comme secret serveur.
     return Response.json({ error: 'STEAMGRIDDB_API_KEY non configurée côté serveur' }, { status: 500 });
   }
+  const headers = { Authorization: `Bearer ${apiKey}` };
 
   try {
-    const url = await fetchCoverFromSteamGridDb(title, apiKey);
+    const url =
+      steamAppId && Number.isFinite(steamAppId)
+        ? (await fetchCoverBySteamAppId(steamAppId, headers)) ?? (await fetchCoverByTitle(title, headers))
+        : await fetchCoverByTitle(title, headers);
     coverCache.set(cacheKey, { url, expiresAt: Date.now() + CACHE_TTL_MS });
     return Response.json({ url });
   } catch (error) {

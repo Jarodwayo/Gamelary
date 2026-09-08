@@ -14,13 +14,21 @@ type CoverState = {
   loading: boolean;
 };
 
-export function useGameCover(title: string): CoverState {
-  const [url, setUrl] = useState<string | null>(clientCache.get(title) ?? null);
-  const [loading, setLoading] = useState(!clientCache.has(title));
+// steamAppId (résolu depuis IGDB, voir games+api.ts) donne une clé de cache
+// plus précise que le titre seul : deux jeux au titre identique n'ont pas
+// le même app id Steam, l'inverse n'arrivant jamais.
+function cacheKeyFor(title: string, steamAppId?: number): string {
+  return steamAppId ? `steam:${steamAppId}` : `title:${title}`;
+}
+
+export function useGameCover(title: string, steamAppId?: number): CoverState {
+  const cacheKey = cacheKeyFor(title, steamAppId);
+  const [url, setUrl] = useState<string | null>(clientCache.get(cacheKey) ?? null);
+  const [loading, setLoading] = useState(!clientCache.has(cacheKey));
 
   useEffect(() => {
-    if (clientCache.has(title)) {
-      setUrl(clientCache.get(title) ?? null);
+    if (clientCache.has(cacheKey)) {
+      setUrl(clientCache.get(cacheKey) ?? null);
       setLoading(false);
       return;
     }
@@ -28,19 +36,23 @@ export function useGameCover(title: string): CoverState {
     let cancelled = false;
     setLoading(true);
 
-    fetch(apiUrl(`/api/cover?title=${encodeURIComponent(title)}`))
+    const query = steamAppId
+      ? `title=${encodeURIComponent(title)}&steamAppId=${steamAppId}`
+      : `title=${encodeURIComponent(title)}`;
+
+    fetch(apiUrl(`/api/cover?${query}`))
       .then((res) => res.json())
       .then((data: { url?: string | null }) => {
         if (cancelled) return;
         const coverUrl = data.url ?? null;
-        clientCache.set(title, coverUrl);
+        clientCache.set(cacheKey, coverUrl);
         setUrl(coverUrl);
       })
       .catch(() => {
         // Échec réseau/API : on reste silencieux et on retombe sur le
         // placeholder dans GameCover plutôt que de casser l'écran pour un
         // problème de jaquette, non bloquant pour l'usage de l'app.
-        if (!cancelled) clientCache.set(title, null);
+        if (!cancelled) clientCache.set(cacheKey, null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -49,7 +61,7 @@ export function useGameCover(title: string): CoverState {
     return () => {
       cancelled = true;
     };
-  }, [title]);
+  }, [cacheKey, title, steamAppId]);
 
   return { url, loading };
 }

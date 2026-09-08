@@ -7,13 +7,13 @@ import { GameCover } from '@/components/game-cover';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { resolveCatalogId } from '@/data/tracked-games';
 import { useTheme } from '@/hooks/use-theme';
 import { apiUrl } from '@/lib/api-url';
 import { useGameStore } from '@/lib/game-store';
-import { slugify } from '@/lib/slug';
 
 type SearchStatus = 'idle' | 'loading' | 'found' | 'not-found';
-type SearchResult = { id: string; title: string; platform: string };
+type SearchResult = { id: string; title: string; platform: string; steamAppId?: number };
 
 // Recherche à la volée sur IGDB (réutilise /api/games?title=, déjà utilisé
 // par useGame) plutôt qu'un vrai moteur de recherche : suffisant pour
@@ -43,16 +43,18 @@ export default function SearchScreen() {
     setStatus('loading');
     try {
       const response = await fetch(apiUrl(`/api/games?title=${encodeURIComponent(trimmed)}`));
-      const data: { title: string | null; platform: string | null } = await response.json();
+      const data: { title: string | null; platform: string | null; steamAppId?: number | null } =
+        await response.json();
       if (!data.title) {
         setResult(null);
         setStatus('not-found');
         return;
       }
       const found: SearchResult = {
-        id: slugify(data.title),
+        id: resolveCatalogId(data.title),
         title: data.title,
         platform: data.platform ?? 'Plateforme inconnue',
+        steamAppId: data.steamAppId ?? undefined,
       };
       store.registerCatalogGame(found);
       setResult(found);
@@ -89,7 +91,7 @@ export default function SearchScreen() {
           <Pressable
             onPress={() => router.push({ pathname: '/library/[id]', params: { id: result.id } })}
             style={({ pressed }) => [styles.resultRow, pressed && styles.pressed]}>
-            <GameCover title={result.title} />
+            <GameCover title={result.title} steamAppId={result.steamAppId} />
             <ThemedView style={styles.resultText}>
               <ThemedText type="smallBold">{result.title}</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">

@@ -10,7 +10,7 @@ import { OverflowMenu, type OverflowMenuItem } from '@/components/overflow-menu'
 import { RatingStepper } from '@/components/rating-stepper';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Fonts, Spacing } from '@/constants/theme';
 import { useGame } from '@/hooks/use-game';
 import { useTheme } from '@/hooks/use-theme';
 import { useGameStore } from '@/lib/game-store';
@@ -110,7 +110,7 @@ export default function GameDetailScreen() {
       />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <ThemedView style={styles.hero}>
-          <GameCover title={game.title} />
+          <GameCover title={game.title} steamAppId={game.steamAppId} />
           <ThemedView style={styles.heroText}>
             <ThemedText type="subtitle">{game.title}</ThemedText>
             <ThemedText themeColor="textSecondary">
@@ -343,6 +343,7 @@ const styles = StyleSheet.create({
   hoursValue: {
     fontSize: 28,
     lineHeight: 34,
+    fontFamily: Fonts.mono.semiBold,
   },
   addHoursRow: {
     flexDirection: 'row',

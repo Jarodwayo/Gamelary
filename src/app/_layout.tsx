@@ -1,3 +1,4 @@
+import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from 'react-native';
@@ -5,6 +6,7 @@ import { useColorScheme } from 'react-native';
 import AppTabs from '@/components/app-tabs';
 import { SearchFab } from '@/components/search-fab';
 import { AnimatedSplashOverlay } from '@/components/splash-overlay';
+import { FontsToLoad } from '@/constants/theme';
 import { GameStoreProvider } from '@/lib/game-store';
 
 // Empêche Expo de masquer le splash natif tant que le JS n'a pas fini de
@@ -21,6 +23,14 @@ SplashScreen.preventAutoHideAsync();
 // search-fab.tsx).
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const [fontsLoaded, fontError] = useFonts(FontsToLoad);
+
+  // Ne rend rien tant que Bricolage Grotesque/IBM Plex Mono ne sont pas
+  // prêtes : le splash natif reste affiché (preventAutoHideAsync ci-dessus)
+  // le temps du chargement, plutôt que de montrer un flash de police
+  // système avant que le texte ne bascule sur la police custom.
+  if (!fontsLoaded && !fontError) return null;
+
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <GameStoreProvider>

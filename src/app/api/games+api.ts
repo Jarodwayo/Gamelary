@@ -7,7 +7,7 @@
 //   IGDB n'a pas de notion native de "tendance"/"recommandé", ce sont des
 //   approximations documentées ci-dessous par section.
 
-import { slugify } from '@/lib/slug';
+import { resolveCatalogId } from '@/data/tracked-games';
 import type { CatalogGame } from '@/types/game';
 
 const LOOKUP_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -17,8 +17,29 @@ const sectionCache = new Map<string, { result: CatalogGame[]; expiresAt: number 
 
 const IGDB_BASE = 'https://api.igdb.com/v4';
 
-type GameLookupResult = { title: string | null; platform: string | null };
-type IgdbGame = { name: string; platforms?: { name: string }[] };
+type GameLookupResult = { title: string | null; platform: string | null; steamAppId: number | null };
+type IgdbExternalGame = { uid: string; external_game_source: number };
+type IgdbGame = { name: string; platforms?: { name: string }[]; external_games?: IgdbExternalGame[] };
+
+// Source externe IGDB pour Steam (voir GET /external_game_sources) : fixe
+// et documentée par IGDB, pas besoin de la résoudre dynamiquement à chaque
+// requête.
+const STEAM_EXTERNAL_GAME_SOURCE = 1;
+
+// SteamGridDB n'expose pas de correspondance directe par id IGDB (vérifié
+// en direct : `/games/igdb/{id}` renvoie systématiquement "Game not found",
+// y compris pour des jeux très populaires) — en revanche `/games/steam/
+// {appid}` fonctionne de façon fiable (voir cover+api.ts). Ce détour par
+// external_games (uid Steam d'IGDB) est donc le vrai chemin exploitable
+// pour une correspondance exacte, plutôt qu'une recherche par titre.
+function extractSteamAppId(game: IgdbGame): number | null {
+  const steamEntry = game.external_games?.find(
+    (entry) => entry.external_game_source === STEAM_EXTERNAL_GAME_SOURCE
+  );
+  if (!steamEntry) return null;
+  const appId = Number(steamEntry.uid);
+  return Number.isFinite(appId) ? appId : null;
+}
 
 const DAY_SECONDS = 24 * 60 * 60;
 const TWO_YEARS_SECONDS = 2 * 365 * DAY_SECONDS;
@@ -36,30 +57,37 @@ const TWO_YEARS_SECONDS = 2 * 365 * DAY_SECONDS;
 // - attendus : first_release_date dans le futur, triés par hypes (nombre
 //   de personnes ayant marqué leur attente sur IGDB/Twitter) — le champ
 //   IGDB conçu pour exactement ce classement.
-// - recommandé : pas de profil utilisateur/historique à exploiter (voir
-//   ARCHITECTURE.md §9) -> approximation par "bien noté avec un volume
-//   d'avis significatif", à remplacer par une vraie recommandation
-//   personnalisée une fois un historique de jeu disponible.
-function sectionQuery(section: string, nowSeconds: number): string | null {
+// - recommandé : pas de compte/historique serveur (voir ARCHITECTURE.md
+//   §9), mais le client connaît la plateforme la plus jouée de
+//   l'utilisateur (bibliothèque locale, voir use-explore.ts) et la transmet
+//   en `platform` : filtre "bien noté avec un volume d'avis significatif"
+//   sur CETTE plateforme plutôt qu'un classement générique identique pour
+//   tout le monde. Repli sur le classement générique si aucune plateforme
+//   n'est fournie (bibliothèque vide, première utilisation).
+function sectionQuery(section: string, nowSeconds: number, platformFilter?: string): string | null {
   switch (section) {
-    case 'recommended':
-      return 'sort rating desc; where rating_count > 200; fields name,platforms.name; limit 10;';
+    case 'recommended': {
+      const platformClause = platformFilter
+        ? ` & platforms.name = "${escapeApicalypseString(platformFilter)}"`
+        : '';
+      return `sort rating desc; where rating_count > 200${platformClause}; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`;
+    }
     case 'trending':
       return (
         `sort total_rating_count desc; where first_release_date > ${nowSeconds - TWO_YEARS_SECONDS} ` +
-        `& first_release_date <= ${nowSeconds} & total_rating_count > 30; fields name,platforms.name; limit 10;`
+        `& first_release_date <= ${nowSeconds} & total_rating_count > 30; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`
       );
     case 'new':
       return (
         `sort first_release_date desc; where first_release_date <= ${nowSeconds} & rating_count > 20; ` +
-        'fields name,platforms.name; limit 10;'
+        'fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;'
       );
     case 'popular':
-      return 'sort total_rating_count desc; where total_rating_count > 100; fields name,platforms.name; limit 10;';
+      return 'sort total_rating_count desc; where total_rating_count > 100; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;';
     case 'anticipated':
       return (
         `sort hypes desc; where first_release_date > ${nowSeconds} & hypes > 0; ` +
-        'fields name,platforms.name; limit 10;'
+        'fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;'
       );
     default:
       return null;
@@ -69,9 +97,10 @@ function sectionQuery(section: string, nowSeconds: number): string | null {
 async function fetchSectionFromIgdb(
   section: string,
   clientId: string,
-  accessToken: string
+  accessToken: string,
+  platformFilter?: string
 ): Promise<CatalogGame[]> {
-  const query = sectionQuery(section, Math.floor(Date.now() / 1000));
+  const query = sectionQuery(section, Math.floor(Date.now() / 1000), platformFilter);
   if (!query) throw new Error(`Section Explorer inconnue : "${section}"`);
 
   const response = await fetch(`${IGDB_BASE}/games`, {
@@ -89,13 +118,13 @@ async function fetchSectionFromIgdb(
 
   const games: IgdbGame[] = await response.json();
   return games.map((game) => ({
-    // slugify plutôt que l'id numérique IGDB : cohérent avec les ids en dur
-    // de tracked-games.ts, lisible dans /library/:id. Limite connue : un jeu
-    // découvert ici peut ne pas correspondre à un id tracked-games.ts dont
-    // le slug diffère du titre IGDB (ex. zelda-botw) — voir ARCHITECTURE.md.
-    id: slugify(game.name),
+    // resolveCatalogId plutôt que l'id numérique IGDB : cohérent avec les
+    // ids en dur de tracked-games.ts (rejoint la même entrée si le jeu y est
+    // déjà suivi, au lieu d'en créer un doublon), lisible dans /library/:id.
+    id: resolveCatalogId(game.name),
     title: game.name,
     platform: game.platforms?.[0]?.name ?? 'Plateforme inconnue',
+    steamAppId: extractSteamAppId(game) ?? undefined,
   }));
 }
 
@@ -132,7 +161,7 @@ async function fetchGameFromIgdb(
     // remonter une édition/bundle/spin-off avant le jeu de base (ex.
     // "Elden Ring Nightreign" avant "Elden Ring") — on a besoin de
     // candidats supplémentaires pour la désambiguïsation ci-dessous.
-    body: `search "${escapeApicalypseString(title)}"; fields name,platforms.name; limit 10;`,
+    body: `search "${escapeApicalypseString(title)}"; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`,
   });
   if (!response.ok) {
     throw new Error(`IGDB games a échoué (${response.status})`);
@@ -149,7 +178,7 @@ async function fetchGameFromIgdb(
   const normalizedTitle = title.trim().toLowerCase();
   const bestMatch =
     games.find((game) => game.name.trim().toLowerCase() === normalizedTitle) ?? games[0];
-  if (!bestMatch) return { title: null, platform: null };
+  if (!bestMatch) return { title: null, platform: null, steamAppId: null };
 
   return {
     title: bestMatch.name,
@@ -157,6 +186,7 @@ async function fetchGameFromIgdb(
     // on affiche la première, cohérent avec le fait que l'app ne distingue
     // pas encore "sur quelle plateforme l'utilisateur possède le jeu".
     platform: bestMatch.platforms?.[0]?.name ?? null,
+    steamAppId: extractSteamAppId(bestMatch),
   };
 }
 
@@ -183,13 +213,25 @@ export async function GET(request: Request) {
   }
 
   if (section) {
-    const cached = sectionCache.get(section);
+    // platform ne sert qu'à personnaliser "recommended" (voir sectionQuery)
+    // mais fait partie de la clé de cache dans tous les cas : un paramètre
+    // ignoré ne doit jamais partager son entrée de cache avec un autre appel
+    // qui l'aurait omis.
+    const platform = params.get('platform') ?? undefined;
+    const cacheKey = `${section}:${platform ?? ''}`;
+    const cached = sectionCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return Response.json(cached.result);
     }
     try {
-      const result = await fetchSectionFromIgdb(section, clientId, accessToken);
-      sectionCache.set(section, { result, expiresAt: Date.now() + SECTION_CACHE_TTL_MS });
+      let result = await fetchSectionFromIgdb(section, clientId, accessToken, platform);
+      // Filtre plateforme trop restrictif (peu de jeux bien notés dessus) ->
+      // repli sur le classement générique plutôt que de renvoyer une
+      // rangée Explorer vide.
+      if (result.length === 0 && platform) {
+        result = await fetchSectionFromIgdb(section, clientId, accessToken);
+      }
+      sectionCache.set(cacheKey, { result, expiresAt: Date.now() + SECTION_CACHE_TTL_MS });
       return Response.json(result);
     } catch (error) {
       return Response.json(

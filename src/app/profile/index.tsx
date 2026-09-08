@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GameShelf } from '@/components/game-shelf';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
 import { useGameStore } from '@/lib/game-store';
@@ -138,6 +138,9 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 22,
     lineHeight: 26,
+    // Nombre tabulaire (voir ARCHITECTURE.md §2) : IBM Plex Mono plutôt
+    // que la police de titre habituelle, en dehors du type="subtitle".
+    fontFamily: Fonts.mono.semiBold,
   },
   pressed: {
     opacity: 0.7,

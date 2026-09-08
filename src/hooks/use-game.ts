@@ -5,7 +5,7 @@ import { apiUrl } from '@/lib/api-url';
 import { useGameStore } from '@/lib/game-store';
 import type { Game, Track } from '@/types/game';
 
-type IgdbLookup = { title: string; platform: string } | null;
+type IgdbLookup = { title: string; platform: string; steamAppId?: number } | null;
 
 // Cache mémoire côté client, même logique que useGameCover (voir ce fichier
 // pour le raisonnement) : plusieurs écrans peuvent redemander le même
@@ -16,9 +16,14 @@ async function fetchIgdbInfo(searchTitle: string): Promise<IgdbLookup> {
   if (igdbLookupCache.has(searchTitle)) return igdbLookupCache.get(searchTitle) ?? null;
   try {
     const res = await fetch(apiUrl(`/api/games?title=${encodeURIComponent(searchTitle)}`));
-    const data: { title: string | null; platform: string | null } = await res.json();
+    const data: { title: string | null; platform: string | null; steamAppId?: number | null } =
+      await res.json();
     const result: IgdbLookup = data.title
-      ? { title: data.title, platform: data.platform ?? 'Plateforme inconnue' }
+      ? {
+          title: data.title,
+          platform: data.platform ?? 'Plateforme inconnue',
+          steamAppId: data.steamAppId ?? undefined,
+        }
       : null;
     igdbLookupCache.set(searchTitle, result);
     return result;
@@ -55,6 +60,7 @@ export function useGame(id: string): { game: Game | null; loading: boolean } {
         id,
         title: info?.title ?? tracked.igdbTitle,
         platform: info?.platform ?? 'Plateforme inconnue',
+        steamAppId: info?.steamAppId,
       });
       setLoading(false);
     });
@@ -84,6 +90,7 @@ export function useGame(id: string): { game: Game | null; loading: boolean } {
       id: stored.id,
       title: stored.title,
       platform: stored.platform || 'Plateforme inconnue',
+      steamAppId: stored.steamAppId,
       inLibrary: stored.inLibrary,
       stopped: stored.stopped,
       achievements: stored.achievements,

@@ -11,7 +11,7 @@ import { Spacing } from '@/constants/theme';
 // jaquette elle-même d'un écran à l'autre.
 const CARD_WIDTH = 84;
 
-export type ShelfItem = { id: string; title: string; platform?: string };
+export type ShelfItem = { id: string; title: string; platform?: string; steamAppId?: number };
 
 function ShelfCard({ item }: { item: ShelfItem }) {
   return (
@@ -21,7 +21,7 @@ function ShelfCard({ item }: { item: ShelfItem }) {
     // de l'erreur "Unmatched Route" au tap sur une carte.
     <Link href={{ pathname: '/library/[id]', params: { id: item.id } }} asChild>
       <Pressable style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
-        <GameCover title={item.title} />
+        <GameCover title={item.title} steamAppId={item.steamAppId} />
         <ThemedText type="small" numberOfLines={1} style={styles.cardTitle}>
           {item.title}
         </ThemedText>

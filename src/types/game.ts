@@ -48,6 +48,12 @@ export type Game = {
   id: string;
   title: string;
   platform: string;
+  // App Id Steam du jeu, résolu côté serveur depuis les external_games
+  // d'IGDB (voir ARCHITECTURE.md §6.2) — permet à GameCover de demander sa
+  // jaquette à SteamGridDB par correspondance exacte plutôt que par une
+  // recherche floue sur le titre. Absent si IGDB n'a pas de référence Steam
+  // pour ce jeu (ex. exclusivité console).
+  steamAppId?: number;
   inLibrary: boolean;
   stopped: boolean;
   achievements: Achievement[];
@@ -70,4 +76,5 @@ export type CatalogGame = {
   id: string;
   title: string;
   platform: string;
+  steamAppId?: number;
 };

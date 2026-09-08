@@ -5,7 +5,7 @@ import { trackedGames, trackId } from '@/data/tracked-games';
 import { slugify } from '@/lib/slug';
 import type { Achievement, CatalogGame, PlaySession } from '@/types/game';
 
-const STORAGE_KEY = 'gamelary/game-store/v3';
+const STORAGE_KEY = 'gamelary/game-store/v4';
 
 export type StoredGame = {
   id: string;
@@ -14,6 +14,11 @@ export type StoredGame = {
   // undefined pour éviter d'avoir à distinguer "pas encore chargé" de
   // "champ absent" à chaque lecture.
   platform: string;
+  // Résolu en même temps que platform (voir registerCatalogGame) — permet à
+  // GameCover de demander sa jaquette par correspondance exacte plutôt que
+  // par recherche floue sur le titre (voir cover+api.ts). Absent tant
+  // qu'IGDB n'a pas répondu, ou si le jeu n'a pas de référence Steam.
+  steamAppId?: number;
   inLibrary: boolean;
   stopped: boolean;
   achievements: Achievement[];
@@ -135,15 +140,21 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       registerCatalogGame: (game: CatalogGame) => {
         setState((prev) => {
           const existing = prev.games[game.id];
-          if (existing && existing.title === game.title && existing.platform === game.platform) {
+          if (
+            existing &&
+            existing.title === game.title &&
+            existing.platform === game.platform &&
+            existing.steamAppId === game.steamAppId
+          ) {
             return prev;
           }
           const next: StoredGame = existing
-            ? { ...existing, title: game.title, platform: game.platform }
+            ? { ...existing, title: game.title, platform: game.platform, steamAppId: game.steamAppId }
             : {
                 id: game.id,
                 title: game.title,
                 platform: game.platform,
+                steamAppId: game.steamAppId,
                 inLibrary: false,
                 stopped: false,
                 achievements: [],

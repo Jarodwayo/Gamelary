@@ -24,7 +24,7 @@ function GameRow({ id }: { id: string }) {
           { backgroundColor: theme.backgroundElement },
           pressed && styles.pressed,
         ]}>
-        <GameCover title={game.title} />
+        <GameCover title={game.title} steamAppId={game.steamAppId} />
         <View style={styles.text}>
           <ThemedText type="smallBold" numberOfLines={1}>
             {game.title}

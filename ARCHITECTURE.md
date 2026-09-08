@@ -29,11 +29,16 @@ avant de coder Explorer/Profil/Statistiques pour éviter de styliser chaque
   ne se substituent jamais l'un à l'autre. `accentInk` est la couleur de
   contenu (texte/icône) posée sur un fond `accent` plein, jamais réutilisée
   sur le fond normal de l'écran.
-- **Typographie** 🚧 : polices système actuelles conservées pour l'instant
-  (Bricolage Grotesque + IBM Plex Mono avaient été retenues à l'étape
-  maquette pour les titres/l'UI et les nombres tabulaires respectivement,
-  mais pas encore installées/câblées — voir §10, ce n'est pas ce qui
-  bloquait le reste des écrans).
+- **Typographie** ✅ : Bricolage Grotesque (titres/UI) et IBM Plex Mono
+  (nombres tabulaires — heures, note, stats) via `@expo-google-fonts/*` +
+  `expo-font`. Une famille par poids chargée (`Fonts`, `src/constants/
+  theme.ts`) plutôt qu'une seule famille combinée à `fontWeight` : une
+  police custom chargée par nom ignore `fontWeight` (contrairement aux
+  polices système), donc `ThemedText` choisit directement la bonne famille
+  par variante. Chargement via `useFonts` dans `src/app/_layout.tsx`, qui
+  ne rend rien tant que les polices ne sont pas prêtes — le splash natif
+  reste affiché le temps du chargement plutôt que de montrer un flash de
+  police système avant bascule sur la police custom.
 - **Carte de jeu** : `GameCover` (`src/components/game-cover.tsx`) rend la
   jaquette à une **taille fixe unique dans toute l'app** (56×74, coins 8px),
   sans prop `size`/`style` pour la moduler — ni ratio 2:3 approximatif ni
@@ -168,12 +173,20 @@ expiration.
 
 Un jeu est identifié par un slug dérivé de son titre (`src/lib/slug.ts`,
 ex. `hollow-knight`) plutôt que par son id numérique IGDB — lisible dans les
-URLs, cohérent avec les ids en dur de `tracked-games.ts`. Limite connue : un
-jeu découvert dans Explorer peut ne pas correspondre à un id
-`tracked-games.ts` existant dont le slug diffère du titre IGDB (ex.
-`zelda-botw`, dont le titre IGDB complet donnerait un tout autre slug) — pas
-de vraie déduplication tant qu'on ne matche pas par id IGDB plutôt que par
-slug de titre.
+URLs, cohérent avec les ids en dur de `tracked-games.ts`. `resolveCatalogId`
+(`src/data/tracked-games.ts`) évite la duplication que ça pourrait
+provoquer : un jeu découvert dans Explorer ou par recherche dont le titre
+IGDB correspond (insensible à la casse) à l'`igdbTitle` d'une entrée
+`tracked-games.ts` (ex. `zelda-botw`, dont le titre IGDB complet donnerait
+un tout autre slug) rejoint l'id existant au lieu d'en créer un second —
+utilisé à la fois par `games+api.ts` (rangées Explorer) et
+`library/search.tsx`, seuls deux endroits qui dérivent un id depuis un
+titre IGDB.
+
+Chaque jeu retourné porte aussi `steamAppId` (voir §6.2) quand IGDB en
+référence un, résolu via les `external_games` d'IGDB (source id 1 =
+Steam, voir `GET /external_game_sources`) — c'est ce même champ qui sert de
+correspondance exacte pour la jaquette SteamGridDB.
 
 ### 6.2 Jaquettes — SteamGridDB ✅
 
@@ -182,20 +195,29 @@ IGDB par défaut : base communautaire spécialisée dans l'artwork (grids,
 covers, hero images) avec plusieurs styles par jeu et une meilleure qualité
 moyenne que les jaquettes génériques d'IGDB.
 
-Flux : `src/app/api/cover+api.ts` (route serveur — voir §7) recherche le
-jeu par titre (`/search/autocomplete`), prend le premier résultat, récupère
-ses grids au format portrait 600×900 (`/grids/game/:id`) et renvoie l'URL
-de la meilleure. `GameCover` (`src/components/game-cover.tsx`) appelle
-cette route via le hook `useGameCover` et affiche l'image avec `expo-image` ;
-le placeholder coloré (hash déterministe du titre + initiales) reste l'état
-de repli permanent (chargement, jeu introuvable sur SteamGridDB, erreur
+Flux : `src/app/api/cover+api.ts` (route serveur — voir §7) essaie d'abord
+une correspondance **exacte** par app id Steam quand `steamAppId` est fourni
+(`/games/steam/:appid`, voir §6.1 pour sa résolution via IGDB), puis
+retombe sur la recherche floue par titre (`/search/autocomplete`, premier
+résultat) si l'app id est absent ou introuvable côté SteamGridDB (jeu hors
+Steam, ex. exclusivité console). Les deux chemins récupèrent ensuite les
+grids au format portrait 600×900 (`/grids/game/:id`) et renvoient l'URL de
+la meilleure. `GameCover` (`src/components/game-cover.tsx`) appelle cette
+route via le hook `useGameCover` et affiche l'image avec `expo-image` ; le
+placeholder coloré (hash déterministe du titre + initiales) reste l'état de
+repli permanent (chargement, jeu introuvable sur SteamGridDB, erreur
 réseau) — pas juste une étape temporaire du projet.
 
-Limite connue : le matching prend le premier résultat de l'autocomplete
-sans désambiguïsation (ex. risque de confondre un jeu et son remake/DLC).
-IGDB étant maintenant branché (§6.1), une amélioration possible serait de
-matcher par id IGDB plutôt que par nom pour fiabiliser ça — pas encore fait,
-`cover+api.ts` continue de chercher par titre indépendamment de `/api/games`.
+Correspondance par id IGDB envisagée puis abandonnée après test en
+direct : SteamGridDB ne l'expose pas (`/games/igdb/:id` renvoie
+systématiquement "Game not found", y compris pour des jeux très populaires
+comme Hollow Knight ou Elden Ring), malgré le nom de la route qui le
+laisserait penser. En revanche IGDB référence lui-même l'app id Steam de
+chaque jeu dans `external_games` (source id 1), et `/games/steam/:appid`
+de SteamGridDB fonctionne de façon fiable (vérifié en direct) — d'où ce
+détour par Steam plutôt qu'IGDB directement. Limite résiduelle : un jeu
+sans app id Steam (exclusivité console) retombe toujours sur la recherche
+floue par titre, sans désambiguïsation.
 
 ### 6.3 Succès — saisie manuelle ✅, Steam Web API 🚧
 
@@ -246,11 +268,24 @@ avant intégration plutôt que devinée :
 
 | Rangée | Tri / filtre | Pourquoi |
 |---|---|---|
-| Recommandé pour toi | `rating desc` avec `rating_count > 200` | Pas de profil utilisateur/historique exploitable (voir §10) → approximation "bien noté avec un volume d'avis significatif", à remplacer par une vraie recommandation personnalisée plus tard |
+| Recommandé pour toi | `rating desc` avec `rating_count > 200`, filtré sur la plateforme la plus fréquente de la bibliothèque suivie quand elle est connue | Pas de compte/historique serveur (voir §10), mais la bibliothèque locale donne un vrai signal (voir plus bas) plutôt qu'un classement générique identique pour tout le monde |
 | Jeux tendances | `total_rating_count desc`, sortis dans les 2 dernières années | "Populaire en ce moment", distinct de "populaire depuis toujours" et de "vient de sortir" |
 | Nouveaux jeux | `first_release_date desc`, `rating_count > 20` | Le seuil `rating_count` écarte les sorties trop confidentielles sans exclure les vraies nouveautés |
 | Jeux populaires | `total_rating_count desc`, `total_rating_count > 100` | Volume d'avis agrégés = meilleur proxy IGDB de la popularité toutes périodes que `rating` seul (qui favorise les jeux avec très peu d'avis mais tous excellents) |
 | Jeux les plus attendus | `hypes desc`, `first_release_date` futur | `hypes` est le champ IGDB conçu spécifiquement pour ce classement (nombre de personnes ayant marqué leur attente) |
+
+**Recommandation personnalisée** : sans compte/backend, pas d'historique
+serveur à exploiter — mais `useExploreSection` calcule côté client la
+plateforme la plus fréquente parmi les jeux suivis (`store.games`,
+`inLibrary`) et la transmet en `?platform=` à `/api/games?section=
+recommended`, qui l'ajoute au filtre apicalypse (`platforms.name = "..."`).
+Repli sur le classement générique (sans filtre) si la bibliothèque est
+vide/sans plateforme dominante, ou si le filtre ne renvoie aucun résultat
+(plateforme trop confidentielle pour un jeu à la fois bien noté et
+massivement commenté) — jamais de rangée vide. Testé en direct : filtrer
+sur "Wii U" change effectivement le classement (titres Nintendo), la clé de
+cache (serveur et client) intègre la plateforme pour ne jamais mélanger les
+résultats de deux utilisateurs aux bibliothèques différentes.
 
 "Jeux joués par tes amis" volontairement absent de cette liste : ça suppose
 un système de comptes/amis qui n'existe pas encore.
@@ -402,7 +437,13 @@ favorite depuis un vrai sélecteur en liste sur la fiche jeu (voir §6.4),
 listes personnalisées (Favoris et Wishlist intégrées + création libre)
 accessibles depuis le menu ⋯ de la fiche jeu, recherche IGDB ponctuelle
 (`/library/search`, ouverte depuis un bouton icône dédié en bas à droite,
-clavier ouvert automatiquement).
+clavier ouvert automatiquement), typographie Bricolage Grotesque/IBM Plex
+Mono effectivement installée et câblée (voir §2), jaquettes SteamGridDB
+matchées par app id Steam quand IGDB le référence (voir §6.2, plus fiable
+qu'une recherche par titre), déduplication du catalogue découvert avec
+`tracked-games.ts` (`resolveCatalogId`, voir §6.1), rangée "Recommandé pour
+toi" personnalisée par la plateforme la plus jouée de la bibliothèque
+suivie (voir §6.5).
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,
@@ -429,16 +470,30 @@ clavier ouvert automatiquement).
 - Le chevron "›" des rangées Explorer/Profil est pour l'instant purement
   visuel (pas d'écran "voir tout" par section) — non demandé pour cette
   itération.
-- Pas de vraie recommandation personnalisée (§6.5) ni de déduplication par
-  id IGDB entre le catalogue découvert et `tracked-games.ts` (§6.1).
 - "Plateformes les plus jouées" plutôt que "genres" sur l'écran
   Statistiques (voir §6.7) — la donnée existe déjà, pas besoin d'étendre
   les requêtes IGDB pour cette itération.
 
-**Prochaines étapes** : Steam Web API (pré-remplir les succès plutôt que de
-remplacer la saisie manuelle, voir §6.3), recherche Spotify in-app pour la
-musique préférée (et une vraie pochette au lieu du repère visuel actuel),
-cache serveur partagé (Redis/KV) en remplacement de la `Map` en mémoire,
-installation effective de Bricolage Grotesque/IBM Plex Mono (`expo-font` +
-`@expo-google-fonts/*`, voir §2), éventuellement matcher les jaquettes
-SteamGridDB par id IGDB plutôt que par titre (§6.2).
+**Bloqué en attente de credentials** (voir §7 — ces secrets ne peuvent pas
+vivre côté client, et ne sont pas injectés par le proxy réseau de cet
+environnement de dev comme le sont IGDB/SteamGridDB) :
+- **Steam Web API** — pré-remplirait les succès (voir §6.3) plutôt que la
+  saisie manuelle actuelle ; nécessite une clé `ISteamUserStats` côté
+  serveur, en plus d'un moyen de lier le compte Steam de l'utilisateur (pas
+  de compte utilisateur du tout pour l'instant, voir §10).
+- **Spotify Web API** — recherche in-app pour peupler `tracks` depuis le
+  vrai catalogue Spotify et afficher une vraie pochette (voir §6.4) ;
+  nécessite un client id/secret Spotify (flow *Client Credentials*) côté
+  serveur.
+- **Cache serveur partagé (Redis/KV)** — remplacerait la `Map` en mémoire
+  de `games+api.ts`/`cover+api.ts` (voir §8), qui ne survit pas à un
+  redémarrage et ne serait pas partagée si l'app scalait à plusieurs
+  instances (suffisant pour une démo solo) ; nécessite une instance
+  Redis/KV et ses credentials de connexion.
+
+**Prochaines étapes** (pas de blocage technique, juste pas encore fait) :
+éventuellement un vrai popover ancré pour le menu "⋯"/sélecteur de listes
+plutôt que le `Modal` positionné approximativement actuel, un écran "voir
+tout" derrière le chevron "›" des rangées, étendre les requêtes IGDB avec
+`genres` pour afficher de vrais genres sur l'écran Statistiques plutôt que
+les plateformes.

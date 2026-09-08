@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatHours, hoursInPeriod, type StatsPeriod } from '@/lib/hours';
 import { useGameStore } from '@/lib/game-store';
@@ -199,6 +199,7 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 22,
     lineHeight: 26,
+    fontFamily: Fonts.mono.semiBold,
   },
   section: {
     borderRadius: Spacing.three,
@@ -225,6 +226,7 @@ const styles = StyleSheet.create({
     fontSize: 32,
     lineHeight: 38,
     marginTop: Spacing.two,
+    fontFamily: Fonts.mono.semiBold,
   },
   chart: {
     flexDirection: 'row',
