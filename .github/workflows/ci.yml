@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      # expo-env.d.ts est volontairement gitignoré (généré par `expo start`)
+      # mais son contenu est fixe : la référence vers expo/types, où vit la
+      # déclaration `declare module '*.css'` dont dépend le typecheck (voir
+      # src/constants/theme.ts). Un `expo start` complet en CI juste pour ce
+      # fichier de 2 lignes serait lent et superflu.
+      - name: Générer expo-env.d.ts
+        run: |
+          printf '/// <reference types="expo/types" />\n\n// NOTE: This file should not be edited and should be in your git ignore\n' > expo-env.d.ts
+
+      - run: npx tsc --noEmit
+      - run: npm run lint
