@@ -5,7 +5,7 @@ import { GameGrid } from '@/components/game-grid';
 import { FeaturedShelf } from '@/components/game-shelf';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, ScreenTitleGap, Spacing, WebTopBarInset } from '@/constants/theme';
+import { BottomTabInset, ScreenTitleGap, Spacing } from '@/constants/theme';
 import { useExploreSection, type ExploreSection } from '@/hooks/use-explore';
 
 const GRID_SECTIONS: { key: ExploreSection; title: string }[] = [
@@ -79,15 +79,11 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 34,
     paddingHorizontal: Spacing.three,
-    // WebTopBarInset (0 sur natif) : sur le web, la barre d'onglets est en
-    // haut et en position absolue, et masquait purement et simplement le
-    // titre de l'écran — même correctif que pour les icônes du Profil.
-    paddingTop: Spacing.three + WebTopBarInset,
-    // ScreenTitleGap moins le `gap` du ScrollView (content.gap), qui
-    // sépare déjà le titre de la section suivante : sans cette
-    // soustraction, Explorer aurait 24 dp de plus que Bibliothèque, alors
-    // que les deux écrans doivent respirer exactement pareil.
-    paddingBottom: ScreenTitleGap - Spacing.four,
+    // L'air va au-dessus du titre (voir ScreenTitleGap), pas en dessous :
+    // "Recommandé pour toi" et les rangées suivantes restent collées au
+    // titre qui les annonce.
+    paddingTop: ScreenTitleGap,
+    paddingBottom: Spacing.two,
   },
   gridSection: {
     gap: Spacing.two,

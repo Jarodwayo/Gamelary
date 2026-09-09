@@ -70,8 +70,14 @@ export function CustomTabList(props: TabListProps) {
 }
 
 const styles = StyleSheet.create({
+  // `bottom: 0` : la barre est en bas, comme la barre native des deux
+  // autres plateformes (voir app-tabs.tsx) — à portée de pouce. Elle reste
+  // en position absolue, donc superposée au contenu : ce que les écrans
+  // compensent avec BottomTabInset, qui vaut justement sa hauteur sur le
+  // web (voir constants/theme.ts).
   tabListContainer: {
     position: 'absolute',
+    bottom: 0,
     width: '100%',
     padding: Spacing.three,
     justifyContent: 'center',

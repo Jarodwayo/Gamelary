@@ -3,7 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SettingsGroup, SettingsSectionTitle, type SettingsItem } from '@/components/settings-list';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useGameStore } from '@/lib/game-store';
 import { DEFAULT_TITLE_ARTWORK, titleArtworkLabel } from '@/lib/title-artwork';
 
@@ -53,6 +53,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: Spacing.five,
+    paddingBottom: BottomTabInset + Spacing.five,
   },
 });

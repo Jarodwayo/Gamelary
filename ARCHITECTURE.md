@@ -981,14 +981,22 @@ stockée en data URI — ce qui peut dépasser le quota `localStorage` pour une
 photo lourde, auquel cas l'écriture du store échoue silencieusement et
 l'image est perdue au prochain lancement (voir `src/lib/profile-image.ts`).
 
-**Barre d'onglets web superposée** : sur le bundle web, la barre d'onglets
-est une barre HAUTE en position absolue (`app-tabs.web.tsx`) qui recouvre
-les 76 premiers pixels de chaque écran — sur natif, `NativeTabs` occupe le
-bas, donc le problème n'existe pas. Les écrans du Profil qui placent des
-contrôles tout en haut (cloche, menu "⋯", choix d'arrière-plan) les
-décalent maintenant de `WebTopBarInset` (voir `src/constants/theme.ts`, 0
-sur natif) ; les autres écrans n'ont rien d'interactif à cette hauteur et
-n'ont pas été touchés.
+**Barre d'onglets en bas sur les trois plateformes** : elle l'était déjà sur
+mobile (`NativeTabs` délègue à `UITabBarController`/`BottomNavigationView`,
+voir `app-tabs.tsx`), mais la réimplémentation web (`app-tabs.web.tsx`)
+était restée en haut de l'écran. Elle est maintenant ancrée en bas
+(`bottom: 0`), à portée de pouce comme sur mobile.
+
+Elle reste en position absolue, donc superposée au contenu : c'est
+`BottomTabInset` (`src/constants/theme.ts`) qui réserve sa hauteur — 50 dp
+sur iOS, 80 sur Android, 76 sur le web — et tout ce qui doit rester
+atteignable au-dessus d'elle s'y réfère (bas des écrans scrollables, bouton
+de recherche flottant). Le déplacement n'a donc pas fait disparaître le
+problème de recouvrement, il l'a déplacé en bas : vérifié écran par écran
+dans le navigateur, défilé jusqu'en bas, qu'aucun élément interactif ne
+passe sous la barre (Bibliothèque, Explorer, Profil, fiche jeu, Créer une
+liste, Modifier le profil, Paramètres, Aide, Statistiques). `WebTopBarInset`
+a disparu avec la barre du haut qui le justifiait.
 
 **Prochaines étapes** (pas de blocage technique, juste pas encore fait) :
 éventuellement un vrai popover ancré pour le menu "⋯"/sélecteur de listes

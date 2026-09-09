@@ -11,7 +11,7 @@ import { OverflowMenu, type OverflowMenuItem } from '@/components/overflow-menu'
 import { ProfileAvatar } from '@/components/profile-avatar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Fonts, ProfileHeaderDrop, Spacing, WebTopBarInset } from '@/constants/theme';
+import { BottomTabInset, Fonts, ProfileHeaderDrop, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
 import { useGameStore, type StoredGame } from '@/lib/game-store';
@@ -529,10 +529,7 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
   },
   banner: {
-    // WebTopBarInset (0 sur natif) : sur le web, la barre d'onglets couvre
-    // le haut de l'écran, donc la bannière s'allonge d'autant pour que la
-    // cloche et le menu "⋯" restent visibles et cliquables dessous.
-    height: BANNER_HEIGHT + WebTopBarInset,
+    height: BANNER_HEIGHT,
     // L'image remplit la bannière en absolute : sans overflow hidden, elle
     // déborderait sous le contenu qui suit.
     overflow: 'hidden',
@@ -545,10 +542,7 @@ const styles = StyleSheet.create({
     // le menu "⋯" (droite) à une marge symétrique par construction, plutôt
     // que deux valeurs choisies séparément.
     paddingHorizontal: Spacing.four,
-    // Décalé sous la barre d'onglets du web (WebTopBarInset, 0 sur natif) :
-    // sans ça, la cloche et le menu "⋯" se retrouvent dessous, invisibles
-    // et intapables sur le bundle web.
-    paddingTop: TOP_ROW_PADDING_TOP + WebTopBarInset,
+    paddingTop: TOP_ROW_PADDING_TOP,
   },
   // Pastille sombre semi-transparente derrière les icônes de la bannière,
   // avec une icône claire fixe : contrairement au reste de l'app, ces deux

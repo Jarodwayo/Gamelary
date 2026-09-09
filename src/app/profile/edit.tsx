@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ProfileAvatarLarge } from '@/components/profile-avatar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useGameStore } from '@/lib/game-store';
 import {
@@ -204,7 +204,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: Spacing.five,
+    // Voir create-list.tsx : le bouton "Enregistrer" est en bas de page,
+    // la barre d'onglets le recouvrirait sur le web.
+    paddingBottom: BottomTabInset + Spacing.five,
   },
   banner: {
     height: 130,

@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useGameStore } from '@/lib/game-store';
 import { DEFAULT_TITLE_ARTWORK, TITLE_ARTWORK_OPTIONS } from '@/lib/title-artwork';
@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: Spacing.four,
-    paddingBottom: Spacing.five,
+    paddingBottom: BottomTabInset + Spacing.five,
   },
   group: {
     marginHorizontal: Spacing.three,

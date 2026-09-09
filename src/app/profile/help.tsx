@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SettingsGroup, SettingsSectionTitle, type SettingsItem } from '@/components/settings-list';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing } from '@/constants/theme';
 import { FEATURE_REQUESTS_URL, REPORT_PROBLEM_URL, supportContactUrl } from '@/lib/support-links';
 
 // "Aide et idées" (menu ⋯ du Profil). Les trois entrées ouvrent le suivi
@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: Spacing.five,
+    paddingBottom: BottomTabInset + Spacing.five,
   },
   hint: {
     marginTop: Spacing.three,

@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useGameStore } from '@/lib/game-store';
 
@@ -128,7 +128,9 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: Spacing.four,
-    paddingBottom: Spacing.five,
+    // BottomTabInset : la barre d'onglets est en position absolue au-dessus
+    // du contenu sur le web, et le bouton de création est tout en bas.
+    paddingBottom: BottomTabInset + Spacing.five,
   },
   field: {
     paddingHorizontal: Spacing.three,

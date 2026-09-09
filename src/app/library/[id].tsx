@@ -10,7 +10,7 @@ import { OverflowMenu, type OverflowMenuItem } from '@/components/overflow-menu'
 import { RatingStepper } from '@/components/rating-stepper';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Fonts, Spacing } from '@/constants/theme';
+import { BottomTabInset, Fonts, Spacing } from '@/constants/theme';
 import { useGame } from '@/hooks/use-game';
 import { useTheme } from '@/hooks/use-theme';
 import { useGameStore } from '@/lib/game-store';
@@ -422,6 +422,9 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: Spacing.three,
+    // Le bas de la fiche (bande originale) passerait sous la barre
+    // d'onglets du web sans ce dégagement.
+    paddingBottom: BottomTabInset + Spacing.three,
     gap: Spacing.three,
   },
   primaryButton: {
