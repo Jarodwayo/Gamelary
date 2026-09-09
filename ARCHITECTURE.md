@@ -559,6 +559,16 @@ source, donc le TTL (durée de vie) diffère aussi.
 | Bibliothèque/notes/heures/listes | change à chaque interaction utilisateur | ✅ pas un cache réseau — persistance locale directe (AsyncStorage, voir §6.6) |
 | Schéma des succès Steam (noms/descriptions) | quasi statique | ✅ cache serveur Redis, TTL 7 jours (`gamelary-api`, voir §6.3) |
 | Succès débloqués du joueur | change quand l'utilisateur joue | ✅ cache serveur Redis, TTL 5 minutes (`gamelary-api`, voir §6.3) |
+| Bibliothèque Steam + temps de jeu du joueur | change quand l'utilisateur joue | ✅ cache serveur Redis, TTL 5 minutes (`gamelary-api`) — **même volatilité que les succès débloqués, donc même TTL** plutôt qu'une troisième valeur choisie séparément |
+| Résolution inverse app id Steam → jeu IGDB | statique (la correspondance ne change pas) | ✅ cache serveur (`Map`, TTL 30 jours, `games+api.ts`, mode `?steamAppId=`) |
+
+Règle transverse à tous ces caches : **une réponse en erreur n'est jamais
+mise en cache** (l'écriture n'a lieu qu'après une réponse amont réussie),
+sinon un incident passager côté Steam ou IGDB resterait collé pendant tout
+le TTL. Corollaire assumé côté Steam : une réponse *légitimement* vide
+(profil privé → `{ "games": [] }`, voir §6.3) est, elle, mise en cache comme
+une réponse normale — repasser son profil en public reste donc sans effet
+visible jusqu'à expiration du TTL de 5 minutes.
 
 Limite assumée du cache serveur de Gamelary lui-même (`games+api.ts`/
 `cover+api.ts`) : une simple `Map` en mémoire ne survit pas à un
@@ -575,11 +585,207 @@ stale-while-revalidate) de façon plus robuste que le `useState`/`useEffect`
 actuel de `useGameCover`/`useGame`/`useExploreSection`, plutôt que de
 réinventer cette logique à la main dans chaque hook.
 
-## 9. Licence
+## 9. Comptes, authentification et synchronisation 🚧
 
-Le dépôt est public à des fins de démonstration (recherche d'emploi) mais
-sans licence open source : `LICENSE` place le code sous "tous droits
-réservés" — consultable, mais pas réutilisable sans autorisation.
+Toute la donnée utilisateur vit aujourd'hui sur l'appareil (AsyncStorage,
+§6.6) : pas de sauvegarde, rien à récupérer en changeant de téléphone, et
+aucune fonctionnalité sociale possible. C'est le manque structurant qui
+sépare ce projet d'un vrai produit.
+
+### 9.1 Décisions prises
+
+- **Supabase** (Postgres managé + auth + Row Level Security). Retenu contre
+  un backend maison pour arriver à quelque chose d'utilisable ; et contre
+  Firebase parce que la donnée reste du **SQL standard**, donc portable si
+  le service devient un jour un mauvais choix.
+- **Google OAuth + email.** Pas de vérification par téléphone :
+  l'authentification Google fournit déjà une identité vérifiée et unique,
+  le SMS coûte de l'argent chez tous les fournisseurs sérieux, ajoute de la
+  friction à l'inscription, et ne protège de rien tant qu'il n'y a ni
+  fonctionnalité sociale ni abus à contenir. À rouvrir si l'un des deux
+  arrive.
+- **L'offline-first est conservé.** AsyncStorage reste la copie de travail
+  et la source de vérité de l'affichage ; Supabase est une **cible de
+  synchronisation**, pas la source lue à chaque rendu. Sans ça, l'app
+  cesserait de fonctionner hors réseau — une régression, pas une évolution.
+
+### 9.2 Trois obstacles dans le modèle local actuel
+
+Constats vérifiés dans le code, pas des hypothèses — et ce sont eux qui
+dictent le schéma distant, pas l'inverse.
+
+1. **Il n'existe aucune identité stable pour un jeu.** L'id est un slug
+   dérivé du titre (`resolveCatalogId`, §6.1), et l'**id numérique IGDB
+   n'est jamais demandé ni stocké** (les requêtes apicalypse de
+   `games+api.ts` récupèrent `name`, `platforms.name`, `external_games.*`,
+   jamais `id`). Conséquence : deux appareils qui résolvent un titre
+   légèrement différemment produisent deux ids pour le même jeu, et un
+   renommage côté IGDB casse la correspondance.
+2. **Aucune entité ne porte d'horodatage.** Ni `createdAt` ni `updatedAt`,
+   nulle part. Une résolution de conflit "le plus récent gagne" est donc
+   **littéralement impossible** sur les données déjà écrites : on ne peut
+   arbitrer qu'en gros ("l'appareil gagne" ou "le serveur gagne").
+3. **Les ids de succès manuels contiennent un timestamp**
+   (`makeAchievementId` : `${gameId}:${slug}-${Date.now()}`). Le même succès
+   saisi à la main sur deux appareils produit deux ids différents, donc des
+   doublons à la fusion. Les succès importés de Steam, eux, ont un id
+   déterministe (`${gameId}:steam:${apiname}`) : c'est le bon modèle, il
+   n'est simplement pas appliqué au cas manuel.
+
+S'ajoute la politique documentée en §6.6 : un changement de forme du store
+**change la clé de version plutôt que de migrer** (`gamelary/game-store/v5`).
+Acceptable pour une app sans utilisateurs ; avec des comptes, c'est une
+perte de données silencieuse à chaque évolution du schéma.
+
+### 9.3 À faire maintenant, avant tout compte
+
+Ces quatre points coûtent peu aujourd'hui et deviennent **impossibles à
+rattraper** plus tard : une donnée écrite sans horodatage n'en aura jamais
+un a posteriori, et un jeu enregistré sans id IGDB devra être re-résolu à
+l'aveugle depuis son titre.
+
+1. Demander et stocker l'**id numérique IGDB** (`fields id,...` : une ligne
+   dans la requête apicalypse, plus le champ dans `StoredGame`).
+2. Écrire un **`updatedAt` par jeu** à chaque mutation du store.
+3. Rendre les **ids de succès manuels déterministes** (dérivés du nom
+   normalisé, comme le sont déjà ceux venant de Steam).
+4. Remplacer le **bump-de-clé destructif** par de vraies migrations de
+   forme, avec la version stockée *dans* le blob plutôt que dans la clé.
+
+### 9.4 Schéma distant (Postgres / Supabase)
+
+Toutes les tables portent `user_id` et sont protégées par Row Level
+Security — c'est ce qui remplace la logique d'autorisation qu'on écrirait à
+la main dans un backend classique :
+
+```sql
+alter table user_games enable row level security;
+create policy "propriétaire uniquement" on user_games
+  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+```
+
+```sql
+create table profiles (
+  id           uuid primary key references auth.users on delete cascade,
+  display_name text,
+  steam_id64   text,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+-- Un jeu tel que CET utilisateur le suit (jamais le catalogue lui-même :
+-- titre/plateforme restent dérivés d'IGDB, voir §6.1).
+create table user_games (
+  id                   uuid primary key default gen_random_uuid(),
+  user_id              uuid not null references auth.users on delete cascade,
+  igdb_id              bigint,       -- identité canonique ; null si non résolue
+  slug                 text not null,-- id local historique, conservé pour la reprise
+  title                text not null,
+  platform             text,
+  steam_app_id         integer,
+  in_library           boolean not null default false,
+  stopped              boolean not null default false,
+  rating               smallint check (rating between 0 and 20),
+  review               text,
+  -- Le favori local pointe vers un id issu d'un fichier statique
+  -- (tracked-games.ts) : stocké ici en clair, sinon la référence pend dès
+  -- que ce fichier change.
+  favorite_track_title text,
+  favorite_track_artist text,
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now()
+);
+
+-- Identité : l'id IGDB fait foi quand il est connu, le slug sert de repli.
+create unique index on user_games (user_id, igdb_id) where igdb_id is not null;
+create unique index on user_games (user_id, slug)    where igdb_id is null;
+
+create table achievements (
+  id            uuid primary key default gen_random_uuid(),
+  user_game_id  uuid not null references user_games on delete cascade,
+  source        text not null check (source in ('manual', 'steam')),
+  external_key  text not null,  -- apiname Steam, ou nom normalisé si manuel
+  name          text not null,
+  unlocked      boolean not null default false,
+  updated_at    timestamptz not null default now(),
+  -- Rend l'import Steam idempotent par construction, et supprime les
+  -- doublons dus aux ids horodatés (voir 9.2.3).
+  unique (user_game_id, source, external_key)
+);
+
+create table play_sessions (
+  id           uuid primary key default gen_random_uuid(),
+  user_game_id uuid not null references user_games on delete cascade,
+  played_at    timestamptz not null,
+  hours        numeric(6,2) not null,
+  -- setTotalHours (§6.6) enregistre une session CORRECTRICE égale à l'écart,
+  -- pas du temps réellement joué ce jour-là. Sans cette distinction, fusionner
+  -- deux appareils rejouerait les corrections et gonflerait les totaux.
+  kind         text not null default 'logged' check (kind in ('logged', 'correction')),
+  client_key   text not null,  -- déterministe : rend un ré-upload idempotent
+  unique (user_game_id, client_key)
+);
+
+create table lists (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users on delete cascade,
+  builtin_key text,             -- 'favoris' | 'wishlist' | null si liste créée
+  name        text not null,
+  created_at  timestamptz not null default now(),
+  unique (user_id, builtin_key)
+);
+
+create table list_games (
+  list_id      uuid not null references lists on delete cascade,
+  user_game_id uuid not null references user_games on delete cascade,
+  added_at     timestamptz not null default now(),
+  primary key (list_id, user_game_id)
+);
+```
+
+### 9.5 Migration local → distant
+
+Le risque n'est pas l'authentification : c'est de **corrompre ou perdre une
+bibliothèque déjà constituée**. Un dégât de ce type se voit tard et coûte
+bien plus cher à réparer qu'à prévenir.
+
+1. **Instantané avant toute écriture.** Le blob local est copié sous une clé
+   dédiée (`gamelary/game-store/pre-migration-<ts>`) qui n'est jamais
+   écrasée ni migrée. Rien d'autre ne commence tant qu'elle n'est pas écrite.
+2. **Résolution d'identité.** Les jeux sans `igdb_id` sont re-résolus par
+   titre ; ceux qui échouent partent quand même, avec `igdb_id` à null et
+   leur slug comme identité de repli — jamais abandonnés silencieusement.
+3. **Envoi atomique.** Toute la bibliothèque part dans **une seule fonction
+   RPC Postgres** (tout ou rien) plutôt qu'en N insertions : un envoi
+   interrompu ne doit jamais laisser une demi-bibliothèque côté serveur.
+4. **Bascule après accusé de réception.** Le local n'est marqué "synchronisé"
+   qu'une fois le serveur confirmé, et l'instantané de l'étape 1 est
+   conservé plusieurs jours après ça.
+5. **Fusion si le compte contient déjà des données** (2ᵉ appareil) : par
+   type, jamais un "dernier arrivé écrase tout" global.
+
+| Donnée | Politique de fusion | Pourquoi |
+|---|---|---|
+| `in_library`, `stopped`, appartenance aux listes | **Union** | Ne jamais retirer ce que l'utilisateur a ajouté depuis un autre appareil |
+| `play_sessions` | **Union** par `client_key`, corrections comprises mais jamais rejouées | Journal append-only : fusion sans perte et sans double comptage |
+| `achievements` | Union par `(source, external_key)`, `unlocked` = **OU logique** | Un succès débloqué ne doit jamais se re-verrouiller |
+| `rating`, `review` | **Le plus récent gagne** (`updated_at`) | Valeur unique : vrai conflit, arbitrage nécessaire — **dépend du prérequis 9.3.2** |
+| `steam_id64` | Le plus récent gagne | Simple réglage, enjeu faible |
+
+### 9.6 Points encore ouverts
+
+- **Réconciliation d'identité tardive** : un jeu envoyé avec `igdb_id` null
+  puis résolu plus tard peut entrer en collision avec une ligne portant déjà
+  cet `igdb_id`. Il faut une étape de fusion de lignes, pas un simple
+  `update`.
+- **Suppression de compte et export des données** (RGPD) : `on delete
+  cascade` couvre l'effacement, l'export reste à concevoir.
+- **Refus de migrer** : que fait l'app si l'utilisateur crée un compte mais
+  décline l'envoi de sa bibliothèque locale ?
+- **Quota et abus** : aucune limite par utilisateur aujourd'hui. À cadrer
+  avant toute ouverture publique, en même temps que l'absence de rate
+  limiting sur les routes existantes (`games+api.ts`, `gamelary-api`), qui
+  n'est elle non plus documentée nulle part pour l'instant.
 
 ## 10. État actuel vs feuille de route
 
@@ -794,3 +1000,9 @@ jeux.
   actuellement une constante) et pour que `store.settings.steamId64`
   devienne une vraie liaison de compte plutôt qu'un champ collé à la
   main.
+
+## 11. Licence
+
+Le dépôt est public à des fins de démonstration (recherche d'emploi) mais
+sans licence open source : `LICENSE` place le code sous "tous droits
+réservés" — consultable, mais pas réutilisable sans autorisation.
