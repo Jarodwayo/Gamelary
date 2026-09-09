@@ -108,14 +108,13 @@ export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 // rester sur l'échelle d'espacement du projet.
 //
 // Air entre le grand titre d'un écran et le premier contenu dessous
-// (Explorer, Bibliothèque) : ~2 cm. Une seule constante partagée, pour que
-// les deux écrans respirent pareil au lieu d'être réglés chacun de son
-// côté — c'est précisément ce qui les avait fait diverger (Explorer avait
-// 32 dp, Bibliothèque rien du tout). Une première version à ~4 cm (256 dp)
-// occupait près d'un tiers de la hauteur visible et se lisait comme un trou
-// de mise en page plutôt que comme de l'air : vérifié à l'écran, pas
-// déduit de la valeur.
-export const ScreenTitleGap = Spacing.six * 2; // 128 dp ≈ 2,0 cm
+// (Explorer, Bibliothèque). Une seule constante partagée, pour que les deux
+// écrans respirent pareil au lieu d'être réglés chacun de son côté — c'est
+// précisément ce qui les avait fait diverger (Explorer avait 32 dp,
+// Bibliothèque rien du tout). Valeur resserrée à l'œil, écran par écran :
+// ~4 cm (256 dp) occupait près d'un tiers de la hauteur visible et se
+// lisait comme un trou de mise en page, ~2 cm (128 dp) restait généreux.
+export const ScreenTitleGap = Spacing.six + Spacing.five; // 96 dp ≈ 1,5 cm
 
 // De combien la cloche et le menu "⋯" du Profil descendent sous le haut de
 // l'écran, en plus de la marge d'origine : ~2 cm.
