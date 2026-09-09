@@ -121,10 +121,6 @@ const MUTATIONS: [string, (store: Store) => void][] = [
   ['addAchievement', (s) => s.addAchievement('jeu-test', 'Premier succès')],
   ['importAchievements', (s) => s.importAchievements('jeu-test', [{ apiname: 'ACH_1', name: 'Un', unlocked: true }])],
   ['setFavoriteTrack', (s) => s.setFavoriteTrack('jeu-test', 'piste-1')],
-  [
-    'registerCatalogGame (mise à jour réelle)',
-    (s) => s.registerCatalogGame({ ...CATALOG_GAME, platform: 'PlayStation 5' }),
-  ],
 ];
 
 test.each(MUTATIONS)('%s horodate le jeu', async (_label, mutate) => {
@@ -133,19 +129,23 @@ test.each(MUTATIONS)('%s horodate le jeu', async (_label, mutate) => {
   act(() => {
     store().registerCatalogGame(CATALOG_GAME);
   });
+  // Enregistrer le jeu depuis le catalogue ne pose volontairement pas
+  // d'horodatage (test dédié plus bas) : la référence de départ est donc
+  // "aucun", et chaque action utilisateur doit en produire un.
   const before = store().games['jeu-test'].updatedAt;
-  expect(before).toBeDefined();
+  expect(before).toBeUndefined();
 
   act(() => {
     mutate(store());
   });
 
-  expect(store().games['jeu-test'].updatedAt).toBeGreaterThan(before!);
+  expect(store().games['jeu-test'].updatedAt).toBeGreaterThan(0);
 });
 
 test('toggleAchievement horodate le jeu', async () => {
   // À part des autres : a besoin d'un succès existant, dont l'id n'est connu
-  // qu'après coup (makeAchievementId).
+  // qu'après coup (makeAchievementId). addAchievement pose déjà un
+  // horodatage, d'où une vraie valeur de départ ici.
   const store = await mountStore();
 
   act(() => {
@@ -188,6 +188,70 @@ test.each(NO_OPS)("%s n'horodate pas", async (_label, mutate) => {
   });
 
   expect(store().games['jeu-test'].updatedAt).toBe(before);
+});
+
+test("un rafraîchissement de catalogue n'horodate pas le jeu", async () => {
+  // registerCatalogGame ne transporte que des métadonnées IGDB (titre,
+  // plateforme, appid, id), re-dérivables à tout moment — jamais de donnée
+  // utilisateur. Les horodater ferait gagner l'arbitrage "le plus récent
+  // gagne" (§9.5) à un appareil qui a simplement ouvert Explorer.
+  const store = await mountStore();
+
+  act(() => {
+    store().registerCatalogGame(CATALOG_GAME);
+    store().setRating('jeu-test', 18);
+  });
+  const afterUserEdit = store().games['jeu-test'].updatedAt!;
+
+  act(() => {
+    // Vraie mise à jour de catalogue : la plateforme change côté IGDB.
+    store().registerCatalogGame({ ...CATALOG_GAME, platform: 'PlayStation 5' });
+  });
+
+  expect(store().games['jeu-test'].platform).toBe('PlayStation 5');
+  expect(store().games['jeu-test'].updatedAt).toBe(afterUserEdit);
+});
+
+test("un jeu seulement aperçu dans Explorer n'a pas d'updatedAt", async () => {
+  // Absent = "jamais modifié par l'utilisateur" (voir store-migrations.ts).
+  // En poser un ferait entrer dans l'arbitrage un jeu sur lequel
+  // l'utilisateur n'a rien écrit.
+  const store = await mountStore();
+
+  act(() => {
+    store().registerCatalogGame(CATALOG_GAME);
+  });
+
+  expect(store().games['jeu-test'].updatedAt).toBeUndefined();
+});
+
+test("le scénario de perte d'avis : ouvrir Explorer ne prend pas le dessus sur un avis écrit ailleurs", async () => {
+  // Reproduit le cas concret que la règle ci-dessus empêche. Appareil A :
+  // l'utilisateur note et commente un jeu. Appareil B, même compte, ouvre
+  // seulement Explorer plus tard et reçoit une plateforme mise à jour par
+  // IGDB. Si ce simple rafraîchissement horodatait, B gagnerait
+  // l'arbitrage §9.5 sur rating/review — et effacerait l'avis de A alors
+  // que B n'en a jamais eu.
+  const appareilA = await mountStore();
+  act(() => {
+    appareilA().registerCatalogGame(CATALOG_GAME);
+    appareilA().setRating('jeu-test', 18);
+    appareilA().setReview('jeu-test', 'Un chef-d’œuvre.');
+  });
+  const horodatageA = appareilA().games['jeu-test'].updatedAt!;
+
+  const appareilB = await mountStore();
+  act(() => {
+    appareilB().registerCatalogGame(CATALOG_GAME);
+    appareilB().registerCatalogGame({ ...CATALOG_GAME, platform: 'PlayStation 5' });
+  });
+  const horodatageB = appareilB().games['jeu-test'].updatedAt;
+
+  // B n'a aucune donnée utilisateur sur ce jeu : il ne doit porter aucun
+  // horodatage, donc ne peut pas gagner l'arbitrage face à A.
+  expect(appareilB().games['jeu-test'].review).toBeUndefined();
+  expect(horodatageB).toBeUndefined();
+  expect(horodatageA).toBeGreaterThan(0);
 });
 
 test("l'appartenance à une liste n'horodate pas le jeu", async () => {
