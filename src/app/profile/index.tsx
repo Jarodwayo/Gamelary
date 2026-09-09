@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameShelf } from '@/components/game-shelf';
@@ -11,7 +11,21 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
-import { useGameStore } from '@/lib/game-store';
+import { useGameStore, type StoredGame } from '@/lib/game-store';
+import { steamApiUrl } from '@/lib/steam-api-url';
+
+type SteamOwnedGame = { appid: number; name: string; playtimeMinutes: number };
+
+// steamAppId ne veut dire que "ce jeu existe sur Steam" (résolu depuis les
+// external_games d'IGDB, voir ARCHITECTURE.md §6.1/§6.2) — pas "le joueur y
+// joue sur Steam". Un jeu suivi comme PS5 peut très bien avoir un
+// steamAppId renseigné sans avoir jamais été lancé côté Steam. Importer
+// écraserait alors ses heures réelles par un 0 Steam. D'où la règle : ne
+// compléter que les jeux sans aucune heure déjà suivie, jamais remplacer un
+// total existant, quelle que soit la plateforme derrière ce total.
+function findUntrackedGameId(games: Record<string, StoredGame>, appid: number): string | undefined {
+  return Object.values(games).find((game) => game.steamAppId === appid && game.playSessions.length === 0)?.id;
+}
 
 // Pas de compte utilisateur pour l'instant (voir ARCHITECTURE.md §9) : nom
 // et handle sont des constantes le temps qu'une vraie auth existe, plutôt
@@ -41,6 +55,8 @@ export default function ProfileScreen() {
 
   const [editingSteamId, setEditingSteamId] = useState(false);
   const [steamIdInput, setSteamIdInput] = useState('');
+  const [importingLibrary, setImportingLibrary] = useState(false);
+  const [libraryImportStatus, setLibraryImportStatus] = useState<string | null>(null);
 
   function startEditingSteamId() {
     setSteamIdInput(store.settings.steamId64 ?? '');
@@ -51,6 +67,52 @@ export default function ProfileScreen() {
     const trimmed = steamIdInput.trim();
     store.setSteamId64(trimmed || undefined);
     setEditingSteamId(false);
+  }
+
+  // N'apparaît que si les deux conditions sont réunies (compte Steam lié,
+  // backend gamelary-api déployé) — même garde que steamAchievementsUrl côté
+  // fiche jeu (voir library/[id].tsx), ici au niveau du compte plutôt que
+  // du jeu puisque GetOwnedGames n'est pas scopé à un jeu précis.
+  const steamGamesUrl = store.settings.steamId64
+    ? steamApiUrl(`/api/steam/games?steamid=${store.settings.steamId64}`)
+    : null;
+
+  async function importSteamLibrary() {
+    if (!steamGamesUrl) return;
+    setImportingLibrary(true);
+    setLibraryImportStatus(null);
+    try {
+      const response = await fetch(steamGamesUrl);
+      const data: { games?: SteamOwnedGame[]; error?: string } = await response.json();
+      if (!response.ok || !data.games) {
+        throw new Error(data.error ?? 'Erreur inconnue');
+      }
+
+      // Ne traite que les jeux Steam avec du temps de jeu réel (0 minute ==
+      // rien à importer) qui correspondent à un jeu déjà connu de Gamelary
+      // et pas encore suivi (voir findUntrackedGameId) : les jeux Steam sans
+      // équivalent local ne peuvent pas être créés ici (demanderait une
+      // résolution inverse appid -> catalogue IGDB, hors scope).
+      const matches = data.games
+        .filter((entry) => entry.playtimeMinutes > 0)
+        .map((entry) => ({ entry, gameId: findUntrackedGameId(store.games, entry.appid) }))
+        .filter((m): m is { entry: SteamOwnedGame; gameId: string } => Boolean(m.gameId));
+
+      for (const { entry, gameId } of matches) {
+        store.setTotalHours(gameId, entry.playtimeMinutes / 60);
+        store.addToLibrary(gameId);
+      }
+
+      setLibraryImportStatus(
+        matches.length > 0
+          ? `${matches.length} jeu${matches.length > 1 ? 'x' : ''} complété${matches.length > 1 ? 's' : ''} avec leur temps de jeu Steam.`
+          : 'Rien à compléter : aucun jeu Steam sans heures déjà suivies ne correspond à ta bibliothèque Gamelary.'
+      );
+    } catch (error) {
+      setLibraryImportStatus(error instanceof Error ? error.message : 'Erreur inconnue');
+    } finally {
+      setImportingLibrary(false);
+    }
   }
 
   // Contenu de chaque option pas encore développé (pas d'écran "Partager le
@@ -179,7 +241,8 @@ export default function ProfileScreen() {
           <ThemedView type="backgroundElement" style={styles.steamSection}>
             <ThemedText type="smallBold">Compte Steam</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
-              Permet de pré-remplir les succès des jeux Steam depuis la fiche jeu.
+              Permet de pré-remplir les succès des jeux Steam depuis la fiche jeu, et de compléter le
+              temps de jeu des jeux de ta bibliothèque Gamelary déjà repérés sur Steam.
             </ThemedText>
 
             {editingSteamId ? (
@@ -217,6 +280,27 @@ export default function ProfileScreen() {
                 ) : null}
               </View>
             )}
+
+            {steamGamesUrl ? (
+              <>
+                <Pressable
+                  onPress={importSteamLibrary}
+                  disabled={importingLibrary}
+                  style={styles.importRow}>
+                  {importingLibrary ? <ActivityIndicator size="small" color={theme.accent} /> : null}
+                  <ThemedText type="linkPrimary">
+                    {importingLibrary
+                      ? 'Import en cours (jusqu’à 1 min si le service vient de se réveiller)…'
+                      : 'Importer ma bibliothèque Steam'}
+                  </ThemedText>
+                </Pressable>
+                {libraryImportStatus ? (
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {libraryImportStatus}
+                  </ThemedText>
+                ) : null}
+              </>
+            ) : null}
           </ThemedView>
         </ScrollView>
       </SafeAreaView>
@@ -325,5 +409,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
     fontSize: 14,
+  },
+  importRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginTop: Spacing.two,
   },
 });
