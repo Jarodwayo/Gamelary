@@ -135,7 +135,7 @@ export default function StatsScreen() {
           <ThemedView type="backgroundElement" style={styles.section}>
             <ThemedText type="smallBold">Plateformes les plus jouées</ThemedText>
             {platforms.length === 0 ? (
-              <ThemedText themeColor="textSecondary">Pas encore d'heures enregistrées.</ThemedText>
+              <ThemedText themeColor="textSecondary">Pas encore d&apos;heures enregistrées.</ThemedText>
             ) : (
               platforms.map((platform) => (
                 <View key={platform.platform} style={styles.platformRow}>

@@ -28,6 +28,10 @@ export function useGameCover(title: string, steamAppId?: number): CoverState {
 
   useEffect(() => {
     if (clientCache.has(cacheKey)) {
+      // Même raisonnement que useExploreSection (use-explore.ts) :
+      // nécessaire quand cacheKey change après montage, pas au tout premier
+      // rendu (déjà couvert par l'état initial).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUrl(clientCache.get(cacheKey) ?? null);
       setLoading(false);
       return;
