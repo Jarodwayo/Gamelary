@@ -99,13 +99,32 @@ export const Spacing = {
   six: 64,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
+// Hauteur réservée sous le contenu pour la barre d'onglets, qui est en bas
+// de l'écran sur les trois plateformes : barre native (UITabBarController /
+// BottomNavigationView, voir app-tabs.tsx) sur mobile, barre en position
+// absolue reconstruite en JS sur le web (voir app-tabs.web.tsx : pilule de
+// 78 px — icône + libellé — plus ses 16 px de marge de chaque côté). Tout
+// ce qui doit rester atteignable au-dessus d'elle s'y réfère : bas des
+// écrans scrollables et bouton de recherche flottant.
+export const BottomTabInset = Platform.select({ ios: 50, android: 80, web: 110 }) ?? 0;
 
-// Sur le web, la barre d'onglets est une barre HAUTE en position absolue
-// (voir app-tabs.web.tsx, `tabListContainer`) : elle recouvre les 76
-// premiers pixels de chaque écran, contrairement au natif où NativeTabs
-// occupe le bas (BottomTabInset ci-dessus). Les écrans qui placent du
-// contenu interactif tout en haut doivent donc le décaler d'autant — sinon
-// il est masqué, et intapable, sur le bundle web uniquement.
-export const WebTopBarInset = Platform.OS === 'web' ? 76 : 0;
+// Un dp vaut ~1/160 de pouce, soit ~63 dp par centimètre sur un écran de
+// téléphone standard : c'est la conversion utilisée pour traduire les deux
+// consignes d'espacement exprimées en centimètres ci-dessous. Elles sont
+// écrites en multiples de Spacing.six (64) plutôt qu'en nombres bruts, pour
+// rester sur l'échelle d'espacement du projet.
+//
+// Air AU-DESSUS du grand titre d'un écran (Explorer, Bibliothèque) : entre
+// le haut de l'écran et le titre, pas entre le titre et son contenu — les
+// sections restent collées à leur titre, qui les annonce. Une seule
+// constante partagée, pour que les deux écrans respirent pareil au lieu
+// d'être réglés chacun de son côté (ils avaient divergé : 32 dp d'un côté,
+// rien de l'autre). Sert aussi de dégagement pour la barre de statut, que
+// le SafeAreaView de ces écrans ne compense pas (edges left/right).
+export const ScreenTitleGap = Spacing.six + Spacing.five; // 96 dp
+
+// De combien la cloche et le menu "⋯" du Profil descendent sous le haut de
+// l'écran, en plus de la marge d'origine : ~2 cm.
+export const ProfileHeaderDrop = Spacing.six * 2; // 128 dp ≈ 2,0 cm
+
 export const MaxContentWidth = 800;

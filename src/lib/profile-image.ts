@@ -46,7 +46,7 @@ export async function pickProfileImage(kind: ProfileImageKind): Promise<string |
     // dépasser le quota localStorage — l'écriture du store échoue alors
     // silencieusement (voir game-store.tsx) et l'image est perdue au
     // prochain lancement. Un vrai upload vers un backend (donc un compte,
-    // voir ARCHITECTURE.md §10) est la seule vraie réponse.
+    // voir ARCHITECTURE.md §9) est la seule vraie réponse.
     return asset.base64 ? `data:${asset.mimeType ?? 'image/jpeg'};base64,${asset.base64}` : asset.uri;
   }
 

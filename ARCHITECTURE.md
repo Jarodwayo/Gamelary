@@ -881,9 +881,22 @@ identifiant, bio — identifiant normalisé à la frappe et validé, voir
 `src/lib/profile.ts`) et "Partager le profil" qui copie le lien public
 `/u/<identifiant>` dans le presse-papiers avec confirmation à l'écran
 (`expo-clipboard`, base configurable via `EXPO_PUBLIC_PROFILE_BASE_URL` —
-voir `src/lib/profile-link.ts`). Ces trois entrées du menu "⋯" sont donc
-branchées ; Paramètres, Créer une liste, Aide et Se déconnecter restent
-des stubs faute d'écran dédié ou de compte.
+voir `src/lib/profile-link.ts`), écran **"Créer une liste"**
+(`/profile/create-list` : nom obligatoire, description libre affichée sous
+le titre de la rangée, et "Ne pas afficher sur le profil" qui garde la
+liste utilisable depuis la fiche d'un jeu sans lui donner de rangée sur le
+Profil — les listes créées apparaissent désormais en rangées, voir
+`profile/index.tsx`), écran **"Aide et idées"** (`/profile/help` : demandes
+de fonctionnalités, signalement de problème et contact, tous vers le suivi
+d'issues du dépôt public — voir `src/lib/support-links.ts`, aucune adresse
+personnelle codée en dur), et écran **Paramètres** (`/profile/settings`)
+avec le réglage **"Affiche de la page titre"** : la fiche jeu s'ouvre soit
+sur un bandeau large + le logo du jeu (illustrations `hero`/`logo` de
+SteamGridDB, nouveau paramètre `kind` de `/api/cover`), soit sur la
+jaquette portrait, avec repli automatique sur la jaquette quand le bandeau
+n'existe pas ou ne charge pas (voir `game-title-header.tsx`). Seul "Se
+déconnecter" reste un stub dans le menu "⋯", faute de compte à
+déconnecter.
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,
@@ -997,7 +1010,7 @@ comme le sont IGDB/SteamGridDB. Le même mécanisme que `gamelary-api`
 credentials seraient disponibles ici aussi.
 
 **Images de profil, limite connue** : sans backend d'upload (donc sans
-compte, voir plus bas), la photo et l'arrière-plan restent locaux à
+compte, voir §9), la photo et l'arrière-plan restent locaux à
 l'appareil. Sur natif, on garde l'URI `file://` produite par
 `expo-image-picker` (déjà une copie dans le cache de l'app) ; sur le web,
 une `blob:` URL ne survivrait pas au rechargement, donc l'image est
@@ -1005,21 +1018,29 @@ stockée en data URI — ce qui peut dépasser le quota `localStorage` pour une
 photo lourde, auquel cas l'écriture du store échoue silencieusement et
 l'image est perdue au prochain lancement (voir `src/lib/profile-image.ts`).
 
-**Barre d'onglets web superposée** : sur le bundle web, la barre d'onglets
-est une barre HAUTE en position absolue (`app-tabs.web.tsx`) qui recouvre
-les 76 premiers pixels de chaque écran — sur natif, `NativeTabs` occupe le
-bas, donc le problème n'existe pas. Les écrans du Profil qui placent des
-contrôles tout en haut (cloche, menu "⋯", choix d'arrière-plan) les
-décalent maintenant de `WebTopBarInset` (voir `src/constants/theme.ts`, 0
-sur natif) ; les autres écrans n'ont rien d'interactif à cette hauteur et
-n'ont pas été touchés.
+**Barre d'onglets en bas sur les trois plateformes** : elle l'était déjà sur
+mobile (`NativeTabs` délègue à `UITabBarController`/`BottomNavigationView`,
+voir `app-tabs.tsx`), mais la réimplémentation web (`app-tabs.web.tsx`)
+était restée en haut de l'écran. Elle est maintenant ancrée en bas
+(`bottom: 0`), à portée de pouce comme sur mobile.
+
+Elle reste en position absolue, donc superposée au contenu : c'est
+`BottomTabInset` (`src/constants/theme.ts`) qui réserve sa hauteur — 50 dp
+sur iOS, 80 sur Android, 76 sur le web — et tout ce qui doit rester
+atteignable au-dessus d'elle s'y réfère (bas des écrans scrollables, bouton
+de recherche flottant). Le déplacement n'a donc pas fait disparaître le
+problème de recouvrement, il l'a déplacé en bas : vérifié écran par écran
+dans le navigateur, défilé jusqu'en bas, qu'aucun élément interactif ne
+passe sous la barre (Bibliothèque, Explorer, Profil, fiche jeu, Créer une
+liste, Modifier le profil, Paramètres, Aide, Statistiques). `WebTopBarInset`
+a disparu avec la barre du haut qui le justifiait.
 
 **Prochaines étapes** (pas de blocage technique, juste pas encore fait) :
 éventuellement un vrai popover ancré pour le menu "⋯"/sélecteur de listes
 plutôt que le `Modal` positionné approximativement actuel, un écran "voir
 tout" derrière le chevron "›" du Profil, la page publique `/u/<identifiant>`
 vers laquelle pointe le lien de profil partagé (suppose des comptes
-hébergés, voir plus bas), étendre les requêtes IGDB avec
+hébergés, voir §9), étendre les requêtes IGDB avec
 `genres` pour afficher de vrais genres sur l'écran Statistiques plutôt que
 les plateformes, étendre la bande originale curatée (§6.4) à davantage de
 jeux.

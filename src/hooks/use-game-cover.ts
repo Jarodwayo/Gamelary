@@ -14,15 +14,26 @@ type CoverState = {
   loading: boolean;
 };
 
+// Formats servis par /api/cover (voir ArtworkKind, cover+api.ts) : la
+// jaquette portrait par défaut, le bandeau large et le logo pour le mode
+// "Arrière-plan" de la fiche jeu.
+type ArtworkKind = 'grid' | 'hero' | 'logo';
+
 // steamAppId (résolu depuis IGDB, voir games+api.ts) donne une clé de cache
 // plus précise que le titre seul : deux jeux au titre identique n'ont pas
-// le même app id Steam, l'inverse n'arrivant jamais.
-function cacheKeyFor(title: string, steamAppId?: number): string {
-  return steamAppId ? `steam:${steamAppId}` : `title:${title}`;
+// le même app id Steam, l'inverse n'arrivant jamais. Le format en fait
+// partie, comme côté serveur : bandeau et jaquette d'un même jeu ne
+// partagent pas leur entrée.
+function cacheKeyFor(title: string, kind: ArtworkKind, steamAppId?: number): string {
+  return steamAppId ? `${kind}:steam:${steamAppId}` : `${kind}:title:${title}`;
 }
 
-export function useGameCover(title: string, steamAppId?: number): CoverState {
-  const cacheKey = cacheKeyFor(title, steamAppId);
+export function useGameCover(
+  title: string,
+  steamAppId?: number,
+  kind: ArtworkKind = 'grid'
+): CoverState {
+  const cacheKey = cacheKeyFor(title, kind, steamAppId);
   const [url, setUrl] = useState<string | null>(clientCache.get(cacheKey) ?? null);
   const [loading, setLoading] = useState(!clientCache.has(cacheKey));
 
@@ -40,9 +51,13 @@ export function useGameCover(title: string, steamAppId?: number): CoverState {
     let cancelled = false;
     setLoading(true);
 
-    const query = steamAppId
-      ? `title=${encodeURIComponent(title)}&steamAppId=${steamAppId}`
-      : `title=${encodeURIComponent(title)}`;
+    const query = [
+      `title=${encodeURIComponent(title)}`,
+      steamAppId ? `steamAppId=${steamAppId}` : null,
+      `kind=${kind}`,
+    ]
+      .filter(Boolean)
+      .join('&');
 
     fetch(apiUrl(`/api/cover?${query}`))
       .then((res) => res.json())
@@ -65,7 +80,7 @@ export function useGameCover(title: string, steamAppId?: number): CoverState {
     return () => {
       cancelled = true;
     };
-  }, [cacheKey, title, steamAppId]);
+  }, [cacheKey, title, steamAppId, kind]);
 
   return { url, loading };
 }

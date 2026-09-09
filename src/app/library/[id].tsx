@@ -4,18 +4,19 @@ import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
 
 import { ExternalLink } from '@/components/external-link';
-import { GameCover } from '@/components/game-cover';
+import { GameTitleHeader } from '@/components/game-title-header';
 import { ListPickerSheet } from '@/components/list-picker-sheet';
 import { OverflowMenu, type OverflowMenuItem } from '@/components/overflow-menu';
 import { RatingStepper } from '@/components/rating-stepper';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Fonts, Spacing } from '@/constants/theme';
+import { BottomTabInset, Fonts, Spacing } from '@/constants/theme';
 import { useGame } from '@/hooks/use-game';
 import { useTheme } from '@/hooks/use-theme';
 import { useGameStore } from '@/lib/game-store';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
 import { steamApiUrl } from '@/lib/steam-api-url';
+import { DEFAULT_TITLE_ARTWORK } from '@/lib/title-artwork';
 
 type SteamAchievement = { apiname: string; name: string; unlocked: boolean };
 
@@ -170,32 +171,34 @@ export default function GameDetailScreen() {
         options={{ title: game.title, headerRight: () => <OverflowMenu items={menuItems} /> }}
       />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <ThemedView style={styles.hero}>
-          <GameCover title={game.title} steamAppId={game.steamAppId} />
-          <ThemedView style={styles.heroText}>
-            <ThemedText type="subtitle">{game.title}</ThemedText>
-            <ThemedText themeColor="textSecondary">
-              {loading ? 'Chargement…' : game.platform}
-              {game.stopped ? ' · Arrêté' : ''}
-            </ThemedText>
-          </ThemedView>
-          {/* "Jeux préférés" du Profil (voir profile/index.tsx) est la liste
-              intégrée `favoris` résolue en jeux — ce bouton en est le seul
-              point d'entrée direct depuis la fiche jeu (jusqu'ici accessible
-              uniquement via "Ajouter à une liste" dans le menu ⋯). */}
-          <Pressable
-            onPress={() => store.toggleListMembership('favoris', id)}
-            hitSlop={8}
-            style={styles.favoriteButton}
-            accessibilityRole="button"
-            accessibilityLabel={isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}>
-            <Ionicons
-              name={isFavorite ? 'heart' : 'heart-outline'}
-              size={26}
-              color={isFavorite ? theme.accent : theme.textSecondary}
-            />
-          </Pressable>
-        </ThemedView>
+        {/* Jaquette ou bandeau large + logo selon le réglage "Affiche de la
+            page titre" (voir profile/settings-artwork.tsx) — le composant
+            gère lui-même le repli sur la jaquette quand aucun bandeau
+            n'existe pour ce jeu. */}
+        <GameTitleHeader
+          mode={store.settings.titleArtwork ?? DEFAULT_TITLE_ARTWORK}
+          title={game.title}
+          steamAppId={game.steamAppId}
+          subtitle={`${loading ? 'Chargement…' : game.platform}${game.stopped ? ' · Arrêté' : ''}`}
+          action={
+            /* "Jeux préférés" du Profil (voir profile/index.tsx) est la
+               liste intégrée `favoris` résolue en jeux — ce bouton en est le
+               seul point d'entrée direct depuis la fiche jeu (jusqu'ici
+               accessible uniquement via "Ajouter à une liste" dans le menu
+               ⋯). */
+            <Pressable
+              onPress={() => store.toggleListMembership('favoris', id)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}>
+              <Ionicons
+                name={isFavorite ? 'heart' : 'heart-outline'}
+                size={26}
+                color={isFavorite ? theme.accent : theme.textSecondary}
+              />
+            </Pressable>
+          }
+        />
 
         {!game.inLibrary && (
           <Pressable
@@ -419,19 +422,10 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: Spacing.three,
+    // Le bas de la fiche (bande originale) passerait sous la barre
+    // d'onglets du web sans ce dégagement.
+    paddingBottom: BottomTabInset + Spacing.three,
     gap: Spacing.three,
-  },
-  hero: {
-    flexDirection: 'row',
-    gap: Spacing.three,
-    alignItems: 'flex-end',
-  },
-  heroText: {
-    gap: Spacing.half,
-    flexShrink: 1,
-  },
-  favoriteButton: {
-    alignSelf: 'flex-start',
   },
   primaryButton: {
     borderRadius: 999,

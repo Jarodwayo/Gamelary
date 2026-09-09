@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 
 import { trackedGames, trackId } from '@/data/tracked-games';
 import type { StoredProfile } from '@/lib/profile';
+import type { TitleArtwork } from '@/lib/title-artwork';
 import { slugify } from '@/lib/slug';
 import { migrateStore, STORE_VERSION } from '@/lib/store-migrations';
 import type { Achievement, CatalogGame, PlaySession } from '@/types/game';
@@ -47,6 +48,14 @@ export type StoredList = {
   id: string;
   name: string;
   builtin: boolean;
+  // Facultative (voir profile/create-list.tsx) : absente sur les listes
+  // intégrées et sur celles créées à la volée depuis la fiche jeu.
+  description?: string;
+  // "Ne pas afficher sur le profil" : la liste existe et reste utilisable
+  // partout (sélecteur de listes de la fiche jeu), elle n'apparaît
+  // simplement pas dans les rangées du Profil (voir profile/index.tsx).
+  // Absent = visible, pour ne pas avoir à migrer les listes déjà stockées.
+  hidden?: boolean;
   gameIds: string[];
 };
 
@@ -59,6 +68,10 @@ type Settings = {
   // passent alors par les valeurs par défaut de profile.ts (displayNameOf,
   // usernameOf) plutôt que d'afficher des champs vides.
   profile?: StoredProfile;
+  // En-tête de la fiche jeu : bandeau large + logo, ou jaquette portrait
+  // (voir profile/settings-artwork.tsx). Absent = valeur par défaut
+  // DEFAULT_TITLE_ARTWORK, pas besoin de migrer les stores existants.
+  titleArtwork?: TitleArtwork;
 };
 
 export type StoreShape = {
@@ -153,9 +166,10 @@ type GameStoreContextValue = {
   importAchievements: (id: string, achievements: { apiname: string; name: string; unlocked: boolean }[]) => void;
   setSteamId64: (steamId64: string | undefined) => void;
   updateProfile: (patch: Partial<StoredProfile>) => void;
+  setTitleArtwork: (titleArtwork: TitleArtwork) => void;
   setFavoriteTrack: (id: string, favoriteTrackId: string | undefined) => void;
   toggleListMembership: (listId: string, gameId: string) => void;
-  createList: (name: string) => string;
+  createList: (name: string, options?: { description?: string; hidden?: boolean }) => string;
 };
 
 const GameStoreContext = createContext<GameStoreContextValue | null>(null);
@@ -347,11 +361,24 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           return { ...prev, lists: { ...prev.lists, [listId]: { ...list, gameIds } } };
         });
       },
-      createList: (name: string): string => {
+      // `options` facultatif : la création à la volée depuis la fiche jeu
+      // (voir list-picker-sheet.tsx) ne demande qu'un nom, l'écran dédié
+      // (profile/create-list.tsx) y ajoute description et visibilité.
+      createList: (name: string, options?: { description?: string; hidden?: boolean }): string => {
         const id = `${slugify(name)}-${Date.now().toString(36)}`;
         setState((prev) => ({
           ...prev,
-          lists: { ...prev.lists, [id]: { id, name, builtin: false, gameIds: [] } },
+          lists: {
+            ...prev.lists,
+            [id]: {
+              id,
+              name,
+              builtin: false,
+              description: options?.description,
+              hidden: options?.hidden,
+              gameIds: [],
+            },
+          },
         }));
         return id;
       },
@@ -371,6 +398,9 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           ...prev,
           settings: { ...prev.settings, profile: { ...prev.settings.profile, ...patch } },
         }));
+      },
+      setTitleArtwork: (titleArtwork: TitleArtwork) => {
+        setState((prev) => ({ ...prev, settings: { ...prev.settings, titleArtwork } }));
       },
     }),
     []

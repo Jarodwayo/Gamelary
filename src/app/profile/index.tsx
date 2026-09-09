@@ -11,7 +11,7 @@ import { OverflowMenu, type OverflowMenuItem } from '@/components/overflow-menu'
 import { ProfileAvatar } from '@/components/profile-avatar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Fonts, Spacing, WebTopBarInset } from '@/constants/theme';
+import { BottomTabInset, Fonts, ProfileHeaderDrop, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
 import { useGameStore, type StoredGame } from '@/lib/game-store';
@@ -82,15 +82,17 @@ export async function fetchIgdbMatchForSteamAppId(
   }
 }
 
-// Un peu plus que Spacing.four : la cloche/le menu du haut restaient trop
-// collés en haut de l'écran (SafeAreaView sans l'edge 'top', voir plus
-// bas) — ajustement fin, pas un repositionnement radical.
-const TOP_ROW_PADDING_TOP = Spacing.five;
+// Marge d'origine (SafeAreaView sans l'edge 'top', voir plus bas) plus
+// ProfileHeaderDrop (~2 cm) : la cloche et le menu "⋯" restaient trop haut
+// dans la bannière.
+const TOP_ROW_PADDING_TOP = Spacing.five + ProfileHeaderDrop;
 
 // Hauteur de la bannière, et de combien l'avatar déborde dessus : l'avatar
 // (72px, voir profile-avatar.tsx) est centré à cheval sur le bas de
-// l'image, d'où un décalage d'environ la moitié de sa hauteur.
-const BANNER_HEIGHT = 148;
+// l'image, d'où un décalage d'environ la moitié de sa hauteur. La bannière
+// grandit d'autant que les icônes descendent : elle a `overflow: hidden`,
+// donc les laisser descendre sans elle les ferait rogner par son bord bas.
+const BANNER_HEIGHT = 148 + ProfileHeaderDrop;
 const AVATAR_OVERLAP = 36;
 
 // Combien de temps la confirmation "lien copié" reste affichée avant de
@@ -120,6 +122,8 @@ export default function ProfileScreen() {
   );
 
   const totalHours = libraryGames.reduce((sum, game) => sum + hoursInPeriod(game.playSessions, 'all'), 0);
+
+  const visibleCustomLists = Object.values(store.lists).filter((list) => !list.builtin && !list.hidden);
 
   const [editingSteamId, setEditingSteamId] = useState(false);
   const [steamIdInput, setSteamIdInput] = useState('');
@@ -252,23 +256,37 @@ export default function ProfileScreen() {
     }
   }
 
-  // "Partager le profil" (copie du lien) et "Modifier le profil" sont
-  // branchés ; les trois autres restent des stubs faute d'écran dédié
-  // (Paramètres/Aide) ou de compte à déconnecter (voir ARCHITECTURE.md
-  // §10). "Se déconnecter" en dernier et marqué `destructive` (voir
-  // overflow-menu.tsx) : séparé visuellement du reste, comme une action
+  // Seul "Se déconnecter" reste un stub : il n'y a pas de compte à
+  // déconnecter tant que l'authentification n'existe pas (voir
+  // ARCHITECTURE.md §9). Marqué `destructive` (voir overflow-menu.tsx) et
+  // gardé en dernier : séparé visuellement du reste, comme une action
   // irréversible.
   const profileMenuItems: OverflowMenuItem[] = [
     { key: 'share-profile', label: 'Partager le profil', icon: 'share-outline', onPress: copyProfileLink },
-    { key: 'settings', label: 'Paramètres', icon: 'settings-outline', onPress: () => {} },
+    {
+      key: 'settings',
+      label: 'Paramètres',
+      icon: 'settings-outline',
+      onPress: () => router.push('/profile/settings'),
+    },
     {
       key: 'edit-profile',
       label: 'Modifier le profil',
       icon: 'pencil-outline',
       onPress: () => router.push('/profile/edit'),
     },
-    { key: 'create-list', label: 'Créer une liste', icon: 'add-outline', onPress: () => {} },
-    { key: 'help', label: 'Aide et idées', icon: 'bulb-outline', onPress: () => {} },
+    {
+      key: 'create-list',
+      label: 'Créer une liste',
+      icon: 'add-outline',
+      onPress: () => router.push('/profile/create-list'),
+    },
+    {
+      key: 'help',
+      label: 'Aide et idées',
+      icon: 'bulb-outline',
+      onPress: () => router.push('/profile/help'),
+    },
     { key: 'sign-out', label: 'Se déconnecter', icon: 'log-out-outline', destructive: true, onPress: () => {} },
   ];
   // Sous topRow (TOP_ROW_PADDING_TOP + hauteur d'icône 24px), pour ancrer le
@@ -414,6 +432,22 @@ export default function ProfileScreen() {
             emptyLabel="Aucun jeu terminé à 100% pour le moment."
           />
 
+          {/* Listes créées par l'utilisateur (voir profile/create-list.tsx).
+              Favoris/Wishlist sont exclues : les premières ont déjà leur
+              rangée "Jeux préférés" ci-dessus, et une liste marquée "Ne pas
+              afficher sur le profil" n'apparaît nulle part ici — c'est
+              précisément ce que ce réglage veut dire. */}
+          {visibleCustomLists.map((list) => (
+            <GameShelf
+              key={list.id}
+              title={list.name}
+              subtitle={list.description}
+              items={list.gameIds.map((gameId) => store.games[gameId]).filter(Boolean)}
+              size="large"
+              emptyLabel="Aucun jeu dans cette liste pour le moment."
+            />
+          ))}
+
           <ThemedView type="backgroundElement" style={styles.steamSection}>
             <ThemedText type="smallBold">Compte Steam</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
@@ -506,10 +540,7 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
   },
   banner: {
-    // WebTopBarInset (0 sur natif) : sur le web, la barre d'onglets couvre
-    // le haut de l'écran, donc la bannière s'allonge d'autant pour que la
-    // cloche et le menu "⋯" restent visibles et cliquables dessous.
-    height: BANNER_HEIGHT + WebTopBarInset,
+    height: BANNER_HEIGHT,
     // L'image remplit la bannière en absolute : sans overflow hidden, elle
     // déborderait sous le contenu qui suit.
     overflow: 'hidden',
@@ -522,10 +553,7 @@ const styles = StyleSheet.create({
     // le menu "⋯" (droite) à une marge symétrique par construction, plutôt
     // que deux valeurs choisies séparément.
     paddingHorizontal: Spacing.four,
-    // Décalé sous la barre d'onglets du web (WebTopBarInset, 0 sur natif) :
-    // sans ça, la cloche et le menu "⋯" se retrouvent dessous, invisibles
-    // et intapables sur le bundle web.
-    paddingTop: TOP_ROW_PADDING_TOP + WebTopBarInset,
+    paddingTop: TOP_ROW_PADDING_TOP,
   },
   // Pastille sombre semi-transparente derrière les icônes de la bannière,
   // avec une icône claire fixe : contrairement au reste de l'app, ces deux

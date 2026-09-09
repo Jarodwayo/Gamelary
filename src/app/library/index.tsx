@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GameGrid, type GridItem } from '@/components/game-grid';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, ScreenTitleGap, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useGameStore, type StoredGame } from '@/lib/game-store';
 import { hoursInPeriod } from '@/lib/hours';
@@ -132,7 +132,9 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 34,
     paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
+    // Même règle qu'Explorer : l'air va au-dessus du titre, les filtres
+    // restent collés dessous.
+    paddingTop: ScreenTitleGap,
   },
   filterRow: {
     flexDirection: 'row',

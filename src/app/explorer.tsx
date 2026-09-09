@@ -5,7 +5,7 @@ import { GameGrid } from '@/components/game-grid';
 import { FeaturedShelf } from '@/components/game-shelf';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, ScreenTitleGap, Spacing } from '@/constants/theme';
 import { useExploreSection, type ExploreSection } from '@/hooks/use-explore';
 
 const GRID_SECTIONS: { key: ExploreSection; title: string }[] = [
@@ -79,7 +79,10 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 34,
     paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
+    // L'air va au-dessus du titre (voir ScreenTitleGap), pas en dessous :
+    // "Recommandé pour toi" et les rangées suivantes restent collées au
+    // titre qui les annonce.
+    paddingTop: ScreenTitleGap,
     paddingBottom: Spacing.two,
   },
   gridSection: {
