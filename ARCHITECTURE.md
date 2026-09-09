@@ -559,6 +559,16 @@ source, donc le TTL (durée de vie) diffère aussi.
 | Bibliothèque/notes/heures/listes | change à chaque interaction utilisateur | ✅ pas un cache réseau — persistance locale directe (AsyncStorage, voir §6.6) |
 | Schéma des succès Steam (noms/descriptions) | quasi statique | ✅ cache serveur Redis, TTL 7 jours (`gamelary-api`, voir §6.3) |
 | Succès débloqués du joueur | change quand l'utilisateur joue | ✅ cache serveur Redis, TTL 5 minutes (`gamelary-api`, voir §6.3) |
+| Bibliothèque Steam + temps de jeu du joueur | change quand l'utilisateur joue | ✅ cache serveur Redis, TTL 5 minutes (`gamelary-api`) — **même volatilité que les succès débloqués, donc même TTL** plutôt qu'une troisième valeur choisie séparément |
+| Résolution inverse app id Steam → jeu IGDB | statique (la correspondance ne change pas) | ✅ cache serveur (`Map`, TTL 30 jours, `games+api.ts`, mode `?steamAppId=`) |
+
+Règle transverse à tous ces caches : **une réponse en erreur n'est jamais
+mise en cache** (l'écriture n'a lieu qu'après une réponse amont réussie),
+sinon un incident passager côté Steam ou IGDB resterait collé pendant tout
+le TTL. Corollaire assumé côté Steam : une réponse *légitimement* vide
+(profil privé → `{ "games": [] }`, voir §6.3) est, elle, mise en cache comme
+une réponse normale — repasser son profil en public reste donc sans effet
+visible jusqu'à expiration du TTL de 5 minutes.
 
 Limite assumée du cache serveur de Gamelary lui-même (`games+api.ts`/
 `cover+api.ts`) : une simple `Map` en mémoire ne survit pas à un
