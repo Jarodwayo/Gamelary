@@ -627,10 +627,20 @@ icône par option et de marquer l'une d'elles `destructive`) symétrique à la
 cloche de notification, avec ses 6 options (Partager le profil/
 Paramètres/Modifier le profil/Créer une liste/Aide et idées/Se déconnecter,
 ce dernier en rouge — nouvelle couleur `danger`, voir §2 — et séparé du
-reste par une ligne) — interface seulement, aucune n'ouvre encore rien
-(pas d'écran dédié, ni de compte à déconnecter), et champ SteamID64 gardé
+reste par une ligne), champ SteamID64 gardé
 visible au-dessus du clavier pendant la saisie (`automaticallyAdjustKeyboardInsets`
-sur le `ScrollView` du Profil).
+sur le `ScrollView` du Profil) et validé au format 17 chiffres avant
+enregistrement, **identité de profil personnalisable** : image
+d'arrière-plan derrière la photo de profil (les deux images se choisissent
+séparément via `expo-image-picker`, voir `src/lib/profile-image.ts`), écran
+"Modifier le profil" (`/profile/edit` : photo, arrière-plan, nom,
+identifiant, bio — identifiant normalisé à la frappe et validé, voir
+`src/lib/profile.ts`) et "Partager le profil" qui copie le lien public
+`/u/<identifiant>` dans le presse-papiers avec confirmation à l'écran
+(`expo-clipboard`, base configurable via `EXPO_PUBLIC_PROFILE_BASE_URL` —
+voir `src/lib/profile-link.ts`). Ces trois entrées du menu "⋯" sont donc
+branchées ; Paramètres, Créer une liste, Aide et Se déconnecter restent
+des stubs faute d'écran dédié ou de compte.
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,
@@ -743,10 +753,30 @@ comme le sont IGDB/SteamGridDB. Le même mécanisme que `gamelary-api`
 (repli sur la Map en mémoire) s'y transposerait directement le jour où ces
 credentials seraient disponibles ici aussi.
 
+**Images de profil, limite connue** : sans backend d'upload (donc sans
+compte, voir plus bas), la photo et l'arrière-plan restent locaux à
+l'appareil. Sur natif, on garde l'URI `file://` produite par
+`expo-image-picker` (déjà une copie dans le cache de l'app) ; sur le web,
+une `blob:` URL ne survivrait pas au rechargement, donc l'image est
+stockée en data URI — ce qui peut dépasser le quota `localStorage` pour une
+photo lourde, auquel cas l'écriture du store échoue silencieusement et
+l'image est perdue au prochain lancement (voir `src/lib/profile-image.ts`).
+
+**Barre d'onglets web superposée** : sur le bundle web, la barre d'onglets
+est une barre HAUTE en position absolue (`app-tabs.web.tsx`) qui recouvre
+les 76 premiers pixels de chaque écran — sur natif, `NativeTabs` occupe le
+bas, donc le problème n'existe pas. Les écrans du Profil qui placent des
+contrôles tout en haut (cloche, menu "⋯", choix d'arrière-plan) les
+décalent maintenant de `WebTopBarInset` (voir `src/constants/theme.ts`, 0
+sur natif) ; les autres écrans n'ont rien d'interactif à cette hauteur et
+n'ont pas été touchés.
+
 **Prochaines étapes** (pas de blocage technique, juste pas encore fait) :
 éventuellement un vrai popover ancré pour le menu "⋯"/sélecteur de listes
 plutôt que le `Modal` positionné approximativement actuel, un écran "voir
-tout" derrière le chevron "›" du Profil, étendre les requêtes IGDB avec
+tout" derrière le chevron "›" du Profil, la page publique `/u/<identifiant>`
+vers laquelle pointe le lien de profil partagé (suppose des comptes
+hébergés, voir plus bas), étendre les requêtes IGDB avec
 `genres` pour afficher de vrais genres sur l'écran Statistiques plutôt que
 les plateformes, étendre la bande originale curatée (§6.4) à davantage de
 jeux.

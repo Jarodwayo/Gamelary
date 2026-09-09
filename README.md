@@ -100,10 +100,11 @@ Créer un fichier `.env` à la racine (voir [`.env.example`](.env.example)) :
 | `IGDB_ACCESS_TOKEN` | idem (token OAuth Client Credentials, ~60 jours) | Échange `client_id`/`client_secret` via l'API Twitch |
 | `STEAMGRIDDB_API_KEY` | Jaquettes de jeux | [steamgriddb.com/profile/preferences/api](https://www.steamgriddb.com/profile/preferences/api) |
 | `EXPO_PUBLIC_STEAM_API_URL` | URL du backend Steam déployé (succès + temps de jeu) | Fournie par ton déploiement de [gamelary-api](https://github.com/Jarodwayo/gamelary-api) |
+| `EXPO_PUBLIC_PROFILE_BASE_URL` | Domaine des liens de profil partagés (`/u/<identifiant>`) — facultatif | Ton domaine public ; à défaut, le lien retombe sur l'URL de l'app |
 
 ⚠️ Seules les variables préfixées `EXPO_PUBLIC_` finissent dans le bundle
 client — elles ne doivent donc **jamais** contenir de secret (ici, seulement
-une URL publique). Les trois autres sont lues uniquement côté serveur, par les
+des URL publiques). Les trois autres sont lues uniquement côté serveur, par les
 routes `+api.ts`.
 
 ## Tests et qualité
