@@ -1,5 +1,5 @@
 // Identité affichée du profil (nom, identifiant, bio, photo, arrière-plan).
-// Pas de compte utilisateur (voir ARCHITECTURE.md §10, backlog) : ces
+// Pas de compte utilisateur (voir ARCHITECTURE.md §9) : ces
 // champs vivent dans le store local au même titre que le SteamID64, et rien
 // n'est vérifié côté serveur — un identifiant n'est donc pas réservé ni
 // unique, seulement bien formé.
@@ -64,7 +64,7 @@ export function isValidUsername(value: string): boolean {
 
 // Lien partageable vers le profil public. La page publique elle-même
 // n'existe pas encore (elle suppose des comptes hébergés, voir
-// ARCHITECTURE.md §10) : c'est bien la forme finale de l'URL, pas une page
+// ARCHITECTURE.md §9) : c'est bien la forme finale de l'URL, pas une page
 // déjà servie — d'où une base configurable (EXPO_PUBLIC_PROFILE_BASE_URL,
 // voir profile-link.ts) plutôt qu'un domaine inventé en dur ici.
 export function profileLink(username: string, baseUrl: string): string {

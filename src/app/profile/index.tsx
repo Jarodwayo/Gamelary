@@ -245,7 +245,7 @@ export default function ProfileScreen() {
 
   // Seul "Se déconnecter" reste un stub : il n'y a pas de compte à
   // déconnecter tant que l'authentification n'existe pas (voir
-  // ARCHITECTURE.md §10). Marqué `destructive` (voir overflow-menu.tsx) et
+  // ARCHITECTURE.md §9). Marqué `destructive` (voir overflow-menu.tsx) et
   // gardé en dernier : séparé visuellement du reste, comme une action
   // irréversible.
   const profileMenuItems: OverflowMenuItem[] = [

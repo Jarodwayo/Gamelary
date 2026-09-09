@@ -973,7 +973,7 @@ comme le sont IGDB/SteamGridDB. Le même mécanisme que `gamelary-api`
 credentials seraient disponibles ici aussi.
 
 **Images de profil, limite connue** : sans backend d'upload (donc sans
-compte, voir plus bas), la photo et l'arrière-plan restent locaux à
+compte, voir §9), la photo et l'arrière-plan restent locaux à
 l'appareil. Sur natif, on garde l'URI `file://` produite par
 `expo-image-picker` (déjà une copie dans le cache de l'app) ; sur le web,
 une `blob:` URL ne survivrait pas au rechargement, donc l'image est
@@ -995,7 +995,7 @@ n'ont pas été touchés.
 plutôt que le `Modal` positionné approximativement actuel, un écran "voir
 tout" derrière le chevron "›" du Profil, la page publique `/u/<identifiant>`
 vers laquelle pointe le lien de profil partagé (suppose des comptes
-hébergés, voir plus bas), étendre les requêtes IGDB avec
+hébergés, voir §9), étendre les requêtes IGDB avec
 `genres` pour afficher de vrais genres sur l'écran Statistiques plutôt que
 les plateformes, étendre la bande originale curatée (§6.4) à davantage de
 jeux.
