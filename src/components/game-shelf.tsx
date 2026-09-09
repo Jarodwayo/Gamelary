@@ -74,6 +74,10 @@ function LargeShelfCard({ item, itemWidth }: { item: ShelfItem; itemWidth: numbe
 
 type GameShelfProps = {
   title: string;
+  // Ligne d'explication sous le titre : sert à la description libre d'une
+  // liste créée par l'utilisateur (voir profile/create-list.tsx). Les
+  // rangées intégrées du Profil n'en ont pas.
+  subtitle?: string;
   items: ShelfItem[];
   emptyLabel?: string;
   // Bouton optionnel sous emptyLabel (ex. "Explorer" vers Explorer) — un
@@ -91,7 +95,15 @@ type GameShelfProps = {
 // gras + chevron + scroll horizontal" décidé dans le style guide (voir
 // ARCHITECTURE.md §2), distinct de la grille murale (GameGrid) de
 // Bibliothèque/Explorer qui elle retourne à la ligne.
-export function GameShelf({ title, items, emptyLabel, emptyAction, onSeeAll, size = 'small' }: GameShelfProps) {
+export function GameShelf({
+  title,
+  subtitle,
+  items,
+  emptyLabel,
+  emptyAction,
+  onSeeAll,
+  size = 'small',
+}: GameShelfProps) {
   const itemWidth = useGridItemWidth();
 
   return (
@@ -101,7 +113,14 @@ export function GameShelf({ title, items, emptyLabel, emptyAction, onSeeAll, siz
         disabled={!onSeeAll}
         style={styles.shelfHead}
         accessibilityRole={onSeeAll ? 'button' : undefined}>
-        <ThemedText type="smallBold">{title}</ThemedText>
+        <View style={styles.shelfHeadTitle}>
+          <ThemedText type="smallBold">{title}</ThemedText>
+          {subtitle ? (
+            <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
+              {subtitle}
+            </ThemedText>
+          ) : null}
+        </View>
         {/* Compteur avant le chevron, même motif que les apps de séries/
             films pour une catégorie ("Séries    124 ›") : le nombre de jeux
             de la rangée plutôt qu'un simple chevron nu. */}
@@ -219,6 +238,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.three,
+  },
+  // flexShrink : titre et description cèdent la place au compteur plutôt
+  // que de le pousser hors de l'écran quand la description est longue.
+  shelfHeadTitle: {
+    flexShrink: 1,
   },
   shelfHeadCount: {
     flexDirection: 'row',

@@ -638,9 +638,22 @@ identifiant, bio — identifiant normalisé à la frappe et validé, voir
 `src/lib/profile.ts`) et "Partager le profil" qui copie le lien public
 `/u/<identifiant>` dans le presse-papiers avec confirmation à l'écran
 (`expo-clipboard`, base configurable via `EXPO_PUBLIC_PROFILE_BASE_URL` —
-voir `src/lib/profile-link.ts`). Ces trois entrées du menu "⋯" sont donc
-branchées ; Paramètres, Créer une liste, Aide et Se déconnecter restent
-des stubs faute d'écran dédié ou de compte.
+voir `src/lib/profile-link.ts`), écran **"Créer une liste"**
+(`/profile/create-list` : nom obligatoire, description libre affichée sous
+le titre de la rangée, et "Ne pas afficher sur le profil" qui garde la
+liste utilisable depuis la fiche d'un jeu sans lui donner de rangée sur le
+Profil — les listes créées apparaissent désormais en rangées, voir
+`profile/index.tsx`), écran **"Aide et idées"** (`/profile/help` : demandes
+de fonctionnalités, signalement de problème et contact, tous vers le suivi
+d'issues du dépôt public — voir `src/lib/support-links.ts`, aucune adresse
+personnelle codée en dur), et écran **Paramètres** (`/profile/settings`)
+avec le réglage **"Affiche de la page titre"** : la fiche jeu s'ouvre soit
+sur un bandeau large + le logo du jeu (illustrations `hero`/`logo` de
+SteamGridDB, nouveau paramètre `kind` de `/api/cover`), soit sur la
+jaquette portrait, avec repli automatique sur la jaquette quand le bandeau
+n'existe pas ou ne charge pas (voir `game-title-header.tsx`). Seul "Se
+déconnecter" reste un stub dans le menu "⋯", faute de compte à
+déconnecter.
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,

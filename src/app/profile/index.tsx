@@ -111,6 +111,8 @@ export default function ProfileScreen() {
 
   const totalHours = libraryGames.reduce((sum, game) => sum + hoursInPeriod(game.playSessions, 'all'), 0);
 
+  const visibleCustomLists = Object.values(store.lists).filter((list) => !list.builtin && !list.hidden);
+
   const [editingSteamId, setEditingSteamId] = useState(false);
   const [steamIdInput, setSteamIdInput] = useState('');
   const [steamIdError, setSteamIdError] = useState<string | null>(null);
@@ -241,23 +243,37 @@ export default function ProfileScreen() {
     }
   }
 
-  // "Partager le profil" (copie du lien) et "Modifier le profil" sont
-  // branchés ; les trois autres restent des stubs faute d'écran dédié
-  // (Paramètres/Aide) ou de compte à déconnecter (voir ARCHITECTURE.md
-  // §10). "Se déconnecter" en dernier et marqué `destructive` (voir
-  // overflow-menu.tsx) : séparé visuellement du reste, comme une action
+  // Seul "Se déconnecter" reste un stub : il n'y a pas de compte à
+  // déconnecter tant que l'authentification n'existe pas (voir
+  // ARCHITECTURE.md §10). Marqué `destructive` (voir overflow-menu.tsx) et
+  // gardé en dernier : séparé visuellement du reste, comme une action
   // irréversible.
   const profileMenuItems: OverflowMenuItem[] = [
     { key: 'share-profile', label: 'Partager le profil', icon: 'share-outline', onPress: copyProfileLink },
-    { key: 'settings', label: 'Paramètres', icon: 'settings-outline', onPress: () => {} },
+    {
+      key: 'settings',
+      label: 'Paramètres',
+      icon: 'settings-outline',
+      onPress: () => router.push('/profile/settings'),
+    },
     {
       key: 'edit-profile',
       label: 'Modifier le profil',
       icon: 'pencil-outline',
       onPress: () => router.push('/profile/edit'),
     },
-    { key: 'create-list', label: 'Créer une liste', icon: 'add-outline', onPress: () => {} },
-    { key: 'help', label: 'Aide et idées', icon: 'bulb-outline', onPress: () => {} },
+    {
+      key: 'create-list',
+      label: 'Créer une liste',
+      icon: 'add-outline',
+      onPress: () => router.push('/profile/create-list'),
+    },
+    {
+      key: 'help',
+      label: 'Aide et idées',
+      icon: 'bulb-outline',
+      onPress: () => router.push('/profile/help'),
+    },
     { key: 'sign-out', label: 'Se déconnecter', icon: 'log-out-outline', destructive: true, onPress: () => {} },
   ];
   // Sous topRow (TOP_ROW_PADDING_TOP + hauteur d'icône 24px), pour ancrer le
@@ -402,6 +418,22 @@ export default function ProfileScreen() {
             size="large"
             emptyLabel="Aucun jeu terminé à 100% pour le moment."
           />
+
+          {/* Listes créées par l'utilisateur (voir profile/create-list.tsx).
+              Favoris/Wishlist sont exclues : les premières ont déjà leur
+              rangée "Jeux préférés" ci-dessus, et une liste marquée "Ne pas
+              afficher sur le profil" n'apparaît nulle part ici — c'est
+              précisément ce que ce réglage veut dire. */}
+          {visibleCustomLists.map((list) => (
+            <GameShelf
+              key={list.id}
+              title={list.name}
+              subtitle={list.description}
+              items={list.gameIds.map((gameId) => store.games[gameId]).filter(Boolean)}
+              size="large"
+              emptyLabel="Aucun jeu dans cette liste pour le moment."
+            />
+          ))}
 
           <ThemedView type="backgroundElement" style={styles.steamSection}>
             <ThemedText type="smallBold">Compte Steam</ThemedText>

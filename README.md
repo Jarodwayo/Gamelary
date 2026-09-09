@@ -101,6 +101,7 @@ Créer un fichier `.env` à la racine (voir [`.env.example`](.env.example)) :
 | `STEAMGRIDDB_API_KEY` | Jaquettes de jeux | [steamgriddb.com/profile/preferences/api](https://www.steamgriddb.com/profile/preferences/api) |
 | `EXPO_PUBLIC_STEAM_API_URL` | URL du backend Steam déployé (succès + temps de jeu) | Fournie par ton déploiement de [gamelary-api](https://github.com/Jarodwayo/gamelary-api) |
 | `EXPO_PUBLIC_PROFILE_BASE_URL` | Domaine des liens de profil partagés (`/u/<identifiant>`) — facultatif | Ton domaine public ; à défaut, le lien retombe sur l'URL de l'app |
+| `EXPO_PUBLIC_SUPPORT_EMAIL` | Adresse de "Contacter l'assistance" (Aide et idées) — facultatif | La tienne ; à défaut, la ligne ouvre une issue GitHub |
 
 ⚠️ Seules les variables préfixées `EXPO_PUBLIC_` finissent dans le bundle
 client — elles ne doivent donc **jamais** contenir de secret (ici, seulement
