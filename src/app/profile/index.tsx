@@ -18,6 +18,13 @@ import { resolveCatalogId } from '@/data/tracked-games';
 
 type SteamOwnedGame = { appid: number; name: string; playtimeMinutes: number };
 
+// Un SteamID64 est toujours un entier 64 bits sur 17 chiffres (voir la doc
+// Steam) — keyboardType="number-pad" n'est qu'un indice clavier côté RN, pas
+// une validation : un collage peut contenir n'importe quoi (espaces, `&`,
+// `#`...). Vérifié ici avant d'atteindre confirmSteamId, pour ne jamais
+// interpoler une valeur hors-format dans steamApiUrl.
+const STEAM_ID64_PATTERN = /^\d{17}$/;
+
 // steamAppId ne veut dire que "ce jeu existe sur Steam" (résolu depuis les
 // external_games d'IGDB, voir ARCHITECTURE.md §6.1/§6.2) — pas "le joueur y
 // joue sur Steam". Un jeu suivi comme PS5 peut très bien avoir un
@@ -88,17 +95,30 @@ export default function ProfileScreen() {
 
   const [editingSteamId, setEditingSteamId] = useState(false);
   const [steamIdInput, setSteamIdInput] = useState('');
+  const [steamIdError, setSteamIdError] = useState<string | null>(null);
   const [importingLibrary, setImportingLibrary] = useState(false);
   const [libraryImportStatus, setLibraryImportStatus] = useState<string | null>(null);
 
   function startEditingSteamId() {
     setSteamIdInput(store.settings.steamId64 ?? '');
+    setSteamIdError(null);
     setEditingSteamId(true);
   }
 
   function confirmSteamId() {
     const trimmed = steamIdInput.trim();
-    store.setSteamId64(trimmed || undefined);
+    if (!trimmed) {
+      store.setSteamId64(undefined);
+      setSteamIdError(null);
+      setEditingSteamId(false);
+      return;
+    }
+    if (!STEAM_ID64_PATTERN.test(trimmed)) {
+      setSteamIdError('SteamID64 invalide : doit être un identifiant à 17 chiffres.');
+      return;
+    }
+    store.setSteamId64(trimmed);
+    setSteamIdError(null);
     setEditingSteamId(false);
   }
 
@@ -107,7 +127,7 @@ export default function ProfileScreen() {
   // fiche jeu (voir library/[id].tsx), ici au niveau du compte plutôt que
   // du jeu puisque GetOwnedGames n'est pas scopé à un jeu précis.
   const steamGamesUrl = store.settings.steamId64
-    ? steamApiUrl(`/api/steam/games?steamid=${store.settings.steamId64}`)
+    ? steamApiUrl(`/api/steam/games?steamid=${encodeURIComponent(store.settings.steamId64)}`)
     : null;
 
   async function importSteamLibrary() {
@@ -309,21 +329,31 @@ export default function ProfileScreen() {
             </ThemedText>
 
             {editingSteamId ? (
-              <View style={styles.steamEditRow}>
-                <TextInput
-                  value={steamIdInput}
-                  onChangeText={setSteamIdInput}
-                  onSubmitEditing={confirmSteamId}
-                  placeholder="SteamID64 (ex. 76561197960287930)"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="number-pad"
-                  autoFocus
-                  style={[styles.steamInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                />
-                <Pressable onPress={confirmSteamId} hitSlop={8}>
-                  <ThemedText type="linkPrimary">Enregistrer</ThemedText>
-                </Pressable>
-              </View>
+              <>
+                <View style={styles.steamEditRow}>
+                  <TextInput
+                    value={steamIdInput}
+                    onChangeText={(text) => {
+                      setSteamIdInput(text);
+                      setSteamIdError(null);
+                    }}
+                    onSubmitEditing={confirmSteamId}
+                    placeholder="SteamID64 (ex. 76561197960287930)"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                    autoFocus
+                    style={[styles.steamInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  />
+                  <Pressable onPress={confirmSteamId} hitSlop={8}>
+                    <ThemedText type="linkPrimary">Enregistrer</ThemedText>
+                  </Pressable>
+                </View>
+                {steamIdError ? (
+                  <ThemedText type="small" themeColor="danger">
+                    {steamIdError}
+                  </ThemedText>
+                ) : null}
+              </>
             ) : (
               <View style={styles.steamRow}>
                 <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.steamValue}>

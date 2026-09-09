@@ -16,6 +16,38 @@ const gamesCache = new Map<string, { result: GameLookupResult; expiresAt: number
 const sectionCache = new Map<string, { result: CatalogGame[]; expiresAt: number }>();
 const steamAppIdCache = new Map<number, { result: SteamAppIdLookupResult; expiresAt: number }>();
 
+// CORS ouvert (voir ARCHITECTURE.md §6) + aucune auth ici (pas de compte,
+// §9) : sans ça, n'importe quel site tiers peut faire consommer le quota
+// IGDB de ce déploiement par ses propres visiteurs. Compteur en mémoire par
+// IP (fenêtre glissante simple) — même limite que côté gamelary-api
+// (§6.3, express-rate-limit) : suffisant pour protéger le quota d'une
+// instance solo, pas un vrai rate limiting distribué (ne tiendrait pas la
+// route derrière plusieurs instances serverless, voir §7 pour la même
+// limite déjà documentée sur le cache).
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX_REQUESTS = 30;
+const requestCountsByIp = new Map<string, { count: number; resetAt: number }>();
+
+function clientIp(request: Request): string {
+  // x-forwarded-for : liste "client, proxy1, proxy2..." — le premier hop est
+  // le visiteur d'origine. Absent en dev (Metro) et sous Jest : repli sur un
+  // seul seau partagé, qui limite quand même le total plutôt que de ne rien
+  // limiter du tout.
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+}
+
+function isRateLimited(request: Request): boolean {
+  const ip = clientIp(request);
+  const now = Date.now();
+  const entry = requestCountsByIp.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    requestCountsByIp.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
 const IGDB_BASE = 'https://api.igdb.com/v4';
 
 type GameLookupResult = { title: string | null; platform: string | null; steamAppId: number | null };
@@ -236,6 +268,10 @@ async function fetchGameBySteamAppId(
 }
 
 export async function GET(request: Request) {
+  if (isRateLimited(request)) {
+    return Response.json({ error: 'Trop de requêtes, réessaie dans une minute' }, { status: 429 });
+  }
+
   const params = new URL(request.url).searchParams;
   const section = params.get('section');
   const title = params.get('title');

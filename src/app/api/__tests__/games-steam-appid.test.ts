@@ -64,6 +64,23 @@ test('rejette un appid manquant ou invalide avec 400, sans appeler IGDB', async 
   expect(global.fetch).not.toHaveBeenCalled();
 });
 
+test('rejette un steamAppId présent mais vide avec 400 (message générique, sans appeler IGDB)', async () => {
+  // '?steamAppId=' donne une chaîne vide, falsy comme un paramètre absent :
+  // tombe donc sur le même message générique que "aucun des trois paramètres"
+  // plutôt que sur "steamAppId invalide" (jamais atteint dans ce cas), voir
+  // GET dans ../games+api.ts. Comportement correct mais jusqu'ici jamais
+  // vérifié par un test.
+  global.fetch = jest.fn();
+
+  const res = await GET(request('steamAppId='));
+
+  expect(res.status).toBe(400);
+  await expect(res.json()).resolves.toEqual({
+    error: 'Paramètre "title", "section" ou "steamAppId" requis',
+  });
+  expect(global.fetch).not.toHaveBeenCalled();
+});
+
 test('mappe une erreur HTTP IGDB vers 502 sans exposer les identifiants IGDB', async () => {
   mockIgdbGamesFetch([], 500);
 
@@ -86,6 +103,28 @@ test('traite une absence de correspondance IGDB comme "non trouvé", pas une err
     title: null,
     platform: null,
     steamAppId: null,
+    ambiguous: false,
+  });
+});
+
+test('dédoublonne par nom : deux lignes IGDB redondantes pour le même jeu ne sont pas une ambiguïté', async () => {
+  // Contrairement au test d'ambiguïté ci-dessous (deux JEUX distincts), ici
+  // les deux entrées external_games renvoyées par IGDB pointent vers le même
+  // nom : donnée IGDB incohérente (le même jeu revendique deux fois le même
+  // uid Steam), pas deux jeux concurrents — distinctNames doit les fusionner
+  // en un seul match plutôt que de signaler ambiguous: true.
+  mockIgdbGamesFetch([
+    { name: 'Hollow Knight', platforms: [{ name: 'PC' }], external_games: [{ uid: '367521', external_game_source: 1 }] },
+    { name: 'Hollow Knight', platforms: [{ name: 'PC' }], external_games: [{ uid: '367521', external_game_source: 1 }] },
+  ]);
+
+  const res = await GET(request('steamAppId=367521'));
+
+  expect(res.status).toBe(200);
+  await expect(res.json()).resolves.toEqual({
+    title: 'Hollow Knight',
+    platform: 'PC',
+    steamAppId: 367521,
     ambiguous: false,
   });
 });
