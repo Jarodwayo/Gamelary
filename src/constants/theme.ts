@@ -101,6 +101,23 @@ export const Spacing = {
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 
+// Un dp vaut ~1/160 de pouce, soit ~63 dp par centimètre sur un écran de
+// téléphone standard : c'est la conversion utilisée pour traduire les deux
+// consignes d'espacement exprimées en centimètres ci-dessous. Elles sont
+// écrites en multiples de Spacing.six (64) plutôt qu'en nombres bruts, pour
+// rester sur l'échelle d'espacement du projet.
+//
+// Air entre le grand titre d'un écran et le premier contenu dessous
+// (Explorer, Bibliothèque) : ~4 cm. Une seule constante partagée, pour que
+// les deux écrans respirent pareil au lieu d'être réglés chacun de son
+// côté — c'est précisément ce qui les avait fait diverger (Explorer avait
+// 32 dp, Bibliothèque rien du tout).
+export const ScreenTitleGap = Spacing.six * 4; // 256 dp ≈ 4,1 cm
+
+// De combien la cloche et le menu "⋯" du Profil descendent sous le haut de
+// l'écran, en plus de la marge d'origine : ~2 cm.
+export const ProfileHeaderDrop = Spacing.six * 2; // 128 dp ≈ 2,0 cm
+
 // Sur le web, la barre d'onglets est une barre HAUTE en position absolue
 // (voir app-tabs.web.tsx, `tabListContainer`) : elle recouvre les 76
 // premiers pixels de chaque écran, contrairement au natif où NativeTabs

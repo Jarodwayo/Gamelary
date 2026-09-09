@@ -11,7 +11,7 @@ import { OverflowMenu, type OverflowMenuItem } from '@/components/overflow-menu'
 import { ProfileAvatar } from '@/components/profile-avatar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Fonts, Spacing, WebTopBarInset } from '@/constants/theme';
+import { BottomTabInset, Fonts, ProfileHeaderDrop, Spacing, WebTopBarInset } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
 import { useGameStore, type StoredGame } from '@/lib/game-store';
@@ -72,15 +72,17 @@ export async function fetchIgdbMatchForSteamAppId(
   }
 }
 
-// Un peu plus que Spacing.four : la cloche/le menu du haut restaient trop
-// collés en haut de l'écran (SafeAreaView sans l'edge 'top', voir plus
-// bas) — ajustement fin, pas un repositionnement radical.
-const TOP_ROW_PADDING_TOP = Spacing.five;
+// Marge d'origine (SafeAreaView sans l'edge 'top', voir plus bas) plus
+// ProfileHeaderDrop (~2 cm) : la cloche et le menu "⋯" restaient trop haut
+// dans la bannière.
+const TOP_ROW_PADDING_TOP = Spacing.five + ProfileHeaderDrop;
 
 // Hauteur de la bannière, et de combien l'avatar déborde dessus : l'avatar
 // (72px, voir profile-avatar.tsx) est centré à cheval sur le bas de
-// l'image, d'où un décalage d'environ la moitié de sa hauteur.
-const BANNER_HEIGHT = 148;
+// l'image, d'où un décalage d'environ la moitié de sa hauteur. La bannière
+// grandit d'autant que les icônes descendent : elle a `overflow: hidden`,
+// donc les laisser descendre sans elle les ferait rogner par son bord bas.
+const BANNER_HEIGHT = 148 + ProfileHeaderDrop;
 const AVATAR_OVERLAP = 36;
 
 // Combien de temps la confirmation "lien copié" reste affichée avant de
