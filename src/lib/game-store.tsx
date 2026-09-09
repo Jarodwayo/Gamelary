@@ -201,10 +201,24 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
         setState((prev) => {
           const existing = prev.games[game.id];
           if (existing) {
+            // Une absence n'écrase jamais un igdbId déjà connu : une
+            // résolution IGDB qui échoue, ou une réponse sans
+            // correspondance, ne doit pas faire perdre l'identité canonique
+            // — un jeu qui la perd doit être re-résolu à l'aveugle depuis
+            // son titre (voir ARCHITECTURE.md §9.3).
+            const igdbId = game.igdbId ?? existing.igdbId;
+            // La garde compare la valeur RÉSULTANTE, pas celle qui arrive.
+            // Sans igdbId du tout ici, un jeu enregistré avant
+            // l'introduction du champ ne le gagnerait jamais (la garde
+            // court-circuiterait dès que titre/plateforme sont déjà à
+            // jour) ; avec la valeur entrante brute, une résolution sans id
+            // rouvrirait une écriture qui ne change rien, et un updatedAt
+            // injustifié avec elle.
             if (
               existing.title === game.title &&
               existing.platform === game.platform &&
-              existing.steamAppId === game.steamAppId
+              existing.steamAppId === game.steamAppId &&
+              existing.igdbId === igdbId
             ) {
               return prev;
             }
@@ -212,6 +226,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
               title: game.title,
               platform: game.platform,
               steamAppId: game.steamAppId,
+              igdbId,
             });
           }
           const created: StoredGame = {
@@ -219,6 +234,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
             title: game.title,
             platform: game.platform,
             steamAppId: game.steamAppId,
+            igdbId: game.igdbId,
             inLibrary: false,
             stopped: false,
             achievements: [],

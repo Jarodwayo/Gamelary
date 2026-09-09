@@ -1,8 +1,9 @@
-// Couvre l'horodatage posé à chaque mutation d'un jeu (§9.3.2 d'
-// ARCHITECTURE.md). Il ne sert à rien aujourd'hui — uniquement à la
-// synchronisation à venir (§9.5) — donc rien dans l'app ne casserait
-// visiblement s'il cessait de fonctionner : c'est précisément pour ça
-// qu'il a besoin de tests.
+// Couvre les deux prérequis restants de la §9.3 (ARCHITECTURE.md) :
+// l'identité canonique IGDB stockée à côté du slug local, et l'horodatage
+// posé à chaque mutation d'un jeu. Les deux ne servent à rien aujourd'hui —
+// ils ne servent qu'à la synchronisation à venir (§9.5) — donc rien dans
+// l'app ne casserait visiblement s'ils cessaient de fonctionner : c'est
+// précisément pour ça qu'ils ont besoin de tests.
 // Même harnais que game-store-batching.test.tsx : react-test-renderer, déjà
 // présent via jest-expo, suffit pour piloter le provider.
 import { act, create } from 'react-test-renderer';
@@ -51,7 +52,61 @@ async function mountStore(): Promise<() => Store> {
   return () => latest;
 }
 
-const CATALOG_GAME = { id: 'jeu-test', title: 'Jeu Test', platform: 'PC', steamAppId: 42 };
+const CATALOG_GAME = { id: 'jeu-test', title: 'Jeu Test', platform: 'PC', steamAppId: 42, igdbId: 1234 };
+
+test("registerCatalogGame conserve l'id IGDB à la création", async () => {
+  const store = await mountStore();
+
+  act(() => {
+    store().registerCatalogGame(CATALOG_GAME);
+  });
+
+  expect(store().games['jeu-test'].igdbId).toBe(1234);
+  // L'id local reste le slug : l'identité IGDB est transportée À CÔTÉ, pas à
+  // la place (les ids de tracked-games.ts sont écrits en dur, et le schéma
+  // distant garde lui aussi les deux — voir §9.4).
+  expect(store().games['jeu-test'].id).toBe('jeu-test');
+});
+
+test("un jeu déjà stocké sans id IGDB le gagne quand une résolution le fournit", async () => {
+  // Le vrai cas de bascule : toutes les bibliothèques existantes ont été
+  // écrites avant l'introduction du champ. Si la garde "rien n'a changé" de
+  // registerCatalogGame ne compare pas l'igdbId, elle court-circuite dès que
+  // titre/plateforme/appid sont déjà à jour — et ces jeux-là n'obtiennent
+  // JAMAIS leur identité canonique, sans que rien ne le signale.
+  const store = await mountStore();
+
+  act(() => {
+    store().registerCatalogGame({ id: 'jeu-test', title: 'Jeu Test', platform: 'PC', steamAppId: 42 });
+  });
+  expect(store().games['jeu-test'].igdbId).toBeUndefined();
+
+  act(() => {
+    store().registerCatalogGame(CATALOG_GAME);
+  });
+
+  expect(store().games['jeu-test'].igdbId).toBe(1234);
+});
+
+test("une résolution sans id IGDB n'efface pas celui déjà connu, et n'écrit rien", async () => {
+  // Un jeu qui perd son identité canonique devrait être re-résolu à
+  // l'aveugle depuis son titre (§9.3) : une réponse IGDB dégradée ne doit
+  // jamais la faire disparaître. Et comme rien ne change réellement,
+  // l'horodatage ne doit pas bouger non plus.
+  const store = await mountStore();
+
+  act(() => {
+    store().registerCatalogGame(CATALOG_GAME);
+  });
+  const stampAfterCreate = store().games['jeu-test'].updatedAt;
+
+  act(() => {
+    store().registerCatalogGame({ id: 'jeu-test', title: 'Jeu Test', platform: 'PC', steamAppId: 42 });
+  });
+
+  expect(store().games['jeu-test'].igdbId).toBe(1234);
+  expect(store().games['jeu-test'].updatedAt).toBe(stampAfterCreate);
+});
 
 // Chaque mutation d'un jeu doit avancer son updatedAt. Écrit comme une table
 // plutôt qu'en neuf tests copiés : une action ajoutée plus tard sans
