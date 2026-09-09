@@ -14,10 +14,12 @@ const LOOKUP_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SECTION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const gamesCache = new Map<string, { result: GameLookupResult; expiresAt: number }>();
 const sectionCache = new Map<string, { result: CatalogGame[]; expiresAt: number }>();
+const steamAppIdCache = new Map<number, { result: SteamAppIdLookupResult; expiresAt: number }>();
 
 const IGDB_BASE = 'https://api.igdb.com/v4';
 
 type GameLookupResult = { title: string | null; platform: string | null; steamAppId: number | null };
+type SteamAppIdLookupResult = GameLookupResult & { ambiguous: boolean };
 type IgdbExternalGame = { uid: string; external_game_source: number };
 type IgdbGame = { name: string; platforms?: { name: string }[]; external_games?: IgdbExternalGame[] };
 
@@ -94,6 +96,33 @@ function sectionQuery(section: string, nowSeconds: number, platformFilter?: stri
   }
 }
 
+// Requête POST partagée par les trois modes de cet endpoint (section/title/
+// steamAppId) : même en-têtes d'auth IGDB (Client-ID + Bearer, voir
+// fetchGameFromIgdb pour le détail du flow Twitch), seul le corps
+// apicalypse change. errorLabel identifie le mode dans le message d'erreur
+// (utile pour distinguer les 502 dans les logs), sans jamais y inclure
+// clientId/accessToken.
+async function queryIgdbGames(
+  body: string,
+  clientId: string,
+  accessToken: string,
+  errorLabel: string
+): Promise<IgdbGame[]> {
+  const response = await fetch(`${IGDB_BASE}/games`, {
+    method: 'POST',
+    headers: {
+      'Client-ID': clientId,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'text/plain',
+    },
+    body,
+  });
+  if (!response.ok) {
+    throw new Error(`${errorLabel} a échoué (${response.status})`);
+  }
+  return response.json();
+}
+
 async function fetchSectionFromIgdb(
   section: string,
   clientId: string,
@@ -103,20 +132,7 @@ async function fetchSectionFromIgdb(
   const query = sectionQuery(section, Math.floor(Date.now() / 1000), platformFilter);
   if (!query) throw new Error(`Section Explorer inconnue : "${section}"`);
 
-  const response = await fetch(`${IGDB_BASE}/games`, {
-    method: 'POST',
-    headers: {
-      'Client-ID': clientId,
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'text/plain',
-    },
-    body: query,
-  });
-  if (!response.ok) {
-    throw new Error(`IGDB games (${section}) a échoué (${response.status})`);
-  }
-
-  const games: IgdbGame[] = await response.json();
+  const games = await queryIgdbGames(query, clientId, accessToken, `IGDB games (${section})`);
   return games.map((game) => ({
     // resolveCatalogId plutôt que l'id numérique IGDB : cohérent avec les
     // ids en dur de tracked-games.ts (rejoint la même entrée si le jeu y est
@@ -148,26 +164,14 @@ async function fetchGameFromIgdb(
   // tel quel dans IGDB_ACCESS_TOKEN plutôt que de refaire l'échange
   // client_id/client_secret à chaque appel, donc il faudra un renouvellement
   // périodique (job planifié) une fois en production — voir ARCHITECTURE.md.
-  const response = await fetch(`${IGDB_BASE}/games`, {
-    method: 'POST',
-    headers: {
-      'Client-ID': clientId,
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'text/plain',
-    },
-    // platforms.name : expansion de relation apicalypse pour éviter un
-    // second aller-retour qui ne renverrait que des ids de plateforme.
-    // limit 10 (pas 1) : le classement par pertinence d'IGDB fait souvent
-    // remonter une édition/bundle/spin-off avant le jeu de base (ex.
-    // "Elden Ring Nightreign" avant "Elden Ring") — on a besoin de
-    // candidats supplémentaires pour la désambiguïsation ci-dessous.
-    body: `search "${escapeApicalypseString(title)}"; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`,
-  });
-  if (!response.ok) {
-    throw new Error(`IGDB games a échoué (${response.status})`);
-  }
-
-  const games: IgdbGame[] = await response.json();
+  // platforms.name : expansion de relation apicalypse pour éviter un second
+  // aller-retour qui ne renverrait que des ids de plateforme. limit 10 (pas
+  // 1) : le classement par pertinence d'IGDB fait souvent remonter une
+  // édition/bundle/spin-off avant le jeu de base (ex. "Elden Ring
+  // Nightreign" avant "Elden Ring") — on a besoin de candidats
+  // supplémentaires pour la désambiguïsation ci-dessous.
+  const body = `search "${escapeApicalypseString(title)}"; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`;
+  const games = await queryIgdbGames(body, clientId, accessToken, 'IGDB games');
   // Le champ `category` IGDB (main_game/dlc/bundle...) n'est pas fiable pour
   // filtrer : de nombreuses fiches (y compris le jeu de base) ne l'ont pas
   // renseigné. Un match exact sur le nom (recherche insensible à la casse
@@ -190,13 +194,58 @@ async function fetchGameFromIgdb(
   };
 }
 
+// Résolution inverse : à partir d'un app id Steam (bibliothèque Steam
+// importée côté app, voir gamelary-api /api/steam/games), retrouve l'entrée
+// IGDB correspondante — contrairement à fetchGameFromIgdb (recherche par
+// titre), on filtre directement sur external_games.uid plutôt que de
+// chercher par nom, donc pas besoin de désambiguïser par correspondance
+// exacte de titre : le uid Steam identifie déjà un jeu précis en théorie.
+async function fetchGameBySteamAppId(
+  appid: number,
+  clientId: string,
+  accessToken: string
+): Promise<SteamAppIdLookupResult> {
+  const body = `where external_games.uid = "${appid}" & external_games.external_game_source = ${STEAM_EXTERNAL_GAME_SOURCE}; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`;
+  const games = await queryIgdbGames(body, clientId, accessToken, 'IGDB games (steamAppId)');
+
+  // En théorie un app id Steam ne référence qu'un seul jeu, mais la donnée
+  // IGDB n'est pas garantie cohérente (plusieurs fiches revendiquant le même
+  // uid externe) : dédoublonné par nom avant de juger d'une vraie
+  // ambiguïté, pour ne pas signaler une fausse ambiguïté sur des lignes
+  // redondantes du même jeu.
+  const distinctNames = new Set(games.map((game) => game.name.trim().toLowerCase()));
+
+  if (distinctNames.size === 0) {
+    return { title: null, platform: null, steamAppId: null, ambiguous: false };
+  }
+  if (distinctNames.size > 1) {
+    // Deux jeux IGDB différents revendiquent le même app id Steam : plutôt
+    // que de deviner lequel est le bon (et risquer de créer la mauvaise
+    // entrée dans la bibliothèque de l'utilisateur), on ne retourne rien —
+    // pas pire qu'une correspondance absente pour l'appelant.
+    return { title: null, platform: null, steamAppId: null, ambiguous: true };
+  }
+
+  const bestMatch = games[0];
+  return {
+    title: bestMatch.name,
+    platform: bestMatch.platforms?.[0]?.name ?? null,
+    steamAppId: appid,
+    ambiguous: false,
+  };
+}
+
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const section = params.get('section');
   const title = params.get('title');
+  const steamAppIdParam = params.get('steamAppId');
 
-  if (!section && !title) {
-    return Response.json({ error: 'Paramètre "title" ou "section" requis' }, { status: 400 });
+  if (!section && !title && !steamAppIdParam) {
+    return Response.json(
+      { error: 'Paramètre "title", "section" ou "steamAppId" requis' },
+      { status: 400 }
+    );
   }
 
   const clientId = process.env.IGDB_CLIENT_ID;
@@ -210,6 +259,29 @@ export async function GET(request: Request) {
       { error: 'IGDB_CLIENT_ID/IGDB_ACCESS_TOKEN non configurées côté serveur' },
       { status: 500 }
     );
+  }
+
+  if (steamAppIdParam) {
+    const appid = Number(steamAppIdParam);
+    if (!Number.isInteger(appid) || appid <= 0) {
+      return Response.json({ error: 'Paramètre "steamAppId" invalide' }, { status: 400 });
+    }
+
+    const cached = steamAppIdCache.get(appid);
+    if (cached && cached.expiresAt > Date.now()) {
+      return Response.json(cached.result);
+    }
+
+    try {
+      const result = await fetchGameBySteamAppId(appid, clientId, accessToken);
+      steamAppIdCache.set(appid, { result, expiresAt: Date.now() + LOOKUP_CACHE_TTL_MS });
+      return Response.json(result);
+    } catch (error) {
+      return Response.json(
+        { error: error instanceof Error ? error.message : 'Erreur inconnue' },
+        { status: 502 }
+      );
+    }
   }
 
   if (section) {

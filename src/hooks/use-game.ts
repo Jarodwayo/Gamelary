@@ -47,6 +47,10 @@ export function useGame(id: string): { game: Game | null; loading: boolean } {
 
   useEffect(() => {
     if (!tracked || (stored && stored.platform !== '')) {
+      // Négation exacte de la condition d'état initial ci-dessus : redondant
+      // au tout premier rendu, mais nécessaire quand stored.platform se
+      // résout après coup (l'effet redépend de stored?.platform plus bas).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false);
       return;
     }

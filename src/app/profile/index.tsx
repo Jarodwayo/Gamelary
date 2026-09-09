@@ -105,7 +105,7 @@ export default function ProfileScreen() {
 
       setLibraryImportStatus(
         matches.length > 0
-          ? `${matches.length} jeu${matches.length > 1 ? 'x' : ''} complété${matches.length > 1 ? 's' : ''} avec leur temps de jeu Steam.`
+          ? `${matches.length} jeu${matches.length > 1 ? 'x' : ''} complété${matches.length > 1 ? 's' : ''} avec le temps de jeu Steam.`
           : 'Rien à compléter : aucun jeu Steam sans heures déjà suivies ne correspond à ta bibliothèque Gamelary.'
       );
     } catch (error) {

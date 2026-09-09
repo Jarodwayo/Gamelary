@@ -51,6 +51,11 @@ export function useExploreSection(section: ExploreSection): { games: CatalogGame
 
   useEffect(() => {
     if (sectionCache.has(cacheKey)) {
+      // Ne sert pas au tout premier rendu (déjà couvert par l'état initial
+      // ci-dessus) mais synchronise games/loading avec le cache externe
+      // quand cacheKey change après montage (navigation vers une autre
+      // section) — les initialisateurs de useState ne se rejouent pas.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGames(sectionCache.get(cacheKey) ?? []);
       setLoading(false);
       return;

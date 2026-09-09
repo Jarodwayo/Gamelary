@@ -8,6 +8,11 @@ export function useColorScheme() {
   const [hasHydrated, setHasHydrated] = useState(false);
 
   useEffect(() => {
+    // Ne peut pas se calculer pendant le rendu par définition (le but est
+    // justement de distinguer le tout premier rendu client du rendu statique
+    // côté serveur) — exception légitime à la règle, pas un vrai effet de
+    // bord à restructurer.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHasHydrated(true);
   }, []);
 
