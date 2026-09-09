@@ -92,7 +92,7 @@ masquées. Les clés ci-dessous débloquent les données réelles.
 
 ### Variables d'environnement
 
-Créer un fichier `.env` à la racine :
+Créer un fichier `.env` à la racine (voir [`.env.example`](.env.example)) :
 
 | Variable | Rôle | Où l'obtenir |
 |---|---|---|
