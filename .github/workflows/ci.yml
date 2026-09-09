@@ -29,3 +29,11 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm test
+
+      # Chromium seul (pas --with-deps, ni les autres navigateurs) : la
+      # suite e2e ne cible que chromium (voir playwright.config.ts), pas
+      # besoin d'installer plus.
+      - name: Installer Chromium pour Playwright
+        run: npx playwright install --with-deps chromium
+
+      - run: npm run test:e2e
