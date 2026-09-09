@@ -12,7 +12,9 @@ import { BottomTabInset, Fonts, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
 import { useGameStore, type StoredGame } from '@/lib/game-store';
+import { apiUrl } from '@/lib/api-url';
 import { steamApiUrl } from '@/lib/steam-api-url';
+import { resolveCatalogId } from '@/data/tracked-games';
 
 type SteamOwnedGame = { appid: number; name: string; playtimeMinutes: number };
 
@@ -25,6 +27,37 @@ type SteamOwnedGame = { appid: number; name: string; playtimeMinutes: number };
 // total existant, quelle que soit la plateforme derrière ce total.
 function findUntrackedGameId(games: Record<string, StoredGame>, appid: number): string | undefined {
   return Object.values(games).find((game) => game.steamAppId === appid && game.playSessions.length === 0)?.id;
+}
+
+// Distinct de findUntrackedGameId : "connu" veut dire ici "un jeu du store a
+// déjà ce steamAppId", suivi ou non — un jeu déjà suivi ne doit ni être
+// recréé, ni déclencher un appel IGDB inutile pour un jeu qu'on connaît déjà.
+export function isSteamAppIdKnown(games: Record<string, StoredGame>, appid: number): boolean {
+  return Object.values(games).some((game) => game.steamAppId === appid);
+}
+
+// Résolution inverse (GET /api/games?steamAppId=, voir games+api.ts) pour un
+// jeu Steam que le catalogue Gamelary ne connaît pas encore. Exportée
+// séparément de importSteamLibrary : logique réseau pure, testable sans
+// rendre l'écran (voir __tests__/steam-library-import.test.ts) — le flux
+// complet reste vérifié via Playwright, pas de rendu React ici.
+// resolveCatalogId (même helper que côté serveur, games+api.ts) plutôt qu'un
+// id dérivé autrement : si l'utilisateur tombe plus tard sur ce même jeu via
+// Explorer, il rejoint la même entrée au lieu d'en créer un doublon.
+// Une erreur réseau ou une réponse inattendue est traitée comme "pas de
+// correspondance" (undefined) plutôt que de faire échouer tout l'import pour
+// un seul jeu — même philosophie que use-game-cover.ts/use-explore.ts.
+export async function fetchIgdbMatchForSteamAppId(
+  appid: number
+): Promise<{ id: string; title: string; platform: string } | undefined> {
+  try {
+    const response = await fetch(apiUrl(`/api/games?steamAppId=${appid}`));
+    const data: { title: string | null; platform: string | null; ambiguous?: boolean } = await response.json();
+    if (!response.ok || !data.title || data.ambiguous) return undefined;
+    return { id: resolveCatalogId(data.title), title: data.title, platform: data.platform ?? 'Plateforme inconnue' };
+  } catch {
+    return undefined;
+  }
 }
 
 // Pas de compte utilisateur pour l'instant (voir ARCHITECTURE.md §9) : nom
@@ -89,15 +122,45 @@ export default function ProfileScreen() {
       }
 
       // Ne traite que les jeux Steam avec du temps de jeu réel (0 minute ==
-      // rien à importer) qui correspondent à un jeu déjà connu de Gamelary
-      // et pas encore suivi (voir findUntrackedGameId) : les jeux Steam sans
-      // équivalent local ne peuvent pas être créés ici (demanderait une
-      // résolution inverse appid -> catalogue IGDB, hors scope).
-      const matches = data.games
-        .filter((entry) => entry.playtimeMinutes > 0)
+      // rien à importer, même règle pour les deux catégories ci-dessous).
+      const playedEntries = data.games.filter((entry) => entry.playtimeMinutes > 0);
+
+      // Jeux déjà connus de Gamelary (steamAppId déjà présent, voir
+      // isSteamAppIdKnown) mais sans heures suivies (voir findUntrackedGameId).
+      const knownMatches = playedEntries
         .map((entry) => ({ entry, gameId: findUntrackedGameId(store.games, entry.appid) }))
         .filter((m): m is { entry: SteamOwnedGame; gameId: string } => Boolean(m.gameId));
 
+      // Jeux Steam sans aucune trace dans le catalogue Gamelary (ni suivis,
+      // ni simplement croisés via Explorer) : résolus en parallèle via IGDB
+      // (voir fetchIgdbMatchForSteamAppId), puis créés dans le catalogue
+      // (registerCatalogGame, même action que pour un jeu découvert via
+      // Explorer) avant d'appliquer la même règle que les jeux connus.
+      // ambiguous:true et "pas de correspondance" produisent tous les deux
+      // `undefined` ici : on ignore proprement ce jeu, sans jamais deviner.
+      const unknownEntries = playedEntries.filter((entry) => !isSteamAppIdKnown(store.games, entry.appid));
+      const createdMatches = (
+        await Promise.all(
+          unknownEntries.map(async (entry) => {
+            const igdbMatch = await fetchIgdbMatchForSteamAppId(entry.appid);
+            if (!igdbMatch) return null;
+            store.registerCatalogGame({
+              id: igdbMatch.id,
+              title: igdbMatch.title,
+              platform: igdbMatch.platform,
+              steamAppId: entry.appid,
+            });
+            return { entry, gameId: igdbMatch.id };
+          })
+        )
+      ).filter((m): m is { entry: SteamOwnedGame; gameId: string } => Boolean(m));
+
+      // registerCatalogGame puis setTotalHours/addToLibrary sur le même id
+      // fonctionnent dans le même appel (pas besoin d'attendre un re-rendu)
+      // parce que les trois actions du store utilisent la forme
+      // fonctionnelle setState(prev => ...), appliquée par React en séquence
+      // sur l'état qui s'accumule — vérifié par un test dédié, pas supposé.
+      const matches = [...knownMatches, ...createdMatches];
       for (const { entry, gameId } of matches) {
         store.setTotalHours(gameId, entry.playtimeMinutes / 60);
         store.addToLibrary(gameId);
