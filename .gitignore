@@ -41,3 +41,11 @@ example
 # generated native folders
 /ios
 /android
+
+# Playwright
+/test-results/
+/playwright-report/
+# Config locale de vérification (voir playwright.config.local.ts) : pointe
+# vers un Chromium préinstallé propre à une machine/un sandbox donné, jamais
+# committée.
+playwright.config.local.ts
