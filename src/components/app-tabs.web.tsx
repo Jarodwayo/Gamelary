@@ -6,12 +6,14 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, View, StyleSheet } from 'react-native';
 
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 // Le suffixe .web.tsx est une convention Metro/React Native : sur le
 // bundle web, ce fichier remplace automatiquement app-tabs.tsx (natif),
@@ -26,14 +28,17 @@ export default function AppTabs() {
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
         <CustomTabList>
+          {/* Mêmes icônes que la barre native (voir app-tabs.tsx) : les deux
+              plateformes doivent donner exactement la même barre, seule
+              l'implémentation diffère. */}
           <TabTrigger name="library" href="/library" asChild>
-            <TabButton>Bibliothèque</TabButton>
+            <TabButton icon="albums">Bibliothèque</TabButton>
           </TabTrigger>
           <TabTrigger name="explorer" href="/explorer" asChild>
-            <TabButton>Explorer</TabButton>
+            <TabButton icon="compass">Explorer</TabButton>
           </TabTrigger>
           <TabTrigger name="profile" href="/profile" asChild>
-            <TabButton>Profil</TabButton>
+            <TabButton icon="person-circle">Profil</TabButton>
           </TabTrigger>
         </CustomTabList>
       </TabList>
@@ -41,12 +46,23 @@ export default function AppTabs() {
   );
 }
 
-export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+// Icône au-dessus du libellé, et pastille arrondie sur l'onglet actif :
+// c'est la forme que donne la barre native sur iOS/Android (voir
+// app-tabs.tsx), reproduite ici à l'identique plutôt qu'une rangée de
+// libellés seuls.
+export function TabButton({
+  children,
+  isFocused,
+  icon,
+  ...props
+}: TabTriggerSlotProps & { icon: keyof typeof Ionicons.glyphMap }) {
+  const theme = useTheme();
   return (
     <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
       <ThemedView
         type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
         style={styles.tabButtonView}>
+        <Ionicons name={icon} size={22} color={isFocused ? theme.text : theme.textSecondary} />
         <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
           {children}
         </ThemedText>
@@ -55,14 +71,13 @@ export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps
   );
 }
 
+// Pilule flottante détachée des bords, centrée, qui épouse son contenu au
+// lieu de s'étirer sur toute la largeur — la barre native ne porte pas non
+// plus le nom de l'app, retiré ici pour la même raison.
 export function CustomTabList(props: TabListProps) {
   return (
     <View {...props} style={styles.tabListContainer}>
       <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          Gamelary
-        </ThemedText>
-
         {props.children}
       </ThemedView>
     </View>
@@ -80,29 +95,39 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '100%',
     padding: Spacing.three,
+    // La pilule est centrée et épouse son contenu (pas de flexGrow sur
+    // innerContainer) : elle flotte au milieu du bas de l'écran comme la
+    // barre native, au lieu de s'étirer d'un bord à l'autre.
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
   },
   innerContainer: {
     paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.five,
-    borderRadius: Spacing.five,
+    paddingHorizontal: Spacing.two,
+    // Pilule : la barre native est entièrement arrondie, pas un rectangle
+    // à coins adoucis.
+    borderRadius: 999,
     flexDirection: 'row',
     alignItems: 'center',
-    flexGrow: 1,
     gap: Spacing.two,
     maxWidth: MaxContentWidth,
-  },
-  brandText: {
-    marginRight: 'auto',
+    // Ombre portée : c'est ce qui fait "flotter" la barre au-dessus du
+    // contenu plutôt que de la coller au bord de l'écran.
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
   },
   pressed: {
     opacity: 0.7,
   },
   tabButtonView: {
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
+    alignItems: 'center',
+    gap: Spacing.half,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    borderRadius: 999,
   },
 });

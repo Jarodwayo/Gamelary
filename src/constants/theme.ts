@@ -102,10 +102,11 @@ export const Spacing = {
 // Hauteur réservée sous le contenu pour la barre d'onglets, qui est en bas
 // de l'écran sur les trois plateformes : barre native (UITabBarController /
 // BottomNavigationView, voir app-tabs.tsx) sur mobile, barre en position
-// absolue reconstruite en JS sur le web (voir app-tabs.web.tsx, ~76 px avec
-// ses marges). Tout ce qui doit rester atteignable au-dessus d'elle s'y
-// réfère : bas des écrans scrollables et bouton de recherche flottant.
-export const BottomTabInset = Platform.select({ ios: 50, android: 80, web: 76 }) ?? 0;
+// absolue reconstruite en JS sur le web (voir app-tabs.web.tsx : pilule de
+// 78 px — icône + libellé — plus ses 16 px de marge de chaque côté). Tout
+// ce qui doit rester atteignable au-dessus d'elle s'y réfère : bas des
+// écrans scrollables et bouton de recherche flottant.
+export const BottomTabInset = Platform.select({ ios: 50, android: 80, web: 110 }) ?? 0;
 
 // Un dp vaut ~1/160 de pouce, soit ~63 dp par centimètre sur un écran de
 // téléphone standard : c'est la conversion utilisée pour traduire les deux
