@@ -14,10 +14,12 @@ const LOOKUP_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SECTION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const gamesCache = new Map<string, { result: GameLookupResult; expiresAt: number }>();
 const sectionCache = new Map<string, { result: CatalogGame[]; expiresAt: number }>();
+const steamAppIdCache = new Map<number, { result: SteamAppIdLookupResult; expiresAt: number }>();
 
 const IGDB_BASE = 'https://api.igdb.com/v4';
 
 type GameLookupResult = { title: string | null; platform: string | null; steamAppId: number | null };
+type SteamAppIdLookupResult = GameLookupResult & { ambiguous: boolean };
 type IgdbExternalGame = { uid: string; external_game_source: number };
 type IgdbGame = { name: string; platforms?: { name: string }[]; external_games?: IgdbExternalGame[] };
 
@@ -190,13 +192,70 @@ async function fetchGameFromIgdb(
   };
 }
 
+// Résolution inverse : à partir d'un app id Steam (bibliothèque Steam
+// importée côté app, voir gamelary-api /api/steam/games), retrouve l'entrée
+// IGDB correspondante — contrairement à fetchGameFromIgdb (recherche par
+// titre), on filtre directement sur external_games.uid plutôt que de
+// chercher par nom, donc pas besoin de désambiguïser par correspondance
+// exacte de titre : le uid Steam identifie déjà un jeu précis en théorie.
+async function fetchGameBySteamAppId(
+  appid: number,
+  clientId: string,
+  accessToken: string
+): Promise<SteamAppIdLookupResult> {
+  const response = await fetch(`${IGDB_BASE}/games`, {
+    method: 'POST',
+    headers: {
+      'Client-ID': clientId,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'text/plain',
+    },
+    body: `where external_games.uid = "${appid}" & external_games.external_game_source = ${STEAM_EXTERNAL_GAME_SOURCE}; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`,
+  });
+  if (!response.ok) {
+    throw new Error(`IGDB games (steamAppId) a échoué (${response.status})`);
+  }
+
+  const games: IgdbGame[] = await response.json();
+
+  // En théorie un app id Steam ne référence qu'un seul jeu, mais la donnée
+  // IGDB n'est pas garantie cohérente (plusieurs fiches revendiquant le même
+  // uid externe) : dédoublonné par nom avant de juger d'une vraie
+  // ambiguïté, pour ne pas signaler une fausse ambiguïté sur des lignes
+  // redondantes du même jeu.
+  const distinctNames = new Set(games.map((game) => game.name.trim().toLowerCase()));
+
+  if (distinctNames.size === 0) {
+    return { title: null, platform: null, steamAppId: null, ambiguous: false };
+  }
+  if (distinctNames.size > 1) {
+    // Deux jeux IGDB différents revendiquent le même app id Steam : plutôt
+    // que de deviner lequel est le bon (et risquer de créer la mauvaise
+    // entrée dans la bibliothèque de l'utilisateur), on ne retourne rien —
+    // pas pire qu'une correspondance absente pour l'appelant.
+    return { title: null, platform: null, steamAppId: null, ambiguous: true };
+  }
+
+  const bestMatch = games[0];
+  return {
+    title: bestMatch.name,
+    platform: bestMatch.platforms?.[0]?.name ?? null,
+    steamAppId: appid,
+    ambiguous: false,
+  };
+}
+
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const section = params.get('section');
   const title = params.get('title');
+  const steamAppIdParam = params.get('steamAppId');
 
-  if (!section && !title) {
-    return Response.json({ error: 'Paramètre "title" ou "section" requis' }, { status: 400 });
+  if (!section && !title && !steamAppIdParam) {
+    return Response.json(
+      { error: 'Paramètre "title", "section" ou "steamAppId" requis' },
+      { status: 400 }
+    );
   }
 
   const clientId = process.env.IGDB_CLIENT_ID;
@@ -210,6 +269,29 @@ export async function GET(request: Request) {
       { error: 'IGDB_CLIENT_ID/IGDB_ACCESS_TOKEN non configurées côté serveur' },
       { status: 500 }
     );
+  }
+
+  if (steamAppIdParam) {
+    const appid = Number(steamAppIdParam);
+    if (!Number.isInteger(appid) || appid <= 0) {
+      return Response.json({ error: 'Paramètre "steamAppId" invalide' }, { status: 400 });
+    }
+
+    const cached = steamAppIdCache.get(appid);
+    if (cached && cached.expiresAt > Date.now()) {
+      return Response.json(cached.result);
+    }
+
+    try {
+      const result = await fetchGameBySteamAppId(appid, clientId, accessToken);
+      steamAppIdCache.set(appid, { result, expiresAt: Date.now() + LOOKUP_CACHE_TTL_MS });
+      return Response.json(result);
+    } catch (error) {
+      return Response.json(
+        { error: error instanceof Error ? error.message : 'Erreur inconnue' },
+        { status: 502 }
+      );
+    }
   }
 
   if (section) {
