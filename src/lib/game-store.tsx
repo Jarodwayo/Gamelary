@@ -72,6 +72,23 @@ function makeAchievementId(gameId: string, name: string): string {
   return `${gameId}:${slugify(name)}-${Date.now().toString(36)}`;
 }
 
+// Un seul chemin d'écriture pour toute mutation d'un jeu : `updatedAt` est
+// posé ici plutôt que recopié dans chacune des actions ci-dessous. L'oublier
+// dans une seule d'entre elles ne ferait échouer strictement rien — ça
+// rendrait juste faux, bien plus tard, l'arbitrage "le plus récent gagne"
+// prévu pour la synchronisation (voir ARCHITECTURE.md §9.5).
+// Les gardes "rien n'a changé" restent chez l'appelant, AVANT cet appel :
+// horodater un no-op ferait gagner cet arbitrage à un appareil qui n'a
+// pourtant rien modifié.
+function updateGame(prev: StoreShape, id: string, patch: Partial<StoredGame>): StoreShape {
+  const existing = prev.games[id];
+  if (!existing) return prev;
+  return {
+    ...prev,
+    games: { ...prev.games, [id]: { ...existing, ...patch, updatedAt: Date.now() } },
+  };
+}
+
 // État initial avant toute lecture d'AsyncStorage (et avant que le premier
 // lancement ait rien écrit) : les jeux de démonstration de tracked-games.ts
 // (demoSeed: true seulement — les autres entrées n'y sont que pour leur
@@ -183,41 +200,46 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       registerCatalogGame: (game: CatalogGame) => {
         setState((prev) => {
           const existing = prev.games[game.id];
-          if (
-            existing &&
-            existing.title === game.title &&
-            existing.platform === game.platform &&
-            existing.steamAppId === game.steamAppId
-          ) {
-            return prev;
+          if (existing) {
+            if (
+              existing.title === game.title &&
+              existing.platform === game.platform &&
+              existing.steamAppId === game.steamAppId
+            ) {
+              return prev;
+            }
+            return updateGame(prev, game.id, {
+              title: game.title,
+              platform: game.platform,
+              steamAppId: game.steamAppId,
+            });
           }
-          const next: StoredGame = existing
-            ? { ...existing, title: game.title, platform: game.platform, steamAppId: game.steamAppId }
-            : {
-                id: game.id,
-                title: game.title,
-                platform: game.platform,
-                steamAppId: game.steamAppId,
-                inLibrary: false,
-                stopped: false,
-                achievements: [],
-                playSessions: [],
-              };
-          return { ...prev, games: { ...prev.games, [game.id]: next } };
+          const created: StoredGame = {
+            id: game.id,
+            title: game.title,
+            platform: game.platform,
+            steamAppId: game.steamAppId,
+            inLibrary: false,
+            stopped: false,
+            achievements: [],
+            playSessions: [],
+            updatedAt: Date.now(),
+          };
+          return { ...prev, games: { ...prev.games, [game.id]: created } };
         });
       },
       addToLibrary: (id: string) => {
         setState((prev) => {
           const existing = prev.games[id];
           if (!existing || existing.inLibrary) return prev;
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, inLibrary: true } } };
+          return updateGame(prev, id, { inLibrary: true });
         });
       },
       toggleStopped: (id: string) => {
         setState((prev) => {
           const existing = prev.games[id];
           if (!existing) return prev;
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, stopped: !existing.stopped } } };
+          return updateGame(prev, id, { stopped: !existing.stopped });
         });
       },
       // Ajoute une session "correctrice" égale à l'écart avec le total
@@ -235,10 +257,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           const delta = target - currentTotal;
           if (delta === 0) return prev;
           const session: PlaySession = { date: new Date().toISOString(), hours: delta };
-          return {
-            ...prev,
-            games: { ...prev.games, [id]: { ...existing, playSessions: [...existing.playSessions, session] } },
-          };
+          return updateGame(prev, id, { playSessions: [...existing.playSessions, session] });
         });
       },
       setRating: (id: string, rating: number) => {
@@ -246,14 +265,14 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
         setState((prev) => {
           const existing = prev.games[id];
           if (!existing) return prev;
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, rating: clamped } } };
+          return updateGame(prev, id, { rating: clamped });
         });
       },
       setReview: (id: string, review: string) => {
         setState((prev) => {
           const existing = prev.games[id];
           if (!existing) return prev;
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, review } } };
+          return updateGame(prev, id, { review });
         });
       },
       addAchievement: (id: string, name: string) => {
@@ -263,10 +282,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           const existing = prev.games[id];
           if (!existing) return prev;
           const achievement: Achievement = { id: makeAchievementId(id, trimmed), name: trimmed, unlocked: false };
-          return {
-            ...prev,
-            games: { ...prev.games, [id]: { ...existing, achievements: [...existing.achievements, achievement] } },
-          };
+          return updateGame(prev, id, { achievements: [...existing.achievements, achievement] });
         });
       },
       toggleAchievement: (id: string, achievementId: string) => {
@@ -276,7 +292,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           const achievements = existing.achievements.map((a) =>
             a.id === achievementId ? { ...a, unlocked: !a.unlocked } : a
           );
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, achievements } } };
+          return updateGame(prev, id, { achievements });
         });
       },
       // Remplace entièrement la liste par celle de Steam (source faisant
@@ -295,14 +311,14 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
             name: a.name,
             unlocked: a.unlocked,
           }));
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, achievements: imported } } };
+          return updateGame(prev, id, { achievements: imported });
         });
       },
       setFavoriteTrack: (id: string, favoriteTrackId: string | undefined) => {
         setState((prev) => {
           const existing = prev.games[id];
           if (!existing) return prev;
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, favoriteTrackId } } };
+          return updateGame(prev, id, { favoriteTrackId });
         });
       },
       toggleListMembership: (listId: string, gameId: string) => {
