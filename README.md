@@ -100,6 +100,7 @@ Créer un fichier `.env` à la racine (voir [`.env.example`](.env.example)) :
 | `IGDB_ACCESS_TOKEN` | idem (token OAuth Client Credentials, ~60 jours) | Échange `client_id`/`client_secret` via l'API Twitch |
 | `STEAMGRIDDB_API_KEY` | Jaquettes de jeux | [steamgriddb.com/profile/preferences/api](https://www.steamgriddb.com/profile/preferences/api) |
 | `EXPO_PUBLIC_STEAM_API_URL` | URL du backend Steam déployé (succès + temps de jeu) | Fournie par ton déploiement de [gamelary-api](https://github.com/Jarodwayo/gamelary-api) |
+| `EXPO_PUBLIC_API_URL` | URL des routes API de Gamelary (`/api/games`, `/api/cover`) pour un build **natif de production** — inutile en dev et sur le web | L'hébergeur Node qui sert l'app (voir `src/lib/api-url.ts`) |
 | `EXPO_PUBLIC_PROFILE_BASE_URL` | Domaine des liens de profil partagés (`/u/<identifiant>`) — facultatif | Ton domaine public ; à défaut, le lien retombe sur l'URL de l'app |
 | `EXPO_PUBLIC_SUPPORT_EMAIL` | Adresse de "Contacter l'assistance" (Aide et idées) — facultatif | La tienne ; absente, vide ou mal formée, la ligne ouvre une issue GitHub |
 
