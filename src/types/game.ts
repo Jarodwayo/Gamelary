@@ -77,4 +77,10 @@ export type CatalogGame = {
   title: string;
   platform: string;
   steamAppId?: number;
+  // Identité canonique IGDB, transportée à côté de l'id local (un slug
+  // dérivé du titre, voir resolveCatalogId) plutôt qu'à sa place : les ids
+  // de tracked-games.ts sont écrits en dur, et le schéma distant conserve
+  // lui aussi les deux (voir ARCHITECTURE.md §9.4, colonnes igdb_id et
+  // slug). Absent si la résolution IGDB n'a rien donné.
+  igdbId?: number;
 };

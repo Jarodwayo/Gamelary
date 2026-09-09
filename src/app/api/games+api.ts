@@ -50,10 +50,33 @@ function isRateLimited(request: Request): boolean {
 
 const IGDB_BASE = 'https://api.igdb.com/v4';
 
-type GameLookupResult = { title: string | null; platform: string | null; steamAppId: number | null };
+// Répétée à l'identique par les sept requêtes apicalypse de ce fichier
+// (cinq sections Explorer, la recherche par titre, la recherche par app id
+// Steam) : extraite pour que l'ajout d'un champ soit une seule édition —
+// oublier une occurrence produirait des jeux sans ce champ sur une seule
+// rangée d'Explorer, sans la moindre erreur pour le signaler.
+// `id` est listé explicitement bien qu'IGDB le renvoie de toute façon
+// (vérifié en direct : une requête dont le `fields` ne le mentionne pas le
+// renvoie quand même) — on en dépend désormais pour l'identité canonique
+// (voir ARCHITECTURE.md §9.2), autant que la dépendance soit déclarée.
+const GAME_FIELDS = 'id,name,platforms.name,external_games.uid,external_games.external_game_source';
+
+type GameLookupResult = {
+  title: string | null;
+  platform: string | null;
+  steamAppId: number | null;
+  // Identité canonique IGDB (voir ARCHITECTURE.md §9.2) : null quand aucun
+  // jeu n'a été trouvé, jamais fabriqué depuis le titre.
+  igdbId: number | null;
+};
 type SteamAppIdLookupResult = GameLookupResult & { ambiguous: boolean };
 type IgdbExternalGame = { uid: string; external_game_source: number };
-type IgdbGame = { name: string; platforms?: { name: string }[]; external_games?: IgdbExternalGame[] };
+type IgdbGame = {
+  id: number;
+  name: string;
+  platforms?: { name: string }[];
+  external_games?: IgdbExternalGame[];
+};
 
 // Source externe IGDB pour Steam (voir GET /external_game_sources) : fixe
 // et documentée par IGDB, pas besoin de la résoudre dynamiquement à chaque
@@ -104,24 +127,24 @@ function sectionQuery(section: string, nowSeconds: number, platformFilter?: stri
       const platformClause = platformFilter
         ? ` & platforms.name = "${escapeApicalypseString(platformFilter)}"`
         : '';
-      return `sort rating desc; where rating_count > 200${platformClause}; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`;
+      return `sort rating desc; where rating_count > 200${platformClause}; fields ${GAME_FIELDS}; limit 10;`;
     }
     case 'trending':
       return (
         `sort total_rating_count desc; where first_release_date > ${nowSeconds - TWO_YEARS_SECONDS} ` +
-        `& first_release_date <= ${nowSeconds} & total_rating_count > 30; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`
+        `& first_release_date <= ${nowSeconds} & total_rating_count > 30; fields ${GAME_FIELDS}; limit 10;`
       );
     case 'new':
       return (
         `sort first_release_date desc; where first_release_date <= ${nowSeconds} & rating_count > 20; ` +
-        'fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;'
+        `fields ${GAME_FIELDS}; limit 10;`
       );
     case 'popular':
-      return 'sort total_rating_count desc; where total_rating_count > 100; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;';
+      return `sort total_rating_count desc; where total_rating_count > 100; fields ${GAME_FIELDS}; limit 10;`;
     case 'anticipated':
       return (
         `sort hypes desc; where first_release_date > ${nowSeconds} & hypes > 0; ` +
-        'fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;'
+        `fields ${GAME_FIELDS}; limit 10;`
       );
     default:
       return null;
@@ -170,6 +193,7 @@ async function fetchSectionFromIgdb(
     // ids en dur de tracked-games.ts (rejoint la même entrée si le jeu y est
     // déjà suivi, au lieu d'en créer un doublon), lisible dans /library/:id.
     id: resolveCatalogId(game.name),
+    igdbId: game.id,
     title: game.name,
     platform: game.platforms?.[0]?.name ?? 'Plateforme inconnue',
     steamAppId: extractSteamAppId(game) ?? undefined,
@@ -202,7 +226,7 @@ async function fetchGameFromIgdb(
   // édition/bundle/spin-off avant le jeu de base (ex. "Elden Ring
   // Nightreign" avant "Elden Ring") — on a besoin de candidats
   // supplémentaires pour la désambiguïsation ci-dessous.
-  const body = `search "${escapeApicalypseString(title)}"; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`;
+  const body = `search "${escapeApicalypseString(title)}"; fields ${GAME_FIELDS}; limit 10;`;
   const games = await queryIgdbGames(body, clientId, accessToken, 'IGDB games');
   // Le champ `category` IGDB (main_game/dlc/bundle...) n'est pas fiable pour
   // filtrer : de nombreuses fiches (y compris le jeu de base) ne l'ont pas
@@ -214,7 +238,7 @@ async function fetchGameFromIgdb(
   const normalizedTitle = title.trim().toLowerCase();
   const bestMatch =
     games.find((game) => game.name.trim().toLowerCase() === normalizedTitle) ?? games[0];
-  if (!bestMatch) return { title: null, platform: null, steamAppId: null };
+  if (!bestMatch) return { title: null, platform: null, steamAppId: null, igdbId: null };
 
   return {
     title: bestMatch.name,
@@ -223,6 +247,7 @@ async function fetchGameFromIgdb(
     // pas encore "sur quelle plateforme l'utilisateur possède le jeu".
     platform: bestMatch.platforms?.[0]?.name ?? null,
     steamAppId: extractSteamAppId(bestMatch),
+    igdbId: bestMatch.id,
   };
 }
 
@@ -237,7 +262,7 @@ async function fetchGameBySteamAppId(
   clientId: string,
   accessToken: string
 ): Promise<SteamAppIdLookupResult> {
-  const body = `where external_games.uid = "${appid}" & external_games.external_game_source = ${STEAM_EXTERNAL_GAME_SOURCE}; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`;
+  const body = `where external_games.uid = "${appid}" & external_games.external_game_source = ${STEAM_EXTERNAL_GAME_SOURCE}; fields ${GAME_FIELDS}; limit 10;`;
   const games = await queryIgdbGames(body, clientId, accessToken, 'IGDB games (steamAppId)');
 
   // En théorie un app id Steam ne référence qu'un seul jeu, mais la donnée
@@ -248,14 +273,14 @@ async function fetchGameBySteamAppId(
   const distinctNames = new Set(games.map((game) => game.name.trim().toLowerCase()));
 
   if (distinctNames.size === 0) {
-    return { title: null, platform: null, steamAppId: null, ambiguous: false };
+    return { title: null, platform: null, steamAppId: null, igdbId: null, ambiguous: false };
   }
   if (distinctNames.size > 1) {
     // Deux jeux IGDB différents revendiquent le même app id Steam : plutôt
     // que de deviner lequel est le bon (et risquer de créer la mauvaise
     // entrée dans la bibliothèque de l'utilisateur), on ne retourne rien —
     // pas pire qu'une correspondance absente pour l'appelant.
-    return { title: null, platform: null, steamAppId: null, ambiguous: true };
+    return { title: null, platform: null, steamAppId: null, igdbId: null, ambiguous: true };
   }
 
   const bestMatch = games[0];
@@ -263,6 +288,7 @@ async function fetchGameBySteamAppId(
     title: bestMatch.name,
     platform: bestMatch.platforms?.[0]?.name ?? null,
     steamAppId: appid,
+    igdbId: bestMatch.id,
     ambiguous: false,
   };
 }

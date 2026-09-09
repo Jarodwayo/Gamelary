@@ -5,8 +5,13 @@ import { trackedGames, trackId } from '@/data/tracked-games';
 import type { StoredProfile } from '@/lib/profile';
 import type { TitleArtwork } from '@/lib/title-artwork';
 import { slugify } from '@/lib/slug';
+import { migrateStore, STORE_VERSION } from '@/lib/store-migrations';
 import type { Achievement, CatalogGame, PlaySession } from '@/types/game';
 
+// Clé désormais figée : son suffixe `/v5` n'est plus qu'un nom historique.
+// La version de forme vit DANS le blob (STORE_VERSION, store-migrations.ts)
+// et les changements passent par une migration — changer la clé revenait à
+// effacer silencieusement la bibliothèque (voir ARCHITECTURE.md §9.3).
 const STORAGE_KEY = 'gamelary/game-store/v5';
 
 export type StoredGame = {
@@ -21,6 +26,12 @@ export type StoredGame = {
   // par recherche floue sur le titre (voir cover+api.ts). Absent tant
   // qu'IGDB n'a pas répondu, ou si le jeu n'a pas de référence Steam.
   steamAppId?: number;
+  // Identité canonique IGDB (voir ARCHITECTURE.md §9.2) : le slug dérivé du
+  // titre ne suffit pas — deux appareils peuvent en produire deux différents
+  // pour le même jeu. Absent tant qu'aucune résolution ne l'a fourni.
+  igdbId?: number;
+  // Absent = antérieur à l'horodatage. Jamais inventé rétroactivement.
+  updatedAt?: number;
   inLibrary: boolean;
   stopped: boolean;
   achievements: Achievement[];
@@ -63,7 +74,8 @@ type Settings = {
   titleArtwork?: TitleArtwork;
 };
 
-type StoreShape = {
+export type StoreShape = {
+  version: number;
   games: Record<string, StoredGame>;
   lists: Record<string, StoredList>;
   settings: Settings;
@@ -71,6 +83,23 @@ type StoreShape = {
 
 function makeAchievementId(gameId: string, name: string): string {
   return `${gameId}:${slugify(name)}-${Date.now().toString(36)}`;
+}
+
+// Un seul chemin d'écriture pour toute mutation d'un jeu : `updatedAt` est
+// posé ici plutôt que recopié dans chacune des actions ci-dessous. L'oublier
+// dans une seule d'entre elles ne ferait échouer strictement rien — ça
+// rendrait juste faux, bien plus tard, l'arbitrage "le plus récent gagne"
+// prévu pour la synchronisation (voir ARCHITECTURE.md §9.5).
+// Les gardes "rien n'a changé" restent chez l'appelant, AVANT cet appel :
+// horodater un no-op ferait gagner cet arbitrage à un appareil qui n'a
+// pourtant rien modifié.
+function updateGame(prev: StoreShape, id: string, patch: Partial<StoredGame>): StoreShape {
+  const existing = prev.games[id];
+  if (!existing) return prev;
+  return {
+    ...prev,
+    games: { ...prev.games, [id]: { ...existing, ...patch, updatedAt: Date.now() } },
+  };
 }
 
 // État initial avant toute lecture d'AsyncStorage (et avant que le premier
@@ -102,6 +131,7 @@ function seedStore(): StoreShape {
     };
   }
   return {
+    version: STORE_VERSION,
     games,
     lists: {
       favoris: { id: 'favoris', name: 'Favoris', builtin: true, gameIds: [] },
@@ -120,22 +150,6 @@ function seedStore(): StoreShape {
 // bien plus loin dans l'app (fiche jeu, filtres de bibliothèque) sans lien
 // évident avec la vraie cause. Corrigé une seule fois ici, à la lecture,
 // plutôt que de parsemer des `?? []` dans chaque écran qui lit ces champs.
-function normalizeLoadedState(parsed: Partial<StoreShape>): StoreShape {
-  const games: Record<string, StoredGame> = {};
-  for (const [id, game] of Object.entries(parsed.games ?? {})) {
-    games[id] = {
-      ...game,
-      achievements: Array.isArray(game.achievements) ? game.achievements : [],
-      playSessions: Array.isArray(game.playSessions) ? game.playSessions : [],
-    };
-  }
-  return {
-    games,
-    lists: parsed.lists ?? {},
-    settings: parsed.settings ?? {},
-  };
-}
-
 type GameStoreContextValue = {
   ready: boolean;
   games: Record<string, StoredGame>;
@@ -173,7 +187,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((raw) => {
-        if (raw) setState(normalizeLoadedState(JSON.parse(raw)));
+        if (raw) setState(migrateStore(JSON.parse(raw)));
       })
       .catch(() => {
         // Lecture impossible (stockage indisponible/corrompu) : on repart du
@@ -200,41 +214,62 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       registerCatalogGame: (game: CatalogGame) => {
         setState((prev) => {
           const existing = prev.games[game.id];
-          if (
-            existing &&
-            existing.title === game.title &&
-            existing.platform === game.platform &&
-            existing.steamAppId === game.steamAppId
-          ) {
-            return prev;
+          if (existing) {
+            // Une absence n'écrase jamais un igdbId déjà connu : une
+            // résolution IGDB qui échoue, ou une réponse sans
+            // correspondance, ne doit pas faire perdre l'identité canonique
+            // — un jeu qui la perd doit être re-résolu à l'aveugle depuis
+            // son titre (voir ARCHITECTURE.md §9.3).
+            const igdbId = game.igdbId ?? existing.igdbId;
+            // La garde compare la valeur RÉSULTANTE, pas celle qui arrive.
+            // Sans igdbId du tout ici, un jeu enregistré avant
+            // l'introduction du champ ne le gagnerait jamais (la garde
+            // court-circuiterait dès que titre/plateforme sont déjà à
+            // jour) ; avec la valeur entrante brute, une résolution sans id
+            // rouvrirait une écriture qui ne change rien, et un updatedAt
+            // injustifié avec elle.
+            if (
+              existing.title === game.title &&
+              existing.platform === game.platform &&
+              existing.steamAppId === game.steamAppId &&
+              existing.igdbId === igdbId
+            ) {
+              return prev;
+            }
+            return updateGame(prev, game.id, {
+              title: game.title,
+              platform: game.platform,
+              steamAppId: game.steamAppId,
+              igdbId,
+            });
           }
-          const next: StoredGame = existing
-            ? { ...existing, title: game.title, platform: game.platform, steamAppId: game.steamAppId }
-            : {
-                id: game.id,
-                title: game.title,
-                platform: game.platform,
-                steamAppId: game.steamAppId,
-                inLibrary: false,
-                stopped: false,
-                achievements: [],
-                playSessions: [],
-              };
-          return { ...prev, games: { ...prev.games, [game.id]: next } };
+          const created: StoredGame = {
+            id: game.id,
+            title: game.title,
+            platform: game.platform,
+            steamAppId: game.steamAppId,
+            igdbId: game.igdbId,
+            inLibrary: false,
+            stopped: false,
+            achievements: [],
+            playSessions: [],
+            updatedAt: Date.now(),
+          };
+          return { ...prev, games: { ...prev.games, [game.id]: created } };
         });
       },
       addToLibrary: (id: string) => {
         setState((prev) => {
           const existing = prev.games[id];
           if (!existing || existing.inLibrary) return prev;
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, inLibrary: true } } };
+          return updateGame(prev, id, { inLibrary: true });
         });
       },
       toggleStopped: (id: string) => {
         setState((prev) => {
           const existing = prev.games[id];
           if (!existing) return prev;
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, stopped: !existing.stopped } } };
+          return updateGame(prev, id, { stopped: !existing.stopped });
         });
       },
       // Ajoute une session "correctrice" égale à l'écart avec le total
@@ -252,10 +287,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           const delta = target - currentTotal;
           if (delta === 0) return prev;
           const session: PlaySession = { date: new Date().toISOString(), hours: delta };
-          return {
-            ...prev,
-            games: { ...prev.games, [id]: { ...existing, playSessions: [...existing.playSessions, session] } },
-          };
+          return updateGame(prev, id, { playSessions: [...existing.playSessions, session] });
         });
       },
       setRating: (id: string, rating: number) => {
@@ -263,14 +295,14 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
         setState((prev) => {
           const existing = prev.games[id];
           if (!existing) return prev;
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, rating: clamped } } };
+          return updateGame(prev, id, { rating: clamped });
         });
       },
       setReview: (id: string, review: string) => {
         setState((prev) => {
           const existing = prev.games[id];
           if (!existing) return prev;
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, review } } };
+          return updateGame(prev, id, { review });
         });
       },
       addAchievement: (id: string, name: string) => {
@@ -280,10 +312,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           const existing = prev.games[id];
           if (!existing) return prev;
           const achievement: Achievement = { id: makeAchievementId(id, trimmed), name: trimmed, unlocked: false };
-          return {
-            ...prev,
-            games: { ...prev.games, [id]: { ...existing, achievements: [...existing.achievements, achievement] } },
-          };
+          return updateGame(prev, id, { achievements: [...existing.achievements, achievement] });
         });
       },
       toggleAchievement: (id: string, achievementId: string) => {
@@ -293,7 +322,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           const achievements = existing.achievements.map((a) =>
             a.id === achievementId ? { ...a, unlocked: !a.unlocked } : a
           );
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, achievements } } };
+          return updateGame(prev, id, { achievements });
         });
       },
       // Remplace entièrement la liste par celle de Steam (source faisant
@@ -312,14 +341,14 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
             name: a.name,
             unlocked: a.unlocked,
           }));
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, achievements: imported } } };
+          return updateGame(prev, id, { achievements: imported });
         });
       },
       setFavoriteTrack: (id: string, favoriteTrackId: string | undefined) => {
         setState((prev) => {
           const existing = prev.games[id];
           if (!existing) return prev;
-          return { ...prev, games: { ...prev.games, [id]: { ...existing, favoriteTrackId } } };
+          return updateGame(prev, id, { favoriteTrackId });
         });
       },
       toggleListMembership: (listId: string, gameId: string) => {
