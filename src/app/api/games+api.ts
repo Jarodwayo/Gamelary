@@ -50,6 +50,13 @@ function isRateLimited(request: Request): boolean {
 
 const IGDB_BASE = 'https://api.igdb.com/v4';
 
+// Répétée à l'identique par les sept requêtes apicalypse de ce fichier
+// (cinq sections Explorer, la recherche par titre, la recherche par app id
+// Steam) : extraite pour que l'ajout d'un champ soit une seule édition —
+// oublier une occurrence produirait des jeux sans ce champ sur une seule
+// rangée d'Explorer, sans la moindre erreur pour le signaler.
+const GAME_FIELDS = 'name,platforms.name,external_games.uid,external_games.external_game_source';
+
 type GameLookupResult = { title: string | null; platform: string | null; steamAppId: number | null };
 type SteamAppIdLookupResult = GameLookupResult & { ambiguous: boolean };
 type IgdbExternalGame = { uid: string; external_game_source: number };
@@ -104,24 +111,24 @@ function sectionQuery(section: string, nowSeconds: number, platformFilter?: stri
       const platformClause = platformFilter
         ? ` & platforms.name = "${escapeApicalypseString(platformFilter)}"`
         : '';
-      return `sort rating desc; where rating_count > 200${platformClause}; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`;
+      return `sort rating desc; where rating_count > 200${platformClause}; fields ${GAME_FIELDS}; limit 10;`;
     }
     case 'trending':
       return (
         `sort total_rating_count desc; where first_release_date > ${nowSeconds - TWO_YEARS_SECONDS} ` +
-        `& first_release_date <= ${nowSeconds} & total_rating_count > 30; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`
+        `& first_release_date <= ${nowSeconds} & total_rating_count > 30; fields ${GAME_FIELDS}; limit 10;`
       );
     case 'new':
       return (
         `sort first_release_date desc; where first_release_date <= ${nowSeconds} & rating_count > 20; ` +
-        'fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;'
+        `fields ${GAME_FIELDS}; limit 10;`
       );
     case 'popular':
-      return 'sort total_rating_count desc; where total_rating_count > 100; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;';
+      return `sort total_rating_count desc; where total_rating_count > 100; fields ${GAME_FIELDS}; limit 10;`;
     case 'anticipated':
       return (
         `sort hypes desc; where first_release_date > ${nowSeconds} & hypes > 0; ` +
-        'fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;'
+        `fields ${GAME_FIELDS}; limit 10;`
       );
     default:
       return null;
@@ -202,7 +209,7 @@ async function fetchGameFromIgdb(
   // édition/bundle/spin-off avant le jeu de base (ex. "Elden Ring
   // Nightreign" avant "Elden Ring") — on a besoin de candidats
   // supplémentaires pour la désambiguïsation ci-dessous.
-  const body = `search "${escapeApicalypseString(title)}"; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`;
+  const body = `search "${escapeApicalypseString(title)}"; fields ${GAME_FIELDS}; limit 10;`;
   const games = await queryIgdbGames(body, clientId, accessToken, 'IGDB games');
   // Le champ `category` IGDB (main_game/dlc/bundle...) n'est pas fiable pour
   // filtrer : de nombreuses fiches (y compris le jeu de base) ne l'ont pas
@@ -237,7 +244,7 @@ async function fetchGameBySteamAppId(
   clientId: string,
   accessToken: string
 ): Promise<SteamAppIdLookupResult> {
-  const body = `where external_games.uid = "${appid}" & external_games.external_game_source = ${STEAM_EXTERNAL_GAME_SOURCE}; fields name,platforms.name,external_games.uid,external_games.external_game_source; limit 10;`;
+  const body = `where external_games.uid = "${appid}" & external_games.external_game_source = ${STEAM_EXTERNAL_GAME_SOURCE}; fields ${GAME_FIELDS}; limit 10;`;
   const games = await queryIgdbGames(body, clientId, accessToken, 'IGDB games (steamAppId)');
 
   // En théorie un app id Steam ne référence qu'un seul jeu, mais la donnée
