@@ -614,13 +614,17 @@ sépare ce projet d'un vrai produit.
 Constats vérifiés dans le code, pas des hypothèses — et ce sont eux qui
 dictent le schéma distant, pas l'inverse.
 
-1. **Il n'existe aucune identité stable pour un jeu.** L'id est un slug
-   dérivé du titre (`resolveCatalogId`, §6.1), et l'**id numérique IGDB
-   n'est jamais demandé ni stocké** (les requêtes apicalypse de
-   `games+api.ts` récupèrent `name`, `platforms.name`, `external_games.*`,
-   jamais `id`). Conséquence : deux appareils qui résolvent un titre
-   légèrement différemment produisent deux ids pour le même jeu, et un
-   renommage côté IGDB casse la correspondance.
+1. **Il n'existe aucune identité stable pour un jeu.** ✅ *corrigé, voir
+   9.3.1.* L'id est un slug dérivé du titre (`resolveCatalogId`, §6.1) et
+   l'**id numérique IGDB n'était ni lu ni stocké**. Précision apportée
+   depuis, la première rédaction de ce point étant inexacte : IGDB renvoie
+   `id` **systématiquement**, y compris quand le `fields` apicalypse ne le
+   mentionne pas (vérifié en direct contre l'API). Il était donc déjà dans
+   chaque réponse, simplement jamais typé, jamais lu, jamais persisté — le
+   travail manquant était entièrement de notre côté, pas dans la requête.
+   Conséquence tant que c'était le cas : deux appareils qui résolvent un
+   titre légèrement différemment produisent deux ids pour le même jeu, et
+   un renommage côté IGDB casse la correspondance.
 2. **Aucune entité ne porte d'horodatage.** Ni `createdAt` ni `updatedAt`,
    nulle part. Une résolution de conflit "le plus récent gagne" est donc
    **littéralement impossible** sur les données déjà écrites : on ne peut
@@ -637,20 +641,41 @@ S'ajoute la politique documentée en §6.6 : un changement de forme du store
 Acceptable pour une app sans utilisateurs ; avec des comptes, c'est une
 perte de données silencieuse à chaque évolution du schéma.
 
-### 9.3 À faire maintenant, avant tout compte
+### 9.3 Prérequis à poser avant tout compte ✅
 
-Ces quatre points coûtent peu aujourd'hui et deviennent **impossibles à
-rattraper** plus tard : une donnée écrite sans horodatage n'en aura jamais
-un a posteriori, et un jeu enregistré sans id IGDB devra être re-résolu à
-l'aveugle depuis son titre.
+Ces quatre points coûtaient peu tant qu'aucun compte n'existe et devenaient
+**impossibles à rattraper** ensuite : une donnée écrite sans horodatage n'en
+aura jamais un a posteriori, et un jeu enregistré sans id IGDB devrait être
+re-résolu à l'aveugle depuis son titre. Ils sont faits — aucun n'apporte
+quoi que ce soit de visible dans l'app aujourd'hui, c'est bien pour ça
+qu'ils ont chacun leurs tests.
 
-1. Demander et stocker l'**id numérique IGDB** (`fields id,...` : une ligne
-   dans la requête apicalypse, plus le champ dans `StoredGame`).
-2. Écrire un **`updatedAt` par jeu** à chaque mutation du store.
-3. Rendre les **ids de succès manuels déterministes** (dérivés du nom
-   normalisé, comme le sont déjà ceux venant de Steam).
-4. Remplacer le **bump-de-clé destructif** par de vraies migrations de
-   forme, avec la version stockée *dans* le blob plutôt que dans la clé.
+1. ✅ **Id numérique IGDB** stocké (`StoredGame.igdbId`, `CatalogGame.igdbId`),
+   alimenté par les trois chemins qui enregistrent un jeu : rangées
+   Explorer, recherche par titre, résolution inverse depuis un app id
+   Steam. Transporté **à côté** du slug local, jamais à sa place — les ids
+   de `tracked-games.ts` sont écrits en dur, et le schéma distant conserve
+   lui aussi les deux (§9.4 : `igdb_id` et `slug`).
+   Deux règles non évidentes, chacune testée : une résolution qui ne rapporte
+   pas d'id **n'efface jamais** celui déjà connu, et la garde « rien n'a
+   changé » de `registerCatalogGame` compare l'id **résultant** — sans quoi
+   les jeux enregistrés avant l'introduction du champ ne l'auraient jamais
+   obtenu.
+2. ✅ **`updatedAt` par jeu**, posé par un unique chemin d'écriture
+   (`updateGame`, `game-store.tsx`) plutôt que recopié dans chacune des
+   neuf actions : l'oublier dans une seule ne ferait rien échouer, ça
+   rendrait juste faux l'arbitrage de §9.5 bien plus tard. Symétriquement,
+   une action qui ne change rien **n'horodate pas** — sinon un appareil qui
+   se contente de relire sa bibliothèque gagnerait l'arbitrage « le plus
+   récent gagne » face à un appareil ayant réellement modifié la donnée.
+   Les listes ne sont volontairement pas horodatées : elles fusionnent par
+   union (§9.5) et leur table distante ne porte pas d'`updated_at` (§9.4).
+3. ✅ **Ids de succès manuels déterministes**, dérivés du nom normalisé
+   comme le sont déjà ceux venant de Steam, avec un suffixe d'ordre dès la
+   deuxième occurrence d'un même nom (deux succès homonymes dans un même
+   jeu existent réellement — `addAchievement` n'impose aucune unicité).
+4. ✅ **Migrations de forme** à la place du bump-de-clé destructif, avec la
+   version stockée *dans* le blob (`store-migrations.ts`).
 
 ### 9.4 Schéma distant (Postgres / Supabase)
 
@@ -782,6 +807,18 @@ bien plus cher à réparer qu'à prévenir.
   cascade` couvre l'effacement, l'export reste à concevoir.
 - **Refus de migrer** : que fait l'app si l'utilisateur crée un compte mais
   décline l'envoi de sa bibliothèque locale ?
+- **Réglages non horodatés** : §9.3.2 ne portait que sur les jeux, et
+  c'est ce qui a été implémenté. Or la table de fusion de §9.5 promet « le
+  plus récent gagne » pour `steam_id64`, arbitrage aussi impossible sans
+  horodatage que pour `rating`/`review`. À trancher : ajouter un
+  `updatedAt` aux réglages, ou se contenter de l'`updated_at` posé côté
+  serveur à l'écriture (suffisant tant qu'un seul appareil écrit à la
+  fois, faux dès qu'un appareil hors ligne renvoie une valeur ancienne).
+- **`steamAppId` écrasable par une absence** : contrairement à `igdbId`,
+  `registerCatalogGame` remplace encore le `steamAppId` connu par
+  `undefined` si une résolution n'en rapporte pas. Comportement antérieur,
+  laissé tel quel pour ne pas élargir le sujet, mais c'est la même classe
+  de perte silencieuse.
 - **Quota et abus** : aucune limite par utilisateur aujourd'hui. À cadrer
   avant toute ouverture publique, en même temps que l'absence de rate
   limiting sur les routes existantes (`games+api.ts`, `gamelary-api`), qui
