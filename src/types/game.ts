@@ -9,7 +9,7 @@ export type Track = {
 };
 
 // Une entrée = "l'utilisateur a joué N heures à telle date", ajoutée à la
-// main (pas de tracking automatique, voir ARCHITECTURE.md §5.3). Stocker
+// main (pas de tracking automatique, voir ARCHITECTURE.md §6.6). Stocker
 // des sessions datées plutôt qu'un seul total permet de dériver Semaine/
 // Mois/Tout à l'affichage (Statistiques) sans données inventées.
 export type PlaySession = {
