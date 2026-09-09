@@ -189,3 +189,66 @@ describe('collision de noms : deux succès homonymes ne doivent jamais fusionner
     expect(achievements.map((a) => a.unlocked)).toEqual([true, false]);
   });
 });
+
+describe('listes intégrées : réparées si absentes, jamais écrasées', () => {
+  test('un blob sans listes récupère Favoris et Wishlist', () => {
+    // Sans ça, le bouton cœur de la fiche jeu et le filtre Wishlist de la
+    // bibliothèque cessent de répondre définitivement — et sans la moindre
+    // erreur, puisque tous les écrans lisent ces listes en `?.`.
+    const after = migrateStore({ version: STORE_VERSION, games: {}, settings: {} });
+
+    expect(after.lists.favoris).toEqual({
+      id: 'favoris',
+      name: 'Favoris',
+      builtin: true,
+      gameIds: [],
+    });
+    expect(after.lists.wishlist).toEqual({
+      id: 'wishlist',
+      name: 'Wishlist',
+      builtin: true,
+      gameIds: [],
+    });
+  });
+
+  test('une liste intégrée existante garde son contenu et son nom', () => {
+    // Réparer une absence, jamais remettre à zéro : un blob qui a déjà ses
+    // listes ne doit rien perdre — c'est la même règle de non-destruction
+    // que pour les jeux.
+    const after = migrateStore({
+      version: STORE_VERSION,
+      games: {},
+      settings: {},
+      lists: {
+        favoris: { id: 'favoris', name: 'Mes favoris', builtin: true, gameIds: ['hollow-knight'] },
+      },
+    });
+
+    expect(after.lists.favoris.gameIds).toEqual(['hollow-knight']);
+    expect(after.lists.favoris.name).toBe('Mes favoris');
+    // Seule celle qui manquait est ajoutée.
+    expect(after.lists.wishlist.gameIds).toEqual([]);
+  });
+
+  test('les listes créées par l’utilisateur sont conservées', () => {
+    const after = migrateStore({
+      version: STORE_VERSION,
+      games: {},
+      settings: {},
+      lists: { 'a-finir-mabc': { id: 'a-finir-mabc', name: 'À finir', builtin: false, gameIds: ['hades'] } },
+    });
+
+    expect(after.lists['a-finir-mabc'].gameIds).toEqual(['hades']);
+    expect(Object.keys(after.lists).sort()).toEqual(['a-finir-mabc', 'favoris', 'wishlist']);
+  });
+
+  test('rejouer la migration ne duplique ni ne réinitialise les listes', () => {
+    const once = migrateStore({ version: STORE_VERSION, games: {}, settings: {} });
+    once.lists.favoris.gameIds.push('hollow-knight');
+
+    const twice = migrateStore(once);
+
+    expect(twice.lists).toEqual(once.lists);
+    expect(twice.lists.favoris.gameIds).toEqual(['hollow-knight']);
+  });
+});

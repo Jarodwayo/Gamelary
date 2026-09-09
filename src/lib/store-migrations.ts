@@ -2,7 +2,7 @@ import { slugify } from '@/lib/slug';
 // Types importés du store (import de TYPE uniquement : effacé à la
 // compilation, donc pas de cycle de modules à l'exécution) plutôt que
 // redéfinis ici — un seul point de vérité pour la forme du store.
-import type { StoredGame, StoreShape } from '@/lib/game-store';
+import type { StoredGame, StoredList, StoreShape } from '@/lib/game-store';
 import type { Achievement } from '@/types/game';
 
 // Version de FORME du store, stockée dans le blob lui-même — pas dans la clé
@@ -37,6 +37,30 @@ function normalizeAchievementIds(gameId: string, achievements: Achievement[]): A
   });
 }
 
+// Favoris et Wishlist ne sont pas des listes comme les autres : l'app les
+// suppose présentes (bouton cœur de la fiche jeu, filtre Wishlist de la
+// bibliothèque, rangée "Jeux préférés" du profil). Elles ne sont créées que
+// par seedStore, au tout premier lancement — un blob écrit avant leur
+// introduction, ou partiellement écrit, n'en a pas. Et comme tous les
+// écrans les lisent en `?.` (lecture défensive), leur absence ne provoque
+// aucune erreur : le bouton cœur cesse simplement de répondre, sans rien
+// signaler. La migration est le seul endroit où ça se répare.
+const BUILTIN_LISTS: Record<string, StoredList> = {
+  favoris: { id: 'favoris', name: 'Favoris', builtin: true, gameIds: [] },
+  wishlist: { id: 'wishlist', name: 'Wishlist', builtin: true, gameIds: [] },
+};
+
+// Ajoute uniquement ce qui manque : une liste intégrée déjà présente est
+// rendue telle quelle, avec son contenu et son nom éventuellement
+// renommé — on répare une absence, on n'écrase jamais l'existant.
+function withBuiltinLists(lists: Record<string, StoredList>): Record<string, StoredList> {
+  const restored = { ...lists };
+  for (const [id, list] of Object.entries(BUILTIN_LISTS)) {
+    if (!restored[id]) restored[id] = list;
+  }
+  return restored;
+}
+
 // Frontière système (voir game-store.tsx) : ce qui sort d'AsyncStorage n'est
 // jamais garanti conforme. La migration est donc aussi le point de
 // normalisation défensive — un champ absent ou corrompu ne doit jamais faire
@@ -69,7 +93,7 @@ export function migrateStore(raw: unknown): StoreShape {
   return {
     version: STORE_VERSION,
     games,
-    lists: parsed.lists ?? {},
+    lists: withBuiltinLists(parsed.lists ?? {}),
     settings: parsed.settings ?? {},
   };
 }
