@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { trackedGames, trackId } from '@/data/tracked-games';
+import type { StoredProfile } from '@/lib/profile';
 import { slugify } from '@/lib/slug';
 import { migrateStore, STORE_VERSION } from '@/lib/store-migrations';
 import type { Achievement, CatalogGame, PlaySession } from '@/types/game';
@@ -49,12 +50,15 @@ export type StoredList = {
   gameIds: string[];
 };
 
-// Réglages globaux, pas propres à un jeu — pour l'instant seulement le
-// SteamID64 de l'utilisateur (voir setSteamId64 ci-dessous), donc un simple
-// objet plutôt qu'une nouvelle table ; à faire grossir si d'autres réglages
-// s'ajoutent.
+// Réglages globaux, pas propres à un jeu (SteamID64, identité affichée du
+// profil), donc un simple objet plutôt qu'une nouvelle table ; à faire
+// grossir si d'autres réglages s'ajoutent.
 type Settings = {
   steamId64?: string;
+  // Absent tant que l'utilisateur n'a rien personnalisé : les écrans
+  // passent alors par les valeurs par défaut de profile.ts (displayNameOf,
+  // usernameOf) plutôt que d'afficher des champs vides.
+  profile?: StoredProfile;
 };
 
 export type StoreShape = {
@@ -131,6 +135,7 @@ type GameStoreContextValue = {
   toggleAchievement: (id: string, achievementId: string) => void;
   importAchievements: (id: string, achievements: { apiname: string; name: string; unlocked: boolean }[]) => void;
   setSteamId64: (steamId64: string | undefined) => void;
+  updateProfile: (patch: Partial<StoredProfile>) => void;
   setFavoriteTrack: (id: string, favoriteTrackId: string | undefined) => void;
   toggleListMembership: (listId: string, gameId: string) => void;
   createList: (name: string) => string;
@@ -323,6 +328,17 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       // pour appeler gamelary-api (voir §6.3) — jamais vérifié côté serveur.
       setSteamId64: (steamId64: string | undefined) => {
         setState((prev) => ({ ...prev, settings: { ...prev.settings, steamId64 } }));
+      },
+      // Un patch partiel plutôt qu'un setter par champ : l'écran d'édition
+      // (voir profile/edit.tsx) enregistre nom/identifiant/bio d'un coup,
+      // tandis que le choix d'une image ne touche qu'elle — les deux
+      // passent par le même chemin sans écraser les champs absents du
+      // patch.
+      updateProfile: (patch: Partial<StoredProfile>) => {
+        setState((prev) => ({
+          ...prev,
+          settings: { ...prev.settings, profile: { ...prev.settings.profile, ...patch } },
+        }));
       },
     }),
     []

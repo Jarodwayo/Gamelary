@@ -9,6 +9,7 @@ export default function ProfileLayout() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="stats" options={{ title: 'Statistiques', headerBackTitle: 'Profil' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications', headerBackTitle: 'Profil' }} />
+      <Stack.Screen name="edit" options={{ title: 'Modifier le profil', headerBackTitle: 'Profil' }} />
     </Stack>
   );
 }

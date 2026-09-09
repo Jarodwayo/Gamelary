@@ -100,4 +100,12 @@ export const Spacing = {
 } as const;
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
+
+// Sur le web, la barre d'onglets est une barre HAUTE en position absolue
+// (voir app-tabs.web.tsx, `tabListContainer`) : elle recouvre les 76
+// premiers pixels de chaque écran, contrairement au natif où NativeTabs
+// occupe le bas (BottomTabInset ci-dessus). Les écrans qui placent du
+// contenu interactif tout en haut doivent donc le décaler d'autant — sinon
+// il est masqué, et intapable, sur le bundle web uniquement.
+export const WebTopBarInset = Platform.OS === 'web' ? 76 : 0;
 export const MaxContentWidth = 800;

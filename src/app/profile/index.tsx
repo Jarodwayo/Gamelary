@@ -1,22 +1,34 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Link } from 'expo-router';
-import { useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
+import { Image } from 'expo-image';
+import { Link, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GameShelf } from '@/components/game-shelf';
 import { OverflowMenu, type OverflowMenuItem } from '@/components/overflow-menu';
+import { ProfileAvatar } from '@/components/profile-avatar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Fonts, Spacing } from '@/constants/theme';
+import { BottomTabInset, Fonts, Spacing, WebTopBarInset } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
 import { useGameStore, type StoredGame } from '@/lib/game-store';
 import { apiUrl } from '@/lib/api-url';
+import { displayNameOf, handleOf, usernameOf } from '@/lib/profile';
+import { publicProfileLink } from '@/lib/profile-link';
 import { steamApiUrl } from '@/lib/steam-api-url';
 import { resolveCatalogId } from '@/data/tracked-games';
 
 type SteamOwnedGame = { appid: number; name: string; playtimeMinutes: number };
+
+// Un SteamID64 est toujours un entier 64 bits sur 17 chiffres (voir la doc
+// Steam) — keyboardType="number-pad" n'est qu'un indice clavier côté RN, pas
+// une validation : un collage peut contenir n'importe quoi (espaces, `&`,
+// `#`...). Vérifié ici avant d'atteindre confirmSteamId, pour ne jamais
+// interpoler une valeur hors-format dans steamApiUrl.
+const STEAM_ID64_PATTERN = /^\d{17}$/;
 
 // steamAppId ne veut dire que "ce jeu existe sur Steam" (résolu depuis les
 // external_games d'IGDB, voir ARCHITECTURE.md §6.1/§6.2) — pas "le joueur y
@@ -60,20 +72,33 @@ export async function fetchIgdbMatchForSteamAppId(
   }
 }
 
-// Pas de compte utilisateur pour l'instant (voir ARCHITECTURE.md §9) : nom
-// et handle sont des constantes le temps qu'une vraie auth existe, plutôt
-// que d'inventer un profil rempli comme si c'était déjà branché.
-const DISPLAY_NAME = 'Joueur';
-const DISPLAY_HANDLE = '@joueur';
-
 // Un peu plus que Spacing.four : la cloche/le menu du haut restaient trop
 // collés en haut de l'écran (SafeAreaView sans l'edge 'top', voir plus
 // bas) — ajustement fin, pas un repositionnement radical.
 const TOP_ROW_PADDING_TOP = Spacing.five;
 
+// Hauteur de la bannière, et de combien l'avatar déborde dessus : l'avatar
+// (72px, voir profile-avatar.tsx) est centré à cheval sur le bas de
+// l'image, d'où un décalage d'environ la moitié de sa hauteur.
+const BANNER_HEIGHT = 148;
+const AVATAR_OVERLAP = 36;
+
+// Combien de temps la confirmation "lien copié" reste affichée avant de
+// disparaître d'elle-même : assez pour être lue, pas au point de rester
+// coincée en haut du profil.
+const SHARE_STATUS_TIMEOUT_MS = 4000;
+
+// Icône claire fixe sur la pastille sombre de la bannière (voir
+// styles.headerChip) : pas une couleur du thème, puisque le fond derrière
+// est une photo arbitraire dans les deux thèmes.
+const HEADER_CHIP_ICON = '#F5F1EC';
+
 export default function ProfileScreen() {
   const store = useGameStore();
   const theme = useTheme();
+  const router = useRouter();
+  const profile = store.settings.profile;
+  const displayName = displayNameOf(profile);
   const games = Object.values(store.games);
   const libraryGames = games.filter((game) => game.inLibrary);
   const favoriteIds = store.lists.favoris?.gameIds ?? [];
@@ -88,17 +113,55 @@ export default function ProfileScreen() {
 
   const [editingSteamId, setEditingSteamId] = useState(false);
   const [steamIdInput, setSteamIdInput] = useState('');
+  const [steamIdError, setSteamIdError] = useState<string | null>(null);
   const [importingLibrary, setImportingLibrary] = useState(false);
   const [libraryImportStatus, setLibraryImportStatus] = useState<string | null>(null);
+  const [shareStatus, setShareStatus] = useState<string | null>(null);
+
+  // La confirmation de copie s'efface d'elle-même : c'est un accusé de
+  // réception ponctuel, pas un état du profil qu'il faudrait fermer à la
+  // main.
+  useEffect(() => {
+    if (!shareStatus) return;
+    const timer = setTimeout(() => setShareStatus(null), SHARE_STATUS_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [shareStatus]);
+
+  // Le lien est construit au clic et jamais pendant le rendu : sans
+  // domaine public configuré, il dépend de `window` (voir
+  // profile-link.ts), absent au rendu serveur (web.output: "server").
+  async function copyProfileLink() {
+    const link = publicProfileLink(usernameOf(profile));
+    try {
+      await Clipboard.setStringAsync(link);
+      setShareStatus(`Lien copié : ${link}`);
+    } catch {
+      // Copie refusée (permission navigateur) : le lien reste affiché pour
+      // pouvoir être sélectionné à la main, plutôt qu'un échec muet.
+      setShareStatus(`Copie impossible. Ton lien : ${link}`);
+    }
+  }
 
   function startEditingSteamId() {
     setSteamIdInput(store.settings.steamId64 ?? '');
+    setSteamIdError(null);
     setEditingSteamId(true);
   }
 
   function confirmSteamId() {
     const trimmed = steamIdInput.trim();
-    store.setSteamId64(trimmed || undefined);
+    if (!trimmed) {
+      store.setSteamId64(undefined);
+      setSteamIdError(null);
+      setEditingSteamId(false);
+      return;
+    }
+    if (!STEAM_ID64_PATTERN.test(trimmed)) {
+      setSteamIdError('SteamID64 invalide : doit être un identifiant à 17 chiffres.');
+      return;
+    }
+    store.setSteamId64(trimmed);
+    setSteamIdError(null);
     setEditingSteamId(false);
   }
 
@@ -107,7 +170,7 @@ export default function ProfileScreen() {
   // fiche jeu (voir library/[id].tsx), ici au niveau du compte plutôt que
   // du jeu puisque GetOwnedGames n'est pas scopé à un jeu précis.
   const steamGamesUrl = store.settings.steamId64
-    ? steamApiUrl(`/api/steam/games?steamid=${store.settings.steamId64}`)
+    ? steamApiUrl(`/api/steam/games?steamid=${encodeURIComponent(store.settings.steamId64)}`)
     : null;
 
   async function importSteamLibrary() {
@@ -178,16 +241,21 @@ export default function ProfileScreen() {
     }
   }
 
-  // Contenu de chaque option pas encore développé (pas d'écran "Partager le
-  // profil"/"Paramètres"/"Modifier le profil"/liste/"Aide" dédié, pas de
-  // compte à déconnecter — voir ARCHITECTURE.md §9) — seule l'interface du
-  // menu est demandée pour cette itération, voir §10. "Se déconnecter" en
-  // dernier et marqué `destructive` (voir overflow-menu.tsx) : séparé
-  // visuellement du reste, comme une action irréversible.
+  // "Partager le profil" (copie du lien) et "Modifier le profil" sont
+  // branchés ; les trois autres restent des stubs faute d'écran dédié
+  // (Paramètres/Aide) ou de compte à déconnecter (voir ARCHITECTURE.md
+  // §10). "Se déconnecter" en dernier et marqué `destructive` (voir
+  // overflow-menu.tsx) : séparé visuellement du reste, comme une action
+  // irréversible.
   const profileMenuItems: OverflowMenuItem[] = [
-    { key: 'share-profile', label: 'Partager le profil', icon: 'share-outline', onPress: () => {} },
+    { key: 'share-profile', label: 'Partager le profil', icon: 'share-outline', onPress: copyProfileLink },
     { key: 'settings', label: 'Paramètres', icon: 'settings-outline', onPress: () => {} },
-    { key: 'edit-profile', label: 'Modifier le profil', icon: 'pencil-outline', onPress: () => {} },
+    {
+      key: 'edit-profile',
+      label: 'Modifier le profil',
+      icon: 'pencil-outline',
+      onPress: () => router.push('/profile/edit'),
+    },
     { key: 'create-list', label: 'Créer une liste', icon: 'add-outline', onPress: () => {} },
     { key: 'help', label: 'Aide et idées', icon: 'bulb-outline', onPress: () => {} },
     { key: 'sign-out', label: 'Se déconnecter', icon: 'log-out-outline', destructive: true, onPress: () => {} },
@@ -208,28 +276,54 @@ export default function ProfileScreen() {
             décale et fait défiler automatiquement vers le champ actif
             plutôt qu'un KeyboardAvoidingView manuel ici. */}
         <ScrollView contentContainerStyle={styles.content} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
-          <View style={styles.topRow}>
-            <Link href="/profile/notifications" asChild>
-              <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="Notifications">
-                <Ionicons name="notifications-outline" size={24} color={theme.text} />
-              </Pressable>
-            </Link>
-            {/* Symétrique de la cloche : même ligne, même marge horizontale
-                (topRow.paddingHorizontal, commune aux deux) que la cloche
-                à gauche. Options pas encore branchées (pas d'écrans dédiés
-                pour l'instant) — seule l'interface du menu est demandée à
-                ce stade. */}
-            <OverflowMenu icon="ellipsis-horizontal" anchorTop={topRowMenuAnchorTop} items={profileMenuItems} />
+          {/* Bannière derrière la photo de profil : image choisie par
+              l'utilisateur (voir profile/edit.tsx), sinon un simple aplat
+              du thème — jamais un trou visuel quand rien n'est choisi. La
+              cloche et le menu "⋯" sont posés dessus, dans des pastilles
+              sombres : leur couleur de thème habituelle deviendrait
+              illisible sur une photo claire. */}
+          <View style={styles.banner}>
+            {profile?.backgroundUri ? (
+              <Image
+                source={{ uri: profile.backgroundUri }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                accessibilityLabel="Arrière-plan du profil"
+              />
+            ) : (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundElement }]} />
+            )}
+            <View style={styles.topRow}>
+              <Link href="/profile/notifications" asChild>
+                <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel="Notifications">
+                  <View style={styles.headerChip}>
+                    <Ionicons name="notifications-outline" size={24} color={HEADER_CHIP_ICON} />
+                  </View>
+                </Pressable>
+              </Link>
+              {/* Symétrique de la cloche : même ligne, même marge horizontale
+                  (topRow.paddingHorizontal, commune aux deux) que la cloche
+                  à gauche. */}
+              <View style={styles.headerChip}>
+                <OverflowMenu
+                  icon="ellipsis-horizontal"
+                  iconColor={HEADER_CHIP_ICON}
+                  anchorTop={topRowMenuAnchorTop}
+                  items={profileMenuItems}
+                />
+              </View>
+            </View>
           </View>
 
           <View style={styles.identity}>
-            <View style={[styles.avatar, { backgroundColor: theme.backgroundSelected }]}>
-              <ThemedText type="subtitle" style={styles.avatarInitial}>
-                {DISPLAY_NAME.charAt(0).toUpperCase()}
+            <ProfileAvatar uri={profile?.avatarUri} name={displayName} />
+            <ThemedText type="subtitle">{displayName}</ThemedText>
+            <ThemedText themeColor="textSecondary">{handleOf(profile)}</ThemedText>
+            {profile?.bio ? (
+              <ThemedText type="small" themeColor="textSecondary" style={styles.bio}>
+                {profile.bio}
               </ThemedText>
-            </View>
-            <ThemedText type="subtitle">{DISPLAY_NAME}</ThemedText>
-            <ThemedText themeColor="textSecondary">{DISPLAY_HANDLE}</ThemedText>
+            ) : null}
             {/* Système d'amis pas encore implémenté (voir ARCHITECTURE.md §9) :
                 figés à 0 plutôt que masqués, pour garder la même structure que
                 l'app de référence en attendant. */}
@@ -241,6 +335,14 @@ export default function ProfileScreen() {
                 <ThemedText type="smallBold">0</ThemedText> Abonné
               </ThemedText>
             </View>
+            {shareStatus ? (
+              <ThemedView type="backgroundElement" style={styles.shareStatus}>
+                <Ionicons name="link-outline" size={16} color={theme.accent} />
+                <ThemedText type="small" themeColor="textSecondary" style={styles.shareStatusText}>
+                  {shareStatus}
+                </ThemedText>
+              </ThemedView>
+            ) : null}
           </View>
 
           <View style={styles.statsRow}>
@@ -309,21 +411,31 @@ export default function ProfileScreen() {
             </ThemedText>
 
             {editingSteamId ? (
-              <View style={styles.steamEditRow}>
-                <TextInput
-                  value={steamIdInput}
-                  onChangeText={setSteamIdInput}
-                  onSubmitEditing={confirmSteamId}
-                  placeholder="SteamID64 (ex. 76561197960287930)"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="number-pad"
-                  autoFocus
-                  style={[styles.steamInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                />
-                <Pressable onPress={confirmSteamId} hitSlop={8}>
-                  <ThemedText type="linkPrimary">Enregistrer</ThemedText>
-                </Pressable>
-              </View>
+              <>
+                <View style={styles.steamEditRow}>
+                  <TextInput
+                    value={steamIdInput}
+                    onChangeText={(text) => {
+                      setSteamIdInput(text);
+                      setSteamIdError(null);
+                    }}
+                    onSubmitEditing={confirmSteamId}
+                    placeholder="SteamID64 (ex. 76561197960287930)"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                    autoFocus
+                    style={[styles.steamInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  />
+                  <Pressable onPress={confirmSteamId} hitSlop={8}>
+                    <ThemedText type="linkPrimary">Enregistrer</ThemedText>
+                  </Pressable>
+                </View>
+                {steamIdError ? (
+                  <ThemedText type="small" themeColor="danger">
+                    {steamIdError}
+                  </ThemedText>
+                ) : null}
+              </>
             ) : (
               <View style={styles.steamRow}>
                 <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.steamValue}>
@@ -382,6 +494,15 @@ const styles = StyleSheet.create({
     paddingBottom: BottomTabInset + Spacing.four,
     gap: Spacing.four,
   },
+  banner: {
+    // WebTopBarInset (0 sur natif) : sur le web, la barre d'onglets couvre
+    // le haut de l'écran, donc la bannière s'allonge d'autant pour que la
+    // cloche et le menu "⋯" restent visibles et cliquables dessous.
+    height: BANNER_HEIGHT + WebTopBarInset,
+    // L'image remplit la bannière en absolute : sans overflow hidden, elle
+    // déborderait sous le contenu qui suit.
+    overflow: 'hidden',
+  },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -390,32 +511,50 @@ const styles = StyleSheet.create({
     // le menu "⋯" (droite) à une marge symétrique par construction, plutôt
     // que deux valeurs choisies séparément.
     paddingHorizontal: Spacing.four,
-    paddingTop: TOP_ROW_PADDING_TOP,
+    // Décalé sous la barre d'onglets du web (WebTopBarInset, 0 sur natif) :
+    // sans ça, la cloche et le menu "⋯" se retrouvent dessous, invisibles
+    // et intapables sur le bundle web.
+    paddingTop: TOP_ROW_PADDING_TOP + WebTopBarInset,
+  },
+  // Pastille sombre semi-transparente derrière les icônes de la bannière,
+  // avec une icône claire fixe : contrairement au reste de l'app, ces deux
+  // icônes ne sont pas posées sur une couleur du thème mais sur une image
+  // arbitraire, donc ni `text` (illisible sur une photo claire en thème
+  // clair) ni un aplat opaque (qui masquerait la photo) ne conviennent.
+  headerChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
   },
   identity: {
     alignItems: 'center',
     gap: Spacing.one,
-    paddingTop: Spacing.three,
+    // Remonte l'avatar à cheval sur le bas de la bannière (voir
+    // AVATAR_OVERLAP), comme sur les profils de l'app de référence.
+    marginTop: -AVATAR_OVERLAP,
   },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 999,
+  bio: {
+    textAlign: 'center',
+    paddingHorizontal: Spacing.four,
+    marginTop: Spacing.one,
+  },
+  shareStatus: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.one,
-    overflow: 'hidden',
+    gap: Spacing.two,
+    marginTop: Spacing.two,
+    marginHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.three,
   },
-  // type="subtitle" (voir themed-text.tsx) porte un lineHeight (44) pensé
-  // pour un vrai sous-titre multi-mots, pas pour une seule lettre centrée
-  // dans un cercle de 64px : combiné à la police custom (Bricolage
-  // Grotesque, voir §2), ça poussait le glyphe visuellement vers le haut,
-  // rogné par le cercle. lineHeight resserré au fontSize + includeFontPadding
-  // à false (Android ajoute sinon un padding vertical au rendu du texte,
-  // avec le même effet) recentrent la lettre correctement.
-  avatarInitial: {
-    lineHeight: 32,
-    includeFontPadding: false,
+  // flexShrink : un lien long doit passer à la ligne dans la pastille
+  // plutôt que déborder hors de l'écran.
+  shareStatusText: {
+    flexShrink: 1,
   },
   followRow: {
     flexDirection: 'row',
