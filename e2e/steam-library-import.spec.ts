@@ -1,0 +1,118 @@
+import { expect, test, type Page } from '@playwright/test';
+
+// Formalise les deux scénarios vérifiés manuellement en ad hoc lors de la
+// mise en place de l'import de bibliothèque Steam (voir profile/index.tsx) :
+// mêmes mocks, mêmes assertions, mais rejouables en CI plutôt que des
+// scripts jetables.
+
+const SEED_STATE = {
+  games: {
+    'test-untracked': {
+      id: 'test-untracked',
+      title: 'Test Untracked Game',
+      platform: 'PC',
+      steamAppId: 111,
+      inLibrary: false,
+      stopped: false,
+      achievements: [],
+      playSessions: [],
+    },
+    'test-tracked': {
+      id: 'test-tracked',
+      title: 'Test Tracked Game',
+      platform: 'PlayStation 5',
+      steamAppId: 222,
+      inLibrary: true,
+      stopped: false,
+      achievements: [],
+      playSessions: [{ date: '2024-01-01T00:00:00.000Z', hours: 5 }],
+    },
+  },
+  lists: {
+    favoris: { id: 'favoris', name: 'Favoris', builtin: true, gameIds: [] },
+    wishlist: { id: 'wishlist', name: 'Wishlist', builtin: true, gameIds: [] },
+  },
+  settings: { steamId64: '76561197960287930' },
+};
+
+// addInitScript s'exécute avant tout script de la page, à chaque navigation
+// dans ce contexte — pas besoin de naviguer une première fois "à vide" pour
+// pouvoir écrire dans localStorage avant que l'app démarre (contrairement
+// aux scripts ad hoc précédents, qui devaient faire goto -> set -> reload).
+async function seedGameStore(page: Page) {
+  await page.addInitScript((state) => {
+    localStorage.setItem('gamelary/game-store/v5', JSON.stringify(state));
+  }, SEED_STATE);
+}
+
+async function mockSteamGames(page: Page, body: unknown) {
+  await page.route('**/api/steam/games**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+  );
+}
+
+async function importAndWait(page: Page) {
+  await page.goto('/profile');
+  await page.getByText('Importer ma bibliothèque Steam').scrollIntoViewIfNeeded();
+  await page.getByText('Importer ma bibliothèque Steam').click();
+  await expect(page.getByText('Import en cours')).toHaveCount(0, { timeout: 15_000 });
+}
+
+test('succès avec jeux mixtes : complète le jeu non suivi, ne touche jamais aux heures déjà suivies', async ({
+  page,
+}) => {
+  await seedGameStore(page);
+  await mockSteamGames(page, {
+    games: [
+      { appid: 111, name: 'Test Untracked Game', playtimeMinutes: 600 },
+      { appid: 222, name: 'Test Tracked Game', playtimeMinutes: 1200 },
+      { appid: 999, name: 'Unrelated Game Not In Catalog', playtimeMinutes: 300 },
+    ],
+  });
+
+  await importAndWait(page);
+
+  await expect(page.getByText('1 jeu complété avec le temps de jeu Steam.')).toBeVisible();
+
+  const games = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('gamelary/game-store/v5')!).games
+  );
+
+  // Jeu non suivi : complété avec le temps de jeu Steam (600 min = 10h) et
+  // ajouté à la bibliothèque.
+  expect(games['test-untracked'].playSessions).toEqual([
+    { date: expect.any(String), hours: 10 },
+  ]);
+  expect(games['test-untracked'].inLibrary).toBe(true);
+
+  // Le piège verrouillé : un jeu déjà suivi (ici PS5, steamAppId présent par
+  // coïncidence) ne doit JAMAIS être écrasé par le temps de jeu Steam,
+  // strictement inchangé.
+  expect(games['test-tracked'].playSessions).toEqual([
+    { date: '2024-01-01T00:00:00.000Z', hours: 5 },
+  ]);
+});
+
+test('bibliothèque Steam vide (profil privé) : message explicite, rien de modifié silencieusement', async ({
+  page,
+}) => {
+  await seedGameStore(page);
+  await mockSteamGames(page, { games: [] });
+
+  await importAndWait(page);
+
+  await expect(
+    page.getByText(
+      'Rien à compléter : aucun jeu Steam sans heures déjà suivies ne correspond à ta bibliothèque Gamelary.'
+    )
+  ).toBeVisible();
+
+  const games = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('gamelary/game-store/v5')!).games
+  );
+  expect(games['test-untracked'].playSessions).toEqual([]);
+  expect(games['test-untracked'].inLibrary).toBe(false);
+  expect(games['test-tracked'].playSessions).toEqual([
+    { date: '2024-01-01T00:00:00.000Z', hours: 5 },
+  ]);
+});
