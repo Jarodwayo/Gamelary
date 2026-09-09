@@ -8,6 +8,7 @@ import {
   USERNAME_MAX_LENGTH,
   displayNameOf,
   handleOf,
+  isValidProfileBaseUrl,
   isValidUsername,
   normalizeUsername,
   profileLink,
@@ -72,6 +73,19 @@ describe('profileLink', () => {
     // elle peut très bien être collée avec un slash final.
     expect(profileLink('ana', 'https://gamelary.example/')).toBe('https://gamelary.example/u/ana');
     expect(profileLink('ana', 'https://gamelary.example///')).toBe('https://gamelary.example/u/ana');
+  });
+
+  test('isValidProfileBaseUrl : accepte une URL absolue, refuse le reste', () => {
+    // EXPO_PUBLIC_PROFILE_BASE_URL vient d'un .env édité à la main (voir
+    // profile-link.ts) : sans ce garde-fou, une valeur incomplète
+    // produirait un lien copié impossible à ouvrir.
+    expect(isValidProfileBaseUrl('https://gamelary.example')).toBe(true);
+    expect(isValidProfileBaseUrl('  http://localhost:8081  ')).toBe(true);
+
+    expect(isValidProfileBaseUrl('')).toBe(false);
+    expect(isValidProfileBaseUrl('gamelary.example')).toBe(false);
+    expect(isValidProfileBaseUrl('à-remplir')).toBe(false);
+    expect(isValidProfileBaseUrl('https://')).toBe(false);
   });
 
   test('encode l\'identifiant même si normalizeUsername le rend déjà sûr', () => {

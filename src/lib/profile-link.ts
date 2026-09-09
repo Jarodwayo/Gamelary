@@ -1,6 +1,6 @@
 import * as Linking from 'expo-linking';
 
-import { profileLink } from '@/lib/profile';
+import { isValidProfileBaseUrl, profileLink } from '@/lib/profile';
 
 // Résolution de la base du lien de profil, séparée des helpers purs de
 // profile.ts (testables sans runtime Expo) : c'est la seule partie qui
@@ -18,6 +18,8 @@ import { profileLink } from '@/lib/profile';
 // écrans côté serveur, où createURL renvoie '' faute de `window`.
 export function publicProfileLink(username: string): string {
   const base = process.env.EXPO_PUBLIC_PROFILE_BASE_URL?.trim();
-  if (base) return profileLink(username, base);
+  // Vide (le cas du .env.example recopié tel quel) ou pas une URL absolue :
+  // repli, plutôt qu'un lien copié que personne ne pourra ouvrir.
+  if (base && isValidProfileBaseUrl(base)) return profileLink(username, base);
   return Linking.createURL(`/u/${encodeURIComponent(username)}`);
 }

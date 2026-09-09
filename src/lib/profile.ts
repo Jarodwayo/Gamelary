@@ -62,6 +62,15 @@ export function isValidUsername(value: string): boolean {
   return new RegExp(`^[a-z0-9_]{${USERNAME_MIN_LENGTH},${USERNAME_MAX_LENGTH}}$`).test(value);
 }
 
+// Même frontière système que l'adresse de contact (voir support-links.ts) :
+// la base vient d'un .env édité à la main. Une valeur qui n'est pas une URL
+// absolue ("gamelary.app" sans schéma, un placeholder laissé en l'état)
+// produirait un lien impossible à ouvrir une fois copié — on préfère alors
+// le repli sur l'URL de l'app (voir profile-link.ts).
+export function isValidProfileBaseUrl(value: string): boolean {
+  return /^https?:\/\/[^\s/]+/.test(value.trim());
+}
+
 // Lien partageable vers le profil public. La page publique elle-même
 // n'existe pas encore (elle suppose des comptes hébergés, voir
 // ARCHITECTURE.md §9) : c'est bien la forme finale de l'URL, pas une page
