@@ -1,13 +1,14 @@
 // Route serveur (voir cover+api.ts pour l'explication de la convention
 // "+api.ts") : deux usages IGDB distincts sur le même endpoint.
 // - ?title=  : recherche un jeu précis, renvoie son nom et sa plateforme
-//   canoniques (catalogue vs données utilisateur : voir ARCHITECTURE.md §5.1).
-// - ?section=: rangées de l'écran Explorer (voir ARCHITECTURE.md §5.6),
+//   canoniques (catalogue vs données utilisateur : voir ARCHITECTURE.md §6.1).
+// - ?section=: rangées de l'écran Explorer (voir ARCHITECTURE.md §6.5),
 //   chacune sa propre requête apicalypse plutôt qu'un unique "top jeux" —
 //   IGDB n'a pas de notion native de "tendance"/"recommandé", ce sont des
 //   approximations documentées ci-dessous par section.
 
 import { resolveCatalogId } from '@/data/tracked-games';
+import { createRateLimiter } from '@/lib/rate-limit';
 import type { CatalogGame } from '@/types/game';
 
 const LOOKUP_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -16,37 +17,17 @@ const gamesCache = new Map<string, { result: GameLookupResult; expiresAt: number
 const sectionCache = new Map<string, { result: CatalogGame[]; expiresAt: number }>();
 const steamAppIdCache = new Map<number, { result: SteamAppIdLookupResult; expiresAt: number }>();
 
-// CORS ouvert (voir ARCHITECTURE.md §6) + aucune auth ici (pas de compte,
+// CORS ouvert (voir ARCHITECTURE.md §7.1) + aucune auth ici (pas de compte,
 // §9) : sans ça, n'importe quel site tiers peut faire consommer le quota
 // IGDB de ce déploiement par ses propres visiteurs. Compteur en mémoire par
 // IP (fenêtre glissante simple) — même limite que côté gamelary-api
-// (§6.3, express-rate-limit) : suffisant pour protéger le quota d'une
+// (§7.1, express-rate-limit) : suffisant pour protéger le quota d'une
 // instance solo, pas un vrai rate limiting distribué (ne tiendrait pas la
-// route derrière plusieurs instances serverless, voir §7 pour la même
+// route derrière plusieurs instances serverless, voir §8 pour la même
 // limite déjà documentée sur le cache).
-const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const RATE_LIMIT_MAX_REQUESTS = 30;
-const requestCountsByIp = new Map<string, { count: number; resetAt: number }>();
-
-function clientIp(request: Request): string {
-  // x-forwarded-for : liste "client, proxy1, proxy2..." — le premier hop est
-  // le visiteur d'origine. Absent en dev (Metro) et sous Jest : repli sur un
-  // seul seau partagé, qui limite quand même le total plutôt que de ne rien
-  // limiter du tout.
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-}
-
-function isRateLimited(request: Request): boolean {
-  const ip = clientIp(request);
-  const now = Date.now();
-  const entry = requestCountsByIp.get(ip);
-  if (!entry || entry.resetAt <= now) {
-    requestCountsByIp.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > RATE_LIMIT_MAX_REQUESTS;
-}
+// Une requête = un jeu recherché ou une rangée Explorer : pas d'éventail,
+// donc la même limite que côté gamelary-api (voir §7.1).
+const rateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 30 });
 
 const IGDB_BASE = 'https://api.igdb.com/v4';
 
@@ -294,7 +275,7 @@ async function fetchGameBySteamAppId(
 }
 
 export async function GET(request: Request) {
-  if (isRateLimited(request)) {
+  if (rateLimiter.isLimited(request)) {
     return Response.json({ error: 'Trop de requêtes, réessaie dans une minute' }, { status: 429 });
   }
 
