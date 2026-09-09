@@ -1,5 +1,9 @@
 module.exports = {
   preset: 'jest-expo',
+  // e2e/ contient les specs Playwright (test/expect avec la fixture `page`,
+  // pas l'API Jest) : le testMatch par défaut de jest-expo capterait aussi
+  // *.spec.ts n'importe où dans le repo sans cette exclusion explicite.
+  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/e2e/'],
   moduleNameMapper: {
     // Doit précéder le mapping @/* générique ci-dessous, sinon
     // `import '@/global.css'` (theme.ts) résoudrait vers le vrai fichier
