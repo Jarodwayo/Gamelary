@@ -12,6 +12,7 @@ import { Pressable, View, StyleSheet } from 'react-native';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
+import { APP_TABS } from '@/components/app-tabs-config';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -28,18 +29,14 @@ export default function AppTabs() {
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
         <CustomTabList>
-          {/* Mêmes icônes que la barre native (voir app-tabs.tsx) : les deux
-              plateformes doivent donner exactement la même barre, seule
-              l'implémentation diffère. */}
-          <TabTrigger name="library" href="/library" asChild>
-            <TabButton icon="albums">Bibliothèque</TabButton>
-          </TabTrigger>
-          <TabTrigger name="explorer" href="/explorer" asChild>
-            <TabButton icon="compass">Explorer</TabButton>
-          </TabTrigger>
-          <TabTrigger name="profile" href="/profile" asChild>
-            <TabButton icon="person-circle">Profil</TabButton>
-          </TabTrigger>
+          {/* Même liste que la barre native (voir app-tabs-config.ts) :
+              ordre, libellés et icônes viennent d'une seule source, seule
+              l'implémentation du rendu diffère. */}
+          {APP_TABS.map((tab) => (
+            <TabTrigger key={tab.name} name={tab.name} href={tab.href} asChild>
+              <TabButton icon={tab.icon}>{tab.label}</TabButton>
+            </TabTrigger>
+          ))}
         </CustomTabList>
       </TabList>
     </Tabs>
@@ -59,14 +56,20 @@ export function TabButton({
   const theme = useTheme();
   return (
     <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
-      <ThemedView
-        type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
-        style={styles.tabButtonView}>
+      {/* Fond uniquement sur l'onglet actif : un onglet inactif ne peint
+          rien du tout, plutôt que de repeindre la couleur de la barre —
+          sinon il redeviendrait un rectangle visible le jour où la barre
+          change de fond. */}
+      <View
+        style={[
+          styles.tabButtonView,
+          isFocused ? { backgroundColor: theme.backgroundSelected } : null,
+        ]}>
         <Ionicons name={icon} size={22} color={isFocused ? theme.text : theme.textSecondary} />
         <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
           {children}
         </ThemedText>
-      </ThemedView>
+      </View>
     </Pressable>
   );
 }
