@@ -32,6 +32,7 @@ function request(query: string): Request {
 test('résout un appid Steam vers son jeu IGDB quand la correspondance est unique', async () => {
   mockIgdbGamesFetch([
     {
+      id: 14593,
       name: 'Hollow Knight',
       platforms: [{ name: 'PC' }],
       external_games: [{ uid: '367520', external_game_source: 1 }],
@@ -45,6 +46,7 @@ test('résout un appid Steam vers son jeu IGDB quand la correspondance est uniqu
     title: 'Hollow Knight',
     platform: 'PC',
     steamAppId: 367520,
+    igdbId: 14593,
     ambiguous: false,
   });
 });
@@ -103,6 +105,7 @@ test('traite une absence de correspondance IGDB comme "non trouvé", pas une err
     title: null,
     platform: null,
     steamAppId: null,
+    igdbId: null,
     ambiguous: false,
   });
 });
@@ -114,8 +117,8 @@ test('dédoublonne par nom : deux lignes IGDB redondantes pour le même jeu ne s
   // uid Steam), pas deux jeux concurrents — distinctNames doit les fusionner
   // en un seul match plutôt que de signaler ambiguous: true.
   mockIgdbGamesFetch([
-    { name: 'Hollow Knight', platforms: [{ name: 'PC' }], external_games: [{ uid: '367521', external_game_source: 1 }] },
-    { name: 'Hollow Knight', platforms: [{ name: 'PC' }], external_games: [{ uid: '367521', external_game_source: 1 }] },
+    { id: 14593, name: 'Hollow Knight', platforms: [{ name: 'PC' }], external_games: [{ uid: '367521', external_game_source: 1 }] },
+    { id: 14593, name: 'Hollow Knight', platforms: [{ name: 'PC' }], external_games: [{ uid: '367521', external_game_source: 1 }] },
   ]);
 
   const res = await GET(request('steamAppId=367521'));
@@ -125,14 +128,15 @@ test('dédoublonne par nom : deux lignes IGDB redondantes pour le même jeu ne s
     title: 'Hollow Knight',
     platform: 'PC',
     steamAppId: 367521,
+    igdbId: 14593,
     ambiguous: false,
   });
 });
 
 test('signale une ambiguïté quand deux jeux IGDB distincts revendiquent le même appid, sans deviner', async () => {
   mockIgdbGamesFetch([
-    { name: 'Jeu A', platforms: [{ name: 'PC' }], external_games: [{ uid: '22222', external_game_source: 1 }] },
-    { name: 'Jeu B', platforms: [{ name: 'PC' }], external_games: [{ uid: '22222', external_game_source: 1 }] },
+    { id: 111, name: 'Jeu A', platforms: [{ name: 'PC' }], external_games: [{ uid: '22222', external_game_source: 1 }] },
+    { id: 222, name: 'Jeu B', platforms: [{ name: 'PC' }], external_games: [{ uid: '22222', external_game_source: 1 }] },
   ]);
 
   const res = await GET(request('steamAppId=22222'));
@@ -142,6 +146,7 @@ test('signale une ambiguïté quand deux jeux IGDB distincts revendiquent le mê
     title: null,
     platform: null,
     steamAppId: null,
+    igdbId: null,
     ambiguous: true,
   });
 });
