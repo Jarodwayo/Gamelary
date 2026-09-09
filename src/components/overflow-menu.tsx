@@ -35,10 +35,15 @@ export type OverflowMenuItem = {
 export function OverflowMenu({
   items,
   icon,
+  iconColor,
   anchorTop = 54,
 }: {
   items: OverflowMenuItem[];
   icon?: keyof typeof Ionicons.glyphMap;
+  // Uniquement pour un bouton posé sur autre chose qu'une couleur du thème
+  // (bannière du Profil, voir profile/index.tsx) : partout ailleurs, la
+  // couleur de texte du thème reste la bonne et cette prop est omise.
+  iconColor?: string;
   anchorTop?: number;
 }) {
   const [open, setOpen] = useState(false);
@@ -47,7 +52,11 @@ export function OverflowMenu({
   return (
     <>
       <Pressable onPress={() => setOpen(true)} hitSlop={8} accessibilityLabel="Plus d'options">
-        {icon ? <Ionicons name={icon} size={24} color={theme.text} /> : <ThemedText type="subtitle">⋯</ThemedText>}
+        {icon ? (
+          <Ionicons name={icon} size={24} color={iconColor ?? theme.text} />
+        ) : (
+          <ThemedText type="subtitle">⋯</ThemedText>
+        )}
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>

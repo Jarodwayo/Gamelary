@@ -34,8 +34,13 @@ export default defineConfig({
     // (.test.invalid, réservé par la RFC 2606) : si un test a un
     // page.route() mal écrit qui ne matche pas la requête, l'appel échoue
     // bruyamment plutôt que de silencieusement taper la vraie API de prod.
+    // EXPO_PUBLIC_PROFILE_BASE_URL : figée ici pour que le lien de profil
+    // partagé soit prévisible (voir profile-identity.spec.ts). Sans elle,
+    // il retomberait sur l'origine du serveur de dev — donc sur le port —
+    // et un .env local qui la renseignerait ferait échouer le test.
     env: {
       EXPO_PUBLIC_STEAM_API_URL: 'http://gamelary-api.test.invalid',
+      EXPO_PUBLIC_PROFILE_BASE_URL: 'https://gamelary.test.invalid',
     },
   },
 });

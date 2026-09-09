@@ -80,7 +80,9 @@ export default function GameDetailScreen() {
   // saisie manuelle reste le seul chemin, comme avant cette intégration.
   const steamAchievementsUrl =
     game.steamAppId && store.settings.steamId64
-      ? steamApiUrl(`/api/steam/achievements?appid=${game.steamAppId}&steamid=${store.settings.steamId64}`)
+      ? steamApiUrl(
+          `/api/steam/achievements?appid=${encodeURIComponent(game.steamAppId)}&steamid=${encodeURIComponent(store.settings.steamId64)}`
+        )
       : null;
 
   async function importFromSteam() {

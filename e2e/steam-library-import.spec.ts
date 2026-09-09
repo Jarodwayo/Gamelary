@@ -58,6 +58,18 @@ async function importAndWait(page: Page) {
   await expect(page.getByText('Import en cours')).toHaveCount(0, { timeout: 15_000 });
 }
 
+// Contrairement à mockSteamGames (qui tient lieu de gamelary-api, service
+// externe jamais démarré par ce webServer) : /api/games est une vraie route
+// expo-router de CE projet (games+api.ts), servie par le même serveur Metro
+// que la page — mockée ici uniquement pour ne pas dépendre de la vraie API
+// IGDB externe (données non déterministes) dans un test committé, comme
+// gamelary-api.test.invalid le fait déjà pour Steam côté webServer config.
+async function mockIgdbSteamAppIdLookup(page: Page, appid: number, body: unknown) {
+  await page.route(`**/api/games?steamAppId=${appid}`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+  );
+}
+
 test('succès avec jeux mixtes : complète le jeu non suivi, ne touche jamais aux heures déjà suivies', async ({
   page,
 }) => {
@@ -90,6 +102,53 @@ test('succès avec jeux mixtes : complète le jeu non suivi, ne touche jamais au
   // strictement inchangé.
   expect(games['test-tracked'].playSessions).toEqual([
     { date: '2024-01-01T00:00:00.000Z', hours: 5 },
+  ]);
+});
+
+test('jeu Steam inconnu du catalogue : résolu via la route IGDB de Gamelary puis créé, temps de jeu importé', async ({
+  page,
+}) => {
+  // Scénario complet jamais couvert bout-en-bout jusqu'ici (voir
+  // fetchIgdbMatchForSteamAppId, profile/index.tsx) : un jeu Steam que ni la
+  // bibliothèque ni le catalogue Gamelary ne connaissent encore (contraste
+  // avec 'test-untracked'/'test-tracked' du scénario ci-dessus, déjà dans le
+  // catalogue) doit déclencher la résolution IGDB (registerCatalogGame),
+  // créer l'entrée de catalogue correspondante, puis lui appliquer le même
+  // traitement que les jeux déjà connus (temps de jeu + ajout à la
+  // bibliothèque).
+  await seedGameStore(page);
+  await mockSteamGames(page, {
+    games: [{ appid: 555, name: 'Test New Game', playtimeMinutes: 900 }],
+  });
+  await mockIgdbSteamAppIdLookup(page, 555, {
+    title: 'Test New Game',
+    platform: 'PC',
+    steamAppId: 555,
+    ambiguous: false,
+  });
+
+  await importAndWait(page);
+
+  await expect(page.getByText('1 jeu complété avec le temps de jeu Steam.')).toBeVisible();
+
+  const store = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('gamelary/game-store/v5')!) as typeof SEED_STATE & {
+      games: Record<string, unknown>;
+    }
+  );
+
+  // resolveCatalogId('Test New Game') retombe sur slugify (aucune piste
+  // tracked-games.ts sous ce titre) : 'test-new-game'.
+  const created = store.games['test-new-game'];
+  expect(created).toMatchObject({
+    id: 'test-new-game',
+    title: 'Test New Game',
+    platform: 'PC',
+    steamAppId: 555,
+    inLibrary: true,
+  });
+  expect((created as { playSessions: unknown }).playSessions).toEqual([
+    { date: expect.any(String), hours: 15 },
   ]);
 });
 
