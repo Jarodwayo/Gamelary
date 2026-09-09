@@ -4,8 +4,13 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { trackedGames, trackId } from '@/data/tracked-games';
 import type { StoredProfile } from '@/lib/profile';
 import { slugify } from '@/lib/slug';
+import { migrateStore, STORE_VERSION } from '@/lib/store-migrations';
 import type { Achievement, CatalogGame, PlaySession } from '@/types/game';
 
+// Clé désormais figée : son suffixe `/v5` n'est plus qu'un nom historique.
+// La version de forme vit DANS le blob (STORE_VERSION, store-migrations.ts)
+// et les changements passent par une migration — changer la clé revenait à
+// effacer silencieusement la bibliothèque (voir ARCHITECTURE.md §9.3).
 const STORAGE_KEY = 'gamelary/game-store/v5';
 
 export type StoredGame = {
@@ -20,6 +25,12 @@ export type StoredGame = {
   // par recherche floue sur le titre (voir cover+api.ts). Absent tant
   // qu'IGDB n'a pas répondu, ou si le jeu n'a pas de référence Steam.
   steamAppId?: number;
+  // Identité canonique IGDB (voir ARCHITECTURE.md §9.2) : le slug dérivé du
+  // titre ne suffit pas — deux appareils peuvent en produire deux différents
+  // pour le même jeu. Absent tant qu'aucune résolution ne l'a fourni.
+  igdbId?: number;
+  // Absent = antérieur à l'horodatage. Jamais inventé rétroactivement.
+  updatedAt?: number;
   inLibrary: boolean;
   stopped: boolean;
   achievements: Achievement[];
@@ -50,7 +61,8 @@ type Settings = {
   profile?: StoredProfile;
 };
 
-type StoreShape = {
+export type StoreShape = {
+  version: number;
   games: Record<string, StoredGame>;
   lists: Record<string, StoredList>;
   settings: Settings;
@@ -89,6 +101,7 @@ function seedStore(): StoreShape {
     };
   }
   return {
+    version: STORE_VERSION,
     games,
     lists: {
       favoris: { id: 'favoris', name: 'Favoris', builtin: true, gameIds: [] },
@@ -107,22 +120,6 @@ function seedStore(): StoreShape {
 // bien plus loin dans l'app (fiche jeu, filtres de bibliothèque) sans lien
 // évident avec la vraie cause. Corrigé une seule fois ici, à la lecture,
 // plutôt que de parsemer des `?? []` dans chaque écran qui lit ces champs.
-function normalizeLoadedState(parsed: Partial<StoreShape>): StoreShape {
-  const games: Record<string, StoredGame> = {};
-  for (const [id, game] of Object.entries(parsed.games ?? {})) {
-    games[id] = {
-      ...game,
-      achievements: Array.isArray(game.achievements) ? game.achievements : [],
-      playSessions: Array.isArray(game.playSessions) ? game.playSessions : [],
-    };
-  }
-  return {
-    games,
-    lists: parsed.lists ?? {},
-    settings: parsed.settings ?? {},
-  };
-}
-
 type GameStoreContextValue = {
   ready: boolean;
   games: Record<string, StoredGame>;
@@ -159,7 +156,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((raw) => {
-        if (raw) setState(normalizeLoadedState(JSON.parse(raw)));
+        if (raw) setState(migrateStore(JSON.parse(raw)));
       })
       .catch(() => {
         // Lecture impossible (stockage indisponible/corrompu) : on repart du
