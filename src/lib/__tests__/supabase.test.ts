@@ -35,6 +35,31 @@ jest.mock('@react-native-async-storage/async-storage', () => {
 const ENV_KEYS = ['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_ANON_KEY'] as const;
 const original: Record<string, string | undefined> = {};
 
+// @supabase/realtime-js construit un client Realtime dès createClient(),
+// même si on ne s'en sert jamais (aucun .channel() nulle part dans ce
+// projet) — et il exige un WebSocket global pour ça. Node 22+ en expose un
+// nativement (ce qui masquait ce problème en local) ; le Node 20 de la CI
+// de ce projet non, ce qui a fait planter cette suite en CI avec "Node.js
+// detected but native WebSocket not found" alors qu'elle passait ici.
+// Sans rapport avec un vrai risque en production : côté web, le navigateur
+// a toujours un WebSocket ; côté natif, c'est le moteur JS de React Native
+// (Hermes) qui tourne, pas Node, donc la branche qui détecte spécifiquement
+// "Node.js sans WebSocket" ne s'y déclenche jamais. Et sur un déploiement
+// serveur Node (web.output: "server"), le garde SSR de supabase.ts renvoie
+// null avant même d'atteindre createClient() — jamais construit côté
+// serveur, donc jamais ce problème là non plus. Stub minimal, jamais
+// réellement utilisé pour se connecter à quoi que ce soit.
+let originalWebSocket: typeof globalThis.WebSocket | undefined;
+
+beforeAll(() => {
+  originalWebSocket = globalThis.WebSocket;
+  (globalThis as any).WebSocket = class {};
+});
+
+afterAll(() => {
+  (globalThis as any).WebSocket = originalWebSocket;
+});
+
 beforeEach(() => {
   for (const key of ENV_KEYS) {
     original[key] = process.env[key];
