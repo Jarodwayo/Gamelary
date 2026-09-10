@@ -1,5 +1,5 @@
 import { Link, type Href } from 'expo-router';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { GameCover, GameCoverFeatured, GameCoverGrid } from '@/components/game-cover';
 import { useGridItemWidth } from '@/components/game-grid';
@@ -115,21 +115,21 @@ export function GameShelf({
         accessibilityRole={onSeeAll ? 'button' : undefined}>
         <View style={styles.shelfHeadTitle}>
           <ThemedText type="smallBold">{title}</ThemedText>
+          {/* En dessous du titre plutôt qu'à côté sur la même ligne (comme
+              subtitle, juste en dessous) : un total ("32") posé à côté du
+              titre se lisait comme une seconde donnée au même niveau, alors
+              que ce n'est qu'un sous-titre discret sur le nombre de jeux de
+              la rangée. */}
+          <ThemedText type="small" themeColor="textSecondary">
+            {items.length} {items.length > 1 ? 'jeux' : 'jeu'}
+          </ThemedText>
           {subtitle ? (
             <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
               {subtitle}
             </ThemedText>
           ) : null}
         </View>
-        {/* Compteur avant le chevron, même motif que les apps de séries/
-            films pour une catégorie ("Séries    124 ›") : le nombre de jeux
-            de la rangée plutôt qu'un simple chevron nu. */}
-        <View style={styles.shelfHeadCount}>
-          <ThemedText type="small" themeColor="textSecondary">
-            {items.length}
-          </ThemedText>
-          <ThemedText themeColor="textSecondary">›</ThemedText>
-        </View>
+        <ThemedText themeColor="textSecondary">›</ThemedText>
       </Pressable>
       {items.length === 0 && emptyLabel ? (
         <View style={styles.emptyWrap}>
@@ -145,16 +145,23 @@ export function GameShelf({
           ) : null}
         </View>
       ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(item) => item.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.row}
-          renderItem={({ item }) =>
-            size === 'large' ? <LargeShelfCard item={item} itemWidth={itemWidth} /> : <ShelfCard item={item} />
-          }
-        />
+        // ScrollView plutôt que FlatList : ces rangées n'affichent jamais
+        // plus qu'une poignée de jeux à la fois (aperçu du Profil, pas un
+        // parcours complet — voir plus haut), donc aucun bénéfice à la
+        // virtualisation de FlatList, seulement sa complexité de gestes en
+        // plus une fois imbriquée dans le ScrollView vertical du Profil. Ne
+        // force jamais le scroll quand le contenu tient déjà dans la largeur
+        // visible (ex. 2 favoris) : comportement natif d'un ScrollView
+        // horizontal, rien à gérer explicitement pour ce cas.
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+          {items.map((item) =>
+            size === 'large' ? (
+              <LargeShelfCard key={item.id} item={item} itemWidth={itemWidth} />
+            ) : (
+              <ShelfCard key={item.id} item={item} />
+            )
+          )}
+        </ScrollView>
       )}
     </ThemedView>
   );
@@ -239,15 +246,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.three,
   },
-  // flexShrink : titre et description cèdent la place au compteur plutôt
-  // que de le pousser hors de l'écran quand la description est longue.
+  // flexShrink : titre/compteur/description cèdent la place au chevron
+  // plutôt que de le pousser hors de l'écran quand la description est
+  // longue.
   shelfHeadTitle: {
     flexShrink: 1,
-  },
-  shelfHeadCount: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
   },
   emptyWrap: {
     paddingHorizontal: Spacing.three,

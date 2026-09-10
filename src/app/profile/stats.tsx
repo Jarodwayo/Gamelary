@@ -11,12 +11,17 @@ import { useGameStore } from '@/lib/game-store';
 import {
   completionPercent,
   currentStreakDays,
+  hoursByLast7Days,
   hoursByMonthThisYear,
   hoursByPlatform,
   longestStreakDays,
 } from '@/lib/play-stats';
 
 const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+// Index par Date.getDay() (0 = dimanche) : mêmes initiales que MONTH_LETTERS
+// (ambiguïtés assumées de la même façon — Mardi/Mercredi partagent déjà
+// "M" ici comme Juin/Juillet le font plus haut).
+const WEEKDAY_LETTERS = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 const CHART_HEIGHT = 90;
 const PERIODS: { key: StatsPeriod; label: string }[] = [
   { key: 'week', label: 'Semaine' },
@@ -56,11 +61,35 @@ export default function StatsScreen() {
   const currentStreak = currentStreakDays(libraryGames);
   const longestStreak = longestStreakDays(libraryGames);
   const monthly = hoursByMonthThisYear(libraryGames);
-  const maxMonthHours = Math.max(1, ...monthly.map((m) => m.hours));
   const currentMonth = new Date().getMonth();
+  const weekly = hoursByLast7Days(libraryGames);
+  const todayWeekday = new Date().getDay();
   const platforms = hoursByPlatform(libraryGames);
   const maxPlatformHours = platforms[0]?.hours ?? 1;
   const periodLabel = period === 'week' ? 'cette semaine' : period === 'month' ? 'ce mois-ci' : 'au total';
+
+  // "Semaine" a besoin de sa propre granularité de graphique (7 barres
+  // journalières) : les 12 barres mensuelles de "Mois"/"Tout" n'ont aucun
+  // sens pour représenter une semaine — c'était le bug (l'"Activité" ne
+  // changeait jamais visuellement pour "Semaine", quelle que soit l'heure
+  // affichée au-dessus). `label` dérivé de l'index plutôt que reparsé depuis
+  // `bucket.date` : `new Date("YYYY-MM-DD")` est UTC, `.getDay()` peut
+  // retomber sur la veille selon le fuseau local.
+  const chartBuckets =
+    period === 'week'
+      ? weekly.map((bucket, index) => ({
+          key: bucket.date,
+          label: WEEKDAY_LETTERS[(todayWeekday - (6 - index) + 7) % 7],
+          hours: bucket.hours,
+          current: index === weekly.length - 1,
+        }))
+      : monthly.map((bucket) => ({
+          key: String(bucket.month),
+          label: MONTH_LETTERS[bucket.month],
+          hours: bucket.hours,
+          current: bucket.month === currentMonth,
+        }));
+  const maxChartHours = Math.max(1, ...chartBuckets.map((bucket) => bucket.hours));
 
   return (
     <ThemedView style={styles.container}>
@@ -104,14 +133,14 @@ export default function StatsScreen() {
             </ThemedText>
 
             <View style={styles.chart}>
-              {monthly.map((bucket) => (
-                <View key={bucket.month} style={styles.barColumn}>
+              {chartBuckets.map((bucket) => (
+                <View key={bucket.key} style={styles.barColumn}>
                   <View
                     style={[
                       styles.bar,
                       {
-                        height: Math.max(3, (bucket.hours / maxMonthHours) * CHART_HEIGHT),
-                        backgroundColor: bucket.month === currentMonth ? theme.text : theme.accent,
+                        height: Math.max(3, (bucket.hours / maxChartHours) * CHART_HEIGHT),
+                        backgroundColor: bucket.current ? theme.text : theme.accent,
                       },
                     ]}
                   />
@@ -120,13 +149,13 @@ export default function StatsScreen() {
             </View>
             <View style={[styles.baseline, { borderColor: theme.backgroundSelected }]} />
             <View style={styles.monthLabels}>
-              {MONTH_LETTERS.map((letter, index) => (
+              {chartBuckets.map((bucket) => (
                 <ThemedText
-                  key={index}
+                  key={bucket.key}
                   type="small"
-                  themeColor={index === currentMonth ? 'text' : 'textSecondary'}
+                  themeColor={bucket.current ? 'text' : 'textSecondary'}
                   style={styles.monthLabel}>
-                  {letter}
+                  {bucket.label}
                 </ThemedText>
               ))}
             </View>
