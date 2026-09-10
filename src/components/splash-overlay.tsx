@@ -5,7 +5,15 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
+import { Colors } from '@/constants/theme';
+
 const DURATION = 600;
+// Même image et même fond que le splash natif statique (app.json,
+// plugin expo-splash-screen) : cette valeur doit rester synchronisée avec
+// son "backgroundColor" — voir assets/images/splash-icon.png pour le
+// visuel (ruban de bibliothèque + triangle lecture découpé).
+const SPLASH_IMAGE_WIDTH = 72;
+const SPLASH_IMAGE_HEIGHT = 105;
 
 // Le splash natif (écran affiché avant même que React ne monte) ne peut pas
 // être animé — c'est une image statique gérée par iOS/Android. Ce composant
@@ -39,8 +47,7 @@ export function AnimatedSplashOverlay() {
     },
   });
 
-  // TODO: remplacer par le logo Gamelary une fois la charte graphique prête.
-  const image = <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />;
+  const image = <Image style={styles.image} source={require('@/assets/images/gamelary-mark.png')} />;
 
   // Machine à 2 états : d'abord un View statique identique au splash natif
   // (onLayout garantit qu'il est bien peint à l'écran avant de masquer le
@@ -73,12 +80,12 @@ export function AnimatedSplashOverlay() {
 
 const styles = StyleSheet.create({
   image: {
-    width: 76,
-    height: 71,
+    width: SPLASH_IMAGE_WIDTH,
+    height: SPLASH_IMAGE_HEIGHT,
   },
   splashOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#208AEF',
+    backgroundColor: Colors.light.accent,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
