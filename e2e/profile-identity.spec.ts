@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { seedSignedInSession } from './auth-helpers';
+
 // Profil : photo + arrière-plan, édition de l'identité, partage du lien
 // (voir profile/index.tsx, profile/edit.tsx). Même approche que
 // steam-library-import.spec.ts — état de départ écrit dans localStorage
@@ -59,6 +61,13 @@ async function openProfileMenu(page: Page) {
   await page.goto('/profile');
   await page.getByLabel("Plus d'options").click();
 }
+
+// AuthGate (voir ARCHITECTURE.md §9.7) bloque tout écran tant que
+// `signedIn` n'est pas atteint : chaque test de ce fichier a besoin d'une
+// session déjà valide pour atteindre le Profil qu'il teste réellement.
+test.beforeEach(async ({ page }) => {
+  await seedSignedInSession(page);
+});
 
 test('identité par défaut tant que rien n’est personnalisé', async ({ page }) => {
   await seedStore(page);

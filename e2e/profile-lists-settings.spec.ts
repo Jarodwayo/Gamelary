@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { seedSignedInSession } from './auth-helpers';
+
 // Création de liste, Aide et idées, et réglage "Affiche de la page titre"
 // (voir profile/create-list.tsx, profile/help.tsx,
 // profile/settings-artwork.tsx). Même approche que les autres specs : état
@@ -40,6 +42,13 @@ async function openFromProfileMenu(page: Page, label: string) {
   await page.getByLabel("Plus d'options").click();
   await page.getByText(label).click();
 }
+
+// AuthGate (voir ARCHITECTURE.md §9.7) bloque tout écran tant que
+// `signedIn` n'est pas atteint : chaque test de ce fichier a besoin d'une
+// session déjà valide pour atteindre le Profil qu'il teste réellement.
+test.beforeEach(async ({ page }) => {
+  await seedSignedInSession(page);
+});
 
 test('créer une liste : nom, description et visibilité enregistrés', async ({ page }) => {
   await seedStore(page);

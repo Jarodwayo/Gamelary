@@ -92,11 +92,15 @@ npm run ios       # simulateur iOS
 npm run android   # émulateur Android
 ```
 
-L'app **démarre sans aucune clé d'API**, avec des replis explicites plutôt
-qu'un écran d'erreur : la bibliothèque affiche les jeux de démonstration
-(`src/data/tracked-games.ts`), les jaquettes tombent sur un placeholder, les
-rangées Explorer restent vides, et les fonctionnalités Steam sont simplement
-masquées. Les clés ci-dessous débloquent les données réelles.
+La connexion (Google ou e-mail, voir [ARCHITECTURE.md §9.7](./ARCHITECTURE.md))
+est désormais **obligatoire** pour accéder aux onglets : `EXPO_PUBLIC_SUPABASE_URL`
+et `EXPO_PUBLIC_SUPABASE_ANON_KEY` sont donc les deux seules variables
+réellement indispensables pour utiliser l'app — sans elles, l'écran de
+connexion reste bloqué en permanence (message explicite, pas d'écran
+d'erreur brut). Les autres clés ci-dessous restent optionnelles, avec des
+replis explicites une fois connecté : les jaquettes tombent sur un
+placeholder, les rangées Explorer restent vides, et les fonctionnalités
+Steam sont simplement masquées.
 
 ### Variables d'environnement
 

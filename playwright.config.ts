@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+import { E2E_SUPABASE_ANON_KEY, E2E_SUPABASE_URL } from './e2e/auth-helpers';
+
 // Suite E2E qui formalise les vérifications manuelles faites en ad hoc
 // (import de bibliothèque Steam, voir profile/index.tsx) : mêmes scénarios,
 // mais répétables et committés plutôt que des scripts jetables dans /tmp.
@@ -38,9 +40,17 @@ export default defineConfig({
     // partagé soit prévisible (voir profile-identity.spec.ts). Sans elle,
     // il retomberait sur l'origine du serveur de dev — donc sur le port —
     // et un .env local qui la renseignerait ferait échouer le test.
+    // EXPO_PUBLIC_SUPABASE_URL/ANON_KEY : sans elles, `auth.status` reste
+    // `unconfigured` et AuthGate (voir ARCHITECTURE.md §9.7) bloquerait
+    // indéfiniment tous les écrans que ces specs testent — jamais un vrai
+    // projet Supabase (aucun n'existe en CI), juste assez pour que le
+    // client se construise ; `e2e/auth-helpers.ts` pré-écrit ensuite une
+    // session pour ce même projet fictif, lue sans appel réseau.
     env: {
       EXPO_PUBLIC_STEAM_API_URL: 'http://gamelary-api.test.invalid',
       EXPO_PUBLIC_PROFILE_BASE_URL: 'https://gamelary.test.invalid',
+      EXPO_PUBLIC_SUPABASE_URL: E2E_SUPABASE_URL,
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: E2E_SUPABASE_ANON_KEY,
     },
   },
 });
