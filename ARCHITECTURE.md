@@ -1164,6 +1164,18 @@ sans qu'aucune donnée de jeu ne soit encore synchronisée (`user_games`/
   et fait défiler automatiquement vers le champ actif, sans
   `KeyboardAvoidingView` manuel) et `autoFocus` sur le champ pour l'amener
   hors champ dès l'entrée en édition.
+- Icône, splash et icône adaptative Android étaient encore le logo Expo par
+  défaut (`expo-logo.png`, fond `#208AEF`) — repéré comme un `TODO` dans
+  `splash-overlay.tsx` pendant la revue portfolio. Remplacés par une marque
+  Gamelary (ruban de bibliothèque + triangle lecture découpé) dans les
+  couleurs réelles de l'app (`accent`/`background`, voir §2), générée dans
+  toutes les tailles requises (icône iOS/Android, favicon, icône adaptative
+  Android + variante monochrome, splash). L'override `ios.icon` (bundle
+  `.icon` "Liquid Glass" d'iOS 18, lui aussi le logo Expo par défaut) a été
+  retiré plutôt que reconstruit dans le nouveau format : sans lui, iOS
+  retombe automatiquement sur l'icône classique (`icon.png`, voir
+  `withIosIcons.js` dans `@expo/prebuild-config`) — un bundle `.icon`
+  correctement recréé resterait à faire si l'app vise iOS 18+.
 
 **Simplifications assumées pour cette itération** :
 - Le menu "⋯" de la fiche jeu (Partager/Arrêter de jouer/Ajouter à une
