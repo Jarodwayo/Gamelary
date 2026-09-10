@@ -2,41 +2,21 @@ import { test, expect } from '@playwright/test';
 
 import { seedSignedInSession } from './auth-helpers';
 
-// Un jeu suivi ET favori : sans lui, les rangées "Jeux joués"/"Jeux
-// préférés" du Profil (voir profile/index.tsx) affichent chacune leur état
-// vide, avec un lien "Explorer des jeux" bien plus court qu'une rangée de
-// jaquettes — cette page raccourcie ne nécessite plus le moindre défilement
-// pour tenir dans le viewport, et ce lien atterrit alors dans la bande
-// que la barre d'onglets recouvre en position absolue, PILE le piège que
-// ce fichier existe pour attraper. Peuplé ici plutôt que de laisser la
-// bibliothèque vide par défaut (voir game-store.tsx : plus de seed de
-// démo depuis que la connexion est obligatoire, ARCHITECTURE.md §9.7) —
-// sans quoi ce test confondrait ce recouvrement, réel mais distinct du
-// sien, avec sa propre vérification.
-const SEED_STATE = {
-  games: {
-    'jeu-suivi': {
-      id: 'jeu-suivi',
-      title: 'Jeu Suivi',
-      platform: 'PC',
-      inLibrary: true,
-      stopped: false,
-      achievements: [],
-      playSessions: [],
-    },
-  },
-  lists: {
-    favoris: { id: 'favoris', name: 'Favoris', builtin: true, gameIds: ['jeu-suivi'] },
-    wishlist: { id: 'wishlist', name: 'Wishlist', builtin: true, gameIds: [] },
-  },
-  settings: {},
-};
-
-async function seedGameStore(page: import('@playwright/test').Page) {
-  await page.addInitScript((state) => {
-    localStorage.setItem('gamelary/game-store/v5', JSON.stringify(state));
-  }, SEED_STATE);
-}
+// PAS de seed de bibliothèque ici, délibérément : la bibliothèque est vide
+// par défaut pour un compte fraîchement connecté (voir game-store.tsx —
+// plus de bibliothèque de démo depuis que la connexion est obligatoire,
+// ARCHITECTURE.md §9.7), et c'est justement ce cas — le plus court possible
+// pour le Profil (rangées "Jeux joués"/"Jeux préférés"/"Jeux terminés à
+// 100%" toutes vides, chacune avec un lien "Explorer des jeux" bien plus
+// court qu'une rangée de jaquettes) — qui a fait apparaître le
+// recouvrement que ce fichier existe pour attraper : cette page raccourcie
+// ne nécessitait plus le moindre défilement pour tenir dans le viewport, et
+// un `paddingBottom` sur le seul contenu défilable ne protège que le
+// DERNIER élément d'une page qui défile jusqu'à lui — pas un lien "Jeux
+// préférés" au milieu d'une page trop courte pour défiler du tout (voir
+// styles.scrollView, profile/index.tsx). Un jeu suivi/favori masquait
+// autrefois ce cas précis derrière une bibliothèque déjà peuplée — corrigé
+// ici en le retirant plutôt qu'en le contournant.
 
 // Sur le bundle web, la barre d'onglets est une pilule en position absolue
 // (voir src/components/app-tabs.web.tsx) : elle se superpose au contenu.
@@ -114,6 +94,33 @@ async function inspect(page: import('@playwright/test').Page): Promise<{ bar: Re
     const r = barEl.getBoundingClientRect();
     const bar: Rect = { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
 
+    // Un nœud dont le rectangle tombe hors de la fenêtre visible d'UN de
+    // ses ancêtres défilables (overflow hidden/auto/scroll) n'est peint
+    // nulle part — pas "sous la barre", juste hors-vue, comme n'importe
+    // quel contenu qu'il faudrait défiler pour atteindre. Sans ce filtre,
+    // le Profil sur bibliothèque vide (son ScrollView réserve désormais
+    // BottomTabInset sur sa PROPRE hauteur plutôt que sur son seul contenu
+    // — voir styles.scrollView, profile/index.tsx) faisait remonter un faux
+    // positif : le lien "Explorer des jeux" de "Jeux joués", scrollé hors
+    // de la zone visible du ScrollView, tombe géométriquement (coordonnées
+    // non recadrées) dans le rectangle de la barre sans jamais y être
+    // réellement affiché — vérifié par capture d'écran, rien ne s'y
+    // superpose visuellement.
+    function isClippedByScrollableAncestor(node: Element, rect: Rect): boolean {
+      let el = node.parentElement;
+      while (el) {
+        const cs = getComputedStyle(el);
+        if (cs.overflowY === 'auto' || cs.overflowY === 'scroll' || cs.overflowY === 'hidden') {
+          const ar = el.getBoundingClientRect();
+          if (rect.bottom <= ar.top || rect.top >= ar.bottom || rect.right <= ar.left || rect.left >= ar.right) {
+            return true;
+          }
+        }
+        el = el.parentElement;
+      }
+      return false;
+    }
+
     const covered: Covered[] = [];
     const nodes = document.querySelectorAll(
       'a, button, input, textarea, [role="button"], [tabindex]:not([tabindex="-1"])'
@@ -125,6 +132,7 @@ async function inspect(page: import('@playwright/test').Page): Promise<{ bar: Re
 
       const rect = (node as HTMLElement).getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) continue;
+      if (isClippedByScrollableAncestor(node, rect)) continue;
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
       if (cy < bar.top || cy > bar.bottom || cx < bar.left || cx > bar.right) continue;
@@ -151,7 +159,6 @@ async function inspect(page: import('@playwright/test').Page): Promise<{ bar: Re
 // session déjà valide pour atteindre l'écran qu'il inspecte réellement.
 test.beforeEach(async ({ page }) => {
   await seedSignedInSession(page);
-  await seedGameStore(page);
 });
 
 for (const scheme of ['light', 'dark'] as const) {

@@ -1098,14 +1098,6 @@ Deux conséquences directes :
   affiche son message "pas configurée", pas un formulaire mort). Compromis
   assumé du prérequis "connexion obligatoire", pas un oubli — voir §9.1
   pour la décision et sa justification.
-- **La pastille « Se connecter pour sauvegarder ta bibliothèque » du Profil
-  est désormais du code mort** : `auth.status` ne peut plus valoir
-  `signedOut` pendant que le Profil est affiché (`AuthGate` l'aurait déjà
-  recouvert), sa condition ne s'évalue donc plus jamais à vrai. Ni
-  supprimée ni corrigée dans cette session (hors scope de la demande),
-  signalé ici pour ne pas laisser cette divergence code/doc silencieuse —
-  à nettoyer lors d'une prochaine passe sur cet écran.
-
 **Vérifications** : 32 tests Jest de la session précédente (config,
 e-mail, redirection, client, provider), plus 6 nouveaux pour cette session
 (`auth-gate.test.tsx` : formulaire affiché tant que `signedIn` n'est pas
@@ -1447,6 +1439,39 @@ bibliothèque vide.
   geste de swipe horizontal s'y révélait moins fiable qu'avec un
   `ScrollView` simple. `FeaturedShelf` (Explorer) n'est pas concerné, elle
   garde `FlatList`.
+- **Chevauchement barre d'onglets web sur bibliothèque vide** : un
+  `paddingBottom: BottomTabInset` sur le contenu défilable du Profil
+  (`styles.content`) ne protège que le DERNIER élément d'une page, et
+  seulement quand elle déborde assez pour défiler jusqu'à lui — sur une
+  bibliothèque vide (page trop courte pour défiler du tout), le lien
+  "Explorer des jeux" de la rangée "Jeux préférés" (ni le premier ni le
+  dernier élément de la page) tombait dans la bande que la barre recouvre
+  en position absolue. Corrigé en réservant `BottomTabInset` sur le
+  `ScrollView` lui-même (`styles.scrollView`, `marginBottom`) plutôt que
+  sur son seul contenu : sa propre zone visible s'arrête alors
+  `BottomTabInset` avant le bas réel de l'écran, quelle que soit la
+  longueur du contenu — aucun élément, à n'importe quelle position, ne
+  peut donc plus jamais être disposé dans cette bande. Repéré par
+  `e2e/web-tab-bar-overlap.spec.ts`, contourné à l'origine en seedant un
+  jeu suivi/favori pour éviter le cas plutôt que de le corriger — le seed
+  a été retiré (la bibliothèque est vide par défaut pour un compte
+  fraîchement connecté, voir plus haut) pour que le test couvre
+  effectivement ce cas. Le fix introduit un `ScrollView` qui défile
+  désormais sur sa propre hauteur plutôt que sur celle du document — le
+  hit-testing du test (`elementFromPoint`) traitait un élément simplement
+  scrollé hors de vue par ce nouveau `ScrollView` interne comme "recouvert
+  par la barre" (faux positif géométrique : sa position non recadrée
+  tombe dans le rectangle de la barre sans jamais y être réellement
+  peinte — vérifié à la capture d'écran) ; corrigé en excluant du contrôle
+  tout élément hors de la fenêtre visible d'un ancêtre défilable, avant le
+  test de recouvrement proprement dit.
+- **Pastille "Se connecter" du Profil, code mort depuis `AuthGate`** :
+  signalée comme telle lors de la session précédente (§9.7) sans être
+  retirée (hors scope à l'époque). `auth.status` ne peut plus valoir
+  `signedOut` pendant que le Profil est affiché (`AuthGate` l'aurait déjà
+  recouvert), sa condition ne s'évaluait donc plus jamais à vrai — bloc
+  JSX et style associé (`signInPill`) retirés, aucun test ne les couvrait
+  spécifiquement.
 
 **Simplifications assumées pour cette itération** :
 - Le menu "⋯" de la fiche jeu (Partager/Arrêter de jouer/Ajouter à une
