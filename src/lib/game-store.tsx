@@ -85,11 +85,20 @@ function makeAchievementId(gameId: string, name: string): string {
   return `${gameId}:${slugify(name)}-${Date.now().toString(36)}`;
 }
 
-// Un seul chemin d'écriture pour toute mutation d'un jeu : `updatedAt` est
-// posé ici plutôt que recopié dans chacune des actions ci-dessous. L'oublier
-// dans une seule d'entre elles ne ferait échouer strictement rien — ça
-// rendrait juste faux, bien plus tard, l'arbitrage "le plus récent gagne"
-// prévu pour la synchronisation (voir ARCHITECTURE.md §9.5).
+// Un seul chemin d'écriture pour toute mutation des DONNÉES UTILISATEUR
+// d'un jeu : `updatedAt` est posé ici plutôt que recopié dans chacune des
+// actions ci-dessous. L'oublier dans une seule d'entre elles ne ferait
+// échouer strictement rien — ça rendrait juste faux, bien plus tard,
+// l'arbitrage "le plus récent gagne" prévu pour la synchronisation (voir
+// ARCHITECTURE.md §9.5).
+//
+// "Données utilisateur" est la partie importante : registerCatalogGame ne
+// passe volontairement PAS par ici (voir son commentaire). Les métadonnées
+// de catalogue (titre, plateforme, appid Steam, id IGDB) viennent d'IGDB et
+// sont re-dérivables à tout moment — les horodater ferait gagner
+// l'arbitrage à un appareil qui a simplement ouvert Explorer, contre un
+// appareil où l'utilisateur a réellement écrit une note ou un avis.
+//
 // Les gardes "rien n'a changé" restent chez l'appelant, AVANT cet appel :
 // horodater un no-op ferait gagner cet arbitrage à un appareil qui n'a
 // pourtant rien modifié.
@@ -236,12 +245,20 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
             ) {
               return prev;
             }
-            return updateGame(prev, game.id, {
+            // Écriture directe, PAS updateGame : rafraîchir des
+            // métadonnées de catalogue ne doit jamais toucher `updatedAt`
+            // (voir le commentaire d'updateGame — sinon ouvrir Explorer
+            // suffirait à faire gagner l'arbitrage de §9.5 à un appareil
+            // sans donnée utilisateur, et à effacer la note/l'avis écrits
+            // sur un autre).
+            const refreshed: StoredGame = {
+              ...existing,
               title: game.title,
               platform: game.platform,
               steamAppId: game.steamAppId,
               igdbId,
-            });
+            };
+            return { ...prev, games: { ...prev.games, [game.id]: refreshed } };
           }
           const created: StoredGame = {
             id: game.id,
@@ -253,7 +270,9 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
             stopped: false,
             achievements: [],
             playSessions: [],
-            updatedAt: Date.now(),
+            // Pas d'updatedAt : un jeu simplement aperçu dans Explorer n'a
+            // encore reçu aucune donnée utilisateur. Absent = "jamais
+            // modifié par l'utilisateur", ce qui est exactement le cas.
           };
           return { ...prev, games: { ...prev.games, [game.id]: created } };
         });

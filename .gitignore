@@ -31,6 +31,12 @@ yarn-error.*
 *.pem
 
 # local env files
+# `.env` inclus, pas seulement `.env*.local` : .env.example demande d'y
+# recopier IGDB_CLIENT_ID / IGDB_ACCESS_TOKEN / STEAMGRIDDB_API_KEY, donc
+# un .env suivi par git est un secret commité en attente. Il l'était
+# jusqu'ici (il ne contenait qu'une URL publique — vérifié sur tout
+# l'historique — mais la première clé ajoutée serait partie avec).
+.env
 .env*.local
 
 # typescript

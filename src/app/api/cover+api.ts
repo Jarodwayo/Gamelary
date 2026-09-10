@@ -4,13 +4,25 @@
 // C'est le seul endroit où la clé SteamGridDB peut vivre en toute sécurité :
 // si on appelait SteamGridDB directement depuis le composant React Native,
 // la clé finirait embarquée dans l'app et donc extractible par n'importe
-// qui (voir ARCHITECTURE.md §6).
+// qui (voir ARCHITECTURE.md §7).
 //
 // Cache en mémoire : simple Map avec TTL, suffisant pour un seul process de
 // dev. En production (plusieurs instances serverless, redémarrages), ça ne
 // tient pas la route et il faudra un vrai cache partagé (Redis/KV) — voir
-// ARCHITECTURE.md §7. Le TTL long (7 jours) reflète le fait qu'une jaquette
+// ARCHITECTURE.md §8. Le TTL long (7 jours) reflète le fait qu'une jaquette
 // ne change quasiment jamais pour un jeu donné.
+
+import { createRateLimiter } from '@/lib/rate-limit';
+
+// Même exposition que /api/games (aucune auth, quota tiers — voir
+// ARCHITECTURE.md §7.1), donc même garde-fou. La limite est en revanche
+// bien plus haute : un seul écran part en éventail sur cette route, une
+// requête par jaquette distincte. Explorer en demande jusqu'à 50 d'un
+// coup (5 rangées x 10 jeux) sur un cache client froid — une limite à 30
+// casserait l'écran au lieu de protéger quoi que ce soit. 120/min laisse
+// de la marge pour Explorer + Bibliothèque + les rangées du Profil dans
+// la même minute.
+const coverRateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 120 });
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const coverCache = new Map<string, { url: string | null; expiresAt: number }>();
@@ -105,6 +117,10 @@ function parseArtworkKind(raw: string | null): ArtworkKind | null {
 }
 
 export async function GET(request: Request) {
+  if (coverRateLimiter.isLimited(request)) {
+    return Response.json({ error: 'Trop de requêtes, réessaie dans une minute' }, { status: 429 });
+  }
+
   const params = new URL(request.url).searchParams;
   const title = params.get('title');
   const steamAppIdParam = params.get('steamAppId');

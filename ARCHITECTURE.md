@@ -543,8 +543,44 @@ CDN statique classique.
 
 Implémenté pour SteamGridDB (`/api/cover`, lit `STEAMGRIDDB_API_KEY` côté
 serveur) et IGDB (`/api/games`, lit `IGDB_CLIENT_ID`/`IGDB_ACCESS_TOKEN`
-côté serveur). À répliquer pour Steam (`/api/achievements`) et Spotify
-(`/api/music/search`) une fois ces intégrations branchées.
+côté serveur). **Steam fait exception** : sa clé ne s'accepte qu'en
+paramètre d'URL, incompatible avec les identifiants managés de cet
+environnement, d'où un service Express séparé
+([gamelary-api](https://github.com/Jarodwayo/gamelary-api), voir §6.3)
+plutôt qu'une route `+api.ts` de plus. Spotify n'a pas de route et n'en
+aura pas : l'intégration est abandonnée (voir §6.4).
+
+### 7.1 Exposition de ces backends : CORS et rate limiting ✅
+
+Ces routes n'ont **aucune authentification** — il n'y a pas de compte
+(voir §9) — et acceptent toutes les origines. Sans autre garde-fou,
+n'importe quel site tiers peut donc faire consommer le quota IGDB /
+SteamGridDB / Steam de ce déploiement par ses propres visiteurs. Le
+garde-fou retenu est une limite par IP, la même des deux côtés :
+
+| Route | Limite | Implémentation |
+|---|---|---|
+| `/api/games` (IGDB) | 30 req/min par IP | Compteur en mémoire dans le module (`games+api.ts`) |
+| `/api/cover` (SteamGridDB) | aucune | **Trou connu**, voir plus bas |
+| `/api/steam/*` (gamelary-api) | 30 req/min par IP | `express-rate-limit`, monté une seule fois sur le préfixe |
+
+Deux points appris en chemin, tous deux vérifiés par des tests :
+
+- **Le limiteur monté sur chaque routeur plutôt que sur le préfixe compte
+  double.** Monté deux fois sur `/api/steam`, une requête vers `/games`
+  traversait les deux montages : bloquée à la 16ᵉ requête au lieu de la
+  31ᵉ, pour une limite pourtant annoncée identique à celle
+  d'`/achievements`.
+- **`trust proxy` est indispensable derrière Render.** Sans lui,
+  `express-rate-limit` lit l'IP du reverse proxy et met tous les visiteurs
+  dans le même seau. Réglé à `1` (le premier hop uniquement), jamais à
+  `true` : faire confiance à un `X-Forwarded-For` arbitraire laisserait
+  n'importe qui se forger une IP et contourner la limite.
+
+Limites assumées à ce stade : un compteur en mémoire ne tient pas derrière
+plusieurs instances serverless (même limite que le cache, voir §8), et une
+limite par IP ne remplace pas une limite par utilisateur — impossible
+avant les comptes (voir §9.6).
 
 ## 8. Stratégie de cache 🚧 (partiel)
 
@@ -679,15 +715,74 @@ qu'ils ont chacun leurs tests.
 
 ### 9.4 Schéma distant (Postgres / Supabase)
 
-Toutes les tables portent `user_id` et sont protégées par Row Level
-Security — c'est ce qui remplace la logique d'autorisation qu'on écrirait à
-la main dans un backend classique :
+Row Level Security sur **les six tables** — c'est ce qui remplace la
+logique d'autorisation qu'on écrirait à la main dans un backend classique.
+Deux précisions qui ont leur importance, la première rédaction de cette
+section étant fausse sur les deux points (elle affirmait que « toutes les
+tables portent `user_id` » et n'activait RLS que sur `user_games`) :
+
+- **Toutes ne portent pas `user_id`.** `achievements`, `play_sessions` et
+  `list_games` pendent à un parent (`user_game_id`, `list_id`) ; leur
+  politique doit donc remonter au parent, la comparaison directe
+  `user_id = auth.uid()` ne s'y applique pas.
+- **Oublier `enable row level security` sur une table ne la protège pas
+  « par défaut » : ça la laisse grande ouverte.** Exposée via PostgREST,
+  une table sans RLS est lisible ET modifiable par n'importe quel compte
+  authentifié — donc par n'importe quel autre utilisateur de l'app. Cinq
+  tables sur six étaient dans ce cas dans la version précédente de ce
+  schéma.
 
 ```sql
-alter table user_games enable row level security;
+alter table profiles      enable row level security;
+alter table user_games    enable row level security;
+alter table achievements  enable row level security;
+alter table play_sessions enable row level security;
+alter table lists         enable row level security;
+alter table list_games    enable row level security;
+
+-- Tables portant directement l'identité : comparaison directe.
+create policy "soi-même uniquement" on profiles
+  for all using (id = auth.uid()) with check (id = auth.uid());
 create policy "propriétaire uniquement" on user_games
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "propriétaire uniquement" on lists
+  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- Tables filles : la politique remonte au parent. `with check` autant que
+-- `using` — sans lui, `using` filtrerait bien la LECTURE mais laisserait
+-- insérer une ligne rattachée au jeu de quelqu'un d'autre.
+create policy "via le jeu parent" on achievements
+  for all using (exists (select 1 from user_games g
+                         where g.id = user_game_id and g.user_id = auth.uid()))
+  with check (exists (select 1 from user_games g
+                      where g.id = user_game_id and g.user_id = auth.uid()));
+
+create policy "via le jeu parent" on play_sessions
+  for all using (exists (select 1 from user_games g
+                         where g.id = user_game_id and g.user_id = auth.uid()))
+  with check (exists (select 1 from user_games g
+                      where g.id = user_game_id and g.user_id = auth.uid()));
+
+-- list_games a DEUX parents : les deux doivent appartenir au demandeur,
+-- sinon on pourrait ajouter le jeu d'autrui à sa liste, ou son propre jeu
+-- à la liste d'autrui.
+create policy "via les deux parents" on list_games
+  for all using (
+    exists (select 1 from lists l      where l.id = list_id      and l.user_id = auth.uid())
+    and exists (select 1 from user_games g where g.id = user_game_id and g.user_id = auth.uid()))
+  with check (
+    exists (select 1 from lists l      where l.id = list_id      and l.user_id = auth.uid())
+    and exists (select 1 from user_games g where g.id = user_game_id and g.user_id = auth.uid()));
 ```
+
+Ces politiques n'ont pas encore été appliquées à une vraie instance
+Supabase (aucune n'existe à ce stade) : elles sont écrites, pas vérifiées à
+l'exécution. À la première mise en place, deux choses à faire avant de s'en
+remettre à elles — indexer les colonnes de rattachement
+(`achievements.user_game_id`, `play_sessions.user_game_id`,
+`list_games.list_id`), sans quoi chaque ligne lue déclenche le sous-select ;
+et vérifier depuis DEUX comptes réels qu'aucun ne voit les données de
+l'autre, plutôt que de faire confiance à la relecture du SQL.
 
 ```sql
 create table profiles (
@@ -819,10 +914,13 @@ bien plus cher à réparer qu'à prévenir.
   `undefined` si une résolution n'en rapporte pas. Comportement antérieur,
   laissé tel quel pour ne pas élargir le sujet, mais c'est la même classe
   de perte silencieuse.
-- **Quota et abus** : aucune limite par utilisateur aujourd'hui. À cadrer
-  avant toute ouverture publique, en même temps que l'absence de rate
-  limiting sur les routes existantes (`games+api.ts`, `gamelary-api`), qui
-  n'est elle non plus documentée nulle part pour l'instant.
+- **Quota et abus** : une limite par IP existe désormais sur `/api/games`
+  et sur `gamelary-api` (voir §7.1), mais **pas** de limite par
+  utilisateur — impossible tant qu'il n'y a pas de compte, et c'est
+  justement ce que les comptes rendront possible. À cadrer avant toute
+  ouverture publique. `/api/cover` (SteamGridDB) n'a toujours aucune
+  limite alors qu'il consomme lui aussi un quota tiers : même exposition
+  que `/api/games`, sans le garde-fou.
 
 ## 10. État actuel vs feuille de route
 
@@ -1026,14 +1124,29 @@ voir `app-tabs.tsx`), mais la réimplémentation web (`app-tabs.web.tsx`)
 
 Elle reste en position absolue, donc superposée au contenu : c'est
 `BottomTabInset` (`src/constants/theme.ts`) qui réserve sa hauteur — 50 dp
-sur iOS, 80 sur Android, 76 sur le web — et tout ce qui doit rester
+sur iOS, 80 sur Android, **110 sur le web** — et tout ce qui doit rester
 atteignable au-dessus d'elle s'y réfère (bas des écrans scrollables, bouton
-de recherche flottant). Le déplacement n'a donc pas fait disparaître le
-problème de recouvrement, il l'a déplacé en bas : vérifié écran par écran
-dans le navigateur, défilé jusqu'en bas, qu'aucun élément interactif ne
-passe sous la barre (Bibliothèque, Explorer, Profil, fiche jeu, Créer une
-liste, Modifier le profil, Paramètres, Aide, Statistiques). `WebTopBarInset`
-a disparu avec la barre du haut qui le justifiait.
+de recherche flottant). `WebTopBarInset` a disparu avec la barre du haut
+qui le justifiait.
+
+Le déplacement n'a donc pas fait disparaître le problème de recouvrement,
+**il l'a déplacé en bas** — et ce piège est maintenant passé trois fois :
+la cloche du Profil sous la barre haute, puis les cinq filtres de la
+Bibliothèque (centrés à 65 px sous une barre de 76 px, masqués et
+intapables dans les deux thèmes), puis le déménagement lui-même. Une
+vérification écran par écran dans le navigateur l'avait déjà laissé passer
+deux fois, d'où un test plutôt qu'une troisième relecture attentive.
+
+`e2e/web-tab-bar-overlap.spec.ts` parcourt les onze écrans dans les deux
+thèmes et fait un vrai hit-testing (`elementFromPoint`) au centre de chaque
+élément interactif : il répond à « un utilisateur peut-il cliquer
+dessus ? » plutôt que de comparer des pixels, et ne se casse pas au moindre
+changement de mise en page. Il repère la barre par les liens d'onglets
+qu'elle contient, pas par une position en dur — elle a déjà déménagé une
+fois — et échoue bruyamment si elle devient introuvable, pour ne pas
+passer au vert en ne vérifiant plus rien. Chaque écran est vérifié à
+l'ouverture **puis après défilement jusqu'en bas**, là où vivent les
+boutons principaux qu'une barre basse peut recouvrir.
 
 **Prochaines étapes** (pas de blocage technique, juste pas encore fait) :
 éventuellement un vrai popover ancré pour le menu "⋯"/sélecteur de listes
