@@ -219,7 +219,7 @@ src/
       stats.tsx              statistiques détaillées (Semaine/Mois/Tout)
   components/          UI réutilisable, découplée des routes
   constants/theme.ts   couleurs/espacements clair-sombre, source unique du design system
-  data/                accès aux données (tracked-games.ts = seed initial, API pour le reste)
+  data/                accès aux données (tracked-games.ts = catalogue curaté, API pour le reste)
   hooks/               logique réutilisable côté client (ex. useGameCover, useGame, useExploreSection)
   lib/                 utilitaires transverses + game-store.tsx (état local persisté)
   types/               types partagés (Game, CatalogGame, PlaySession, Achievement)
@@ -252,7 +252,7 @@ identifiants d'app) : IGDB exige à la fois un en-tête `Client-ID` et un
   exactement (insensible à la casse) au titre recherché, et on ne retombe
   sur le premier résultat du ranking IGDB que si aucun ne correspond
   exactement. Utilisé par `useGame` pour résoudre le titre/plateforme
-  canoniques des jeux de démonstration de `tracked-games.ts`, et par
+  canoniques des jeux curatés de `tracked-games.ts`, et par
   `/library/search` pour une recherche ponctuelle.
 - **`?section=`** — les 5 rangées de l'écran Explorer (§6.5), une requête
   apicalypse dédiée par section (IGDB n'a pas de notion native de
@@ -410,15 +410,16 @@ En remplacement : sélection **manuelle et curatée** — vrais titres/
 compositeurs vérifiés (pas de placeholder du type "Track 1"), saisis à la
 main dans `tracked-games.ts` pour chaque jeu couvert, plutôt qu'une API.
 Limite assumée : ça ne peut couvrir que les jeux effectivement curatés là
-(10 actuellement — les 6 jeux de démo + The Witcher 3: Wild Hunt, Undertale,
-Cuphead, Journey, choisis pour la fiabilité de leurs informations
-publiques), pas les jeux découverts via Explorer/recherche en dehors de
-cette liste (`Game.tracks` reste vide pour eux, voir `useGame`) — élargir
-cette liste reste une simple question de temps de curation, pas un
-obstacle technique. `demoSeed` (voir `tracked-games.ts`) distingue les jeux
-ajoutés d'office à la bibliothèque de démo (les 6 premiers) de ceux qui
-n'ont qu'une bande originale curatée prête si l'utilisateur les rencontre
-autrement.
+(10 actuellement : Hollow Knight, Elden Ring, Celeste, Hades, Zelda BOTW,
+Stardew Valley, The Witcher 3: Wild Hunt, Undertale, Cuphead, Journey,
+choisis pour la fiabilité de leurs informations publiques), pas les jeux
+découverts via Explorer/recherche en dehors de cette liste (`Game.tracks`
+reste vide pour eux, voir `useGame`) — élargir cette liste reste une simple
+question de temps de curation, pas un obstacle technique. Ces dix jeux
+n'ont qu'une bande originale/des succès curatés prêts si l'utilisateur les
+rencontre via Explorer/recherche — plus aucun n'est ajouté d'office à une
+bibliothèque de démo : ce mécanisme (`demoSeed`) a été retiré avec le reste
+du mode "essayer sans compte" (voir §9.7).
 
 ### 6.5 Explorer — 5 rangées IGDB ✅
 
@@ -458,8 +459,8 @@ Chaque rangée (`useExploreSection`, `src/hooks/use-explore.ts`) enregistre
 au passage les jeux reçus dans le store (`registerCatalogGame`) : un jeu vu
 dans Explorer arrive déjà avec son titre/plateforme IGDB, sa fiche n'a donc
 pas besoin d'un second aller-retour réseau pour les afficher (contrairement
-aux jeux de démonstration de `tracked-games.ts`, qui eux n'ont qu'un titre
-de recherche à résoudre — voir §6.1).
+aux jeux curatés de `tracked-games.ts`, qui eux n'ont qu'un titre de
+recherche à résoudre — voir §6.1).
 
 ### 6.6 Bibliothèque, notes/avis, heures, listes — stockage local ✅
 
@@ -503,10 +504,10 @@ pour l'instant.
   seulement `steamId64` (Profil, "Lier mon compte Steam"), utilisé pour
   appeler `gamelary-api` (voir §6.3). Pas une vraie authentification :
   l'utilisateur colle lui-même son SteamID64, jamais vérifié.
-- Seedé une seule fois (premier lancement, avant toute écriture
-  AsyncStorage) à partir des jeux `demoSeed: true` de `tracked-games.ts`
-  (voir §6.3 et §6.4) — les autres entrées curatées n'y sont que pour leur
-  bande originale, pas ajoutées d'office à la bibliothèque de démo. Clé
+- Bibliothèque vide au premier lancement (avant toute écriture AsyncStorage) :
+  plus de bibliothèque de démo préchargée depuis `tracked-games.ts` (voir
+  §6.3 et §6.4) — retiré avec le reste du mode "essayer sans compte" (§9.7),
+  la connexion étant désormais un prérequis pour atteindre cet écran. Clé
   de stockage versionnée (`gamelary/game-store/v5`) : un changement de forme
   du store (ex. le passage `achievementsUnlocked/Total` → `achievements[]`,
   l'ajout de `favoriteTrackId`, `steamAppId` ou `settings`) change la clé
@@ -663,16 +664,40 @@ sépare ce projet d'un vrai produit.
   un backend maison pour arriver à quelque chose d'utilisable ; et contre
   Firebase parce que la donnée reste du **SQL standard**, donc portable si
   le service devient un jour un mauvais choix.
-- **Google OAuth + email.** Pas de vérification par téléphone :
-  l'authentification Google fournit déjà une identité vérifiée et unique,
-  le SMS coûte de l'argent chez tous les fournisseurs sérieux, ajoute de la
-  friction à l'inscription, et ne protège de rien tant qu'il n'y a ni
-  fonctionnalité sociale ni abus à contenir. À rouvrir si l'un des deux
-  arrive.
+- **Trois méthodes, aucune vérification par téléphone** : Google OAuth,
+  e-mail + mot de passe (n'importe quel fournisseur — Gmail, Outlook,
+  Yahoo...), et lien magique par e-mail (voir §9.7 pour l'écran des trois,
+  ajouté en session 4). Pas de téléphone : l'authentification Google
+  fournit déjà une identité vérifiée et unique, le SMS coûte de l'argent
+  chez tous les fournisseurs sérieux, ajoute de la friction à l'inscription,
+  et ne protège de rien tant qu'il n'y a ni fonctionnalité sociale ni abus à
+  contenir. À rouvrir si l'un des deux arrive.
 - **L'offline-first est conservé.** AsyncStorage reste la copie de travail
   et la source de vérité de l'affichage ; Supabase est une **cible de
   synchronisation**, pas la source lue à chaque rendu. Sans ça, l'app
   cesserait de fonctionner hors réseau — une régression, pas une évolution.
+  Ne pas confondre avec le point suivant : offline-first veut dire qu'un
+  utilisateur **déjà connecté** reste fonctionnel sans réseau, pas qu'on
+  peut utiliser l'app sans jamais se connecter.
+- **La connexion est désormais un prérequis, plus une option.** Décision
+  produit prise en session 3 (voir §9.7) : accéder aux onglets
+  (Bibliothèque/Explorer/Profil) exige `signedIn`, ce qui a supprimé du
+  même coup la bibliothèque de démonstration préchargée au premier
+  lancement (`demoSeed`, `tracked-games.ts`) — elle n'a plus de raison
+  d'être puisqu'il n'existe plus de mode "essayer sans compte" auquel
+  l'amorcer. Conséquence assumée : une build **sans** clés Supabase
+  configurées (`unconfigured`, voir §9.7) est désormais **entièrement
+  inutilisable** (écran de chargement/message figé, jamais les onglets) —
+  avant cette décision, cette même build restait pleinement fonctionnelle
+  en local. C'est un changement de comportement volontaire, pas un oubli :
+  à rouvrir si un mode démo/vitrine redevient nécessaire (ex. capture
+  d'écran pour ce même dépôt public de démonstration).
+- **Les trois méthodes de connexion sont visibles dès le premier affichage
+  (session 4)** — aucune cachée derrière le Profil ou une option
+  secondaire : Google (bouton plein), e-mail + mot de passe (ouvre un
+  second temps avec bascule créer un compte / se connecter), lien magique
+  par e-mail (inchangé, juste remonté au même niveau visuel que les deux
+  autres). Détail en §9.7.
 
 ### 9.2 Trois obstacles dans le modèle local actuel
 
@@ -1016,28 +1041,78 @@ vérité pour la même donnée. Quatre statuts : `unconfigured` (pas de clés �
 distinct de `signedOut`, pour ne jamais proposer un bouton qui ne mène
 nulle part), `loading`, `signedOut`, `signedIn`.
 
-**Écran** (`src/app/profile/sign-in.tsx`) — Google OAuth en bouton plein
-(un tap, mis en avant), lien magique par e-mail en repli, aucun mot de
-passe. Sur natif, Google ouvre un navigateur in-app
-(`WebBrowser.openAuthSessionAsync`) qui capture lui-même son propre retour ;
-sur web, `signInWithOAuth` fait naviguer la page. Le lien magique, lui,
-revient toujours par un vrai lien profond ouvert depuis l'app Mail — hors du
-contrôle de ce code, donc intercepté différemment (l'écran lit `?code=`
-dans ses propres paramètres de route). Le menu « ⋯ » du Profil appelle
-désormais un vrai `signOut()` ; « Se connecter pour sauvegarder ta
-bibliothèque » n'apparaît que si `signedOut` (jamais en `unconfigured`, où
-ça ne mènerait nulle part ; jamais en `loading`, pour éviter un flash).
+**Formulaire** (`src/components/sign-in-screen.tsx`) — Google OAuth en
+bouton plein (un tap, mis en avant). Sur natif, Google ouvre un navigateur
+in-app (`WebBrowser.openAuthSessionAsync`) qui capture lui-même son propre
+retour ; sur web, `signInWithOAuth` fait naviguer la page. Le lien magique,
+lui, revient toujours par un vrai lien profond ouvert depuis l'app Mail —
+hors du contrôle de ce code, donc intercepté différemment par la route
+`app/profile/sign-in.tsx` (qui lit `?code=` dans ses propres paramètres).
+Troisième méthode (e-mail + mot de passe) et refonte de l'écran en
+session 4, détaillées plus bas.
 
-**Vérifications** : 32 tests Jest nouveaux (config, e-mail, redirection,
-client, provider — mutation-testés : chaque assertion a été confirmée
-capable d'échouer, pas seulement de passer), plus les 20 vérifications SQL
-de §9.4. Conditions réelles vérifiées manuellement (`expo start --web`,
-clair et sombre) : écran non configuré (message explicite), formulaire
-configuré (bouton lien magique désactivé/activé selon la validité de
-l'e-mail), pastille « Se connecter » du Profil et sa navigation. **Non
-vérifié** : Google OAuth et lien magique de bout en bout contre un vrai
-projet Supabase (aucun n'existe dans cet environnement de développement) ;
-rendu natif (pas de simulateur disponible ici, limite déjà documentée
+**Connexion obligatoire au lancement (session 3) ✅** — jusqu'ici, se
+connecter n'était qu'une option proposée depuis le Profil (pastille « Se
+connecter pour sauvegarder ta bibliothèque »), et rien n'empêchait
+d'utiliser l'app indéfiniment sans compte. Décision produit : ce n'est
+plus le cas. `src/components/auth-gate.tsx` (`AuthGate`) recouvre
+désormais `AppTabs`/`SearchFab` (`app/_layout.tsx`, monté en dernier parmi
+leurs frères) tant que `auth.status !== 'signedIn'`, affichant
+`SignInScreen` (le même formulaire ci-dessus, réutilisé sans duplication —
+`unconfigured`/`loading` y affichent déjà leurs propres écrans, `AuthGate`
+n'a donc besoin de distinguer que « signedIn » de « tout le reste »).
+Recouvre plutôt que démonte : `AppTabs` (et le routeur qu'il porte) reste
+monté en permanence, y compris derrière l'écran de connexion — nécessaire
+pour que le lien profond du lien magique natif continue d'être résolu par
+le routeur même à froid, avant que l'utilisateur ne soit connecté. Une
+déconnexion (menu « ⋯ » du Profil -> `signOut()`) fait donc réapparaître
+ce verrou immédiatement, quel que soit l'onglet affiché à ce moment — le
+statut change, `AuthGate` se re-rend, plus besoin de forcer un retour à un
+onglet racine.
+
+Deux conséquences directes :
+- **La bibliothèque de démonstration a été retirée.** `seedStore`
+  (`game-store.tsx`) préchargeait six jeux (`demoSeed: true` dans
+  `tracked-games.ts`) au tout premier lancement, pour un mode "essayer sans
+  compte" qui n'existe plus — un nouvel utilisateur connecté part
+  désormais d'une bibliothèque vide. Le champ `demoSeed` a été retiré du
+  type `TrackedGame` (plus aucun code ne le lit) ; `tracked-games.ts`
+  reste un catalogue curaté (succès/bande originale) consulté quand
+  l'utilisateur ajoute lui-même un de ces dix jeux, jamais préchargé (voir
+  §6.3/§6.4).
+- **Une build sans clés Supabase (`unconfigured`) est désormais
+  inutilisable.** Avant cette session, l'app restait pleinement
+  fonctionnelle hors ligne sans aucune clé configurée (voir §9.1) ;
+  `AuthGate` bloque maintenant indistinctement `unconfigured` et
+  `loading` derrière le même écran que `signedOut` (`SignInScreen` y
+  affiche son message "pas configurée", pas un formulaire mort). Compromis
+  assumé du prérequis "connexion obligatoire", pas un oubli — voir §9.1
+  pour la décision et sa justification.
+- **La pastille « Se connecter pour sauvegarder ta bibliothèque » du Profil
+  est désormais du code mort** : `auth.status` ne peut plus valoir
+  `signedOut` pendant que le Profil est affiché (`AuthGate` l'aurait déjà
+  recouvert), sa condition ne s'évalue donc plus jamais à vrai. Ni
+  supprimée ni corrigée dans cette session (hors scope de la demande),
+  signalé ici pour ne pas laisser cette divergence code/doc silencieuse —
+  à nettoyer lors d'une prochaine passe sur cet écran.
+
+**Vérifications** : 32 tests Jest de la session précédente (config,
+e-mail, redirection, client, provider), plus 6 nouveaux pour cette session
+(`auth-gate.test.tsx` : formulaire affiché tant que `signedIn` n'est pas
+atteint, verrou levé une fois connecté, redevient visible après
+déconnexion ; `game-store-seed.test.tsx` : bibliothèque vide au premier
+lancement, aucun des six anciens ids de démo présent) — tous
+mutation-testés : chaque assertion a été confirmée capable d'échouer
+(condition `signedIn` inversée, seed réintroduit), pas seulement de
+passer, plus les 20 vérifications SQL de §9.4. Conditions réelles
+vérifiées manuellement (`expo start --web`, Chromium headless) : build
+`unconfigured` (message figé, aucun onglet visible même dans le DOM
+sous-jacent, capture d'écran à l'appui), build avec clés (factices mais
+valides) menant à `signedOut` (formulaire affiché, toujours aucun onglet
+visible). **Non vérifié** : Google OAuth et lien magique de bout en bout
+contre un vrai projet Supabase (aucun n'existe dans cet environnement de
+développement) ; rendu natif (pas de simulateur disponible ici, limite
+déjà documentée
 ailleurs dans ce fichier).
 
 **Étapes manuelles restantes côté Supabase** avant que ça fonctionne pour de
@@ -1047,6 +1122,76 @@ provider Google (Client ID/Secret depuis Google Cloud Console), renseigner
 les Redirect URLs (`gamelary://profile/sign-in` + l'origine du déploiement
 web) — sans cette dernière étape, Google et le lien magique refusent de
 rediriger vers l'app après connexion.
+
+**Troisième méthode et écran unique à trois options (session 4) ✅** —
+jusqu'ici, e-mail ne voulait dire que « lien magique » ; ce n'est plus
+suffisant pour quelqu'un qui préfère un mot de passe classique (n'importe
+quel fournisseur — Gmail, Outlook, Yahoo... — contrairement à
+`signInWithGoogle`, spécifique à ce provider OAuth). `signUpWithPassword`/
+`signInWithPassword` (`auth-store.tsx`) enveloppent `supabase.auth.signUp`/
+`signInWithPassword` : ni l'un ni l'autre ne mettent à jour
+`status`/`session` eux-mêmes, exactement comme les deux méthodes
+existantes — `onAuthStateChange` s'en charge dès que supabase-js reçoit une
+session valide.
+
+**Piège attendu, gardé explicitement** : `signUp()` ne renvoie de session
+que si *Confirm email* est désactivé côté dashboard Supabase
+(Authentication > Providers > Email) — sinon le compte est bien créé mais
+`data.session` est `null` tant que le lien de confirmation envoyé par
+e-mail n'a pas été cliqué, ce que le prérequis « connexion obligatoire »
+(§9.1/plus haut) ne permet justement pas d'attendre. `signUpWithPassword`
+détecte ce cas (`!data.session`) et renvoie une erreur explicite nommant le
+réglage à changer, plutôt que de laisser croire à un succès pendant que
+l'écran reste bloqué sur `signedOut` sans explication — mutation-testé
+(inverser la condition fait échouer le test dédié).
+
+**Écran** (`src/components/sign-in-screen.tsx`, entièrement redessiné) :
+logo Gamelary centré sur un badge de couleur `accent` (le fond quasi blanc
+de `gamelary-mark.png`, pensé pour l'aplat plein du splash natif, se
+confondait avec le `background` clair du thème sans lui — vérifié à
+l'écran, pas supposé), puis trois méthodes empilées en pilules, toutes
+visibles dès le premier affichage — aucune cachée derrière le Profil ou
+présentée comme secondaire sous une autre : Google (inchangé), « Créer un
+compte avec e-mail et mot de passe » (ouvre un second écran, pas tout
+affiché d'un coup), lien magique par e-mail (inchangé, juste remonté au
+même niveau visuel). Le second écran porte le formulaire e-mail + mot de
+passe avec bascule « Déjà un compte ? Se connecter » / « Pas de compte ?
+Créer un compte » (un seul écran, deux modes plutôt que deux écrans
+séparés) et un bouton « Retour ». Validation client avant tout appel réseau
+(`src/lib/password.ts`, même principe que `isValidEmail`, email.ts) :
+minimum 6 caractères (défaut Supabase), affiché en toutes lettres sous le
+champ plutôt que deviné depuis un bouton simplement désactivé — Supabase
+reste le seul juge final si ce minimum diffère côté dashboard, son message
+d'erreur remonte alors tel quel (comme « e-mail déjà utilisé » ou « mauvais
+mot de passe », jamais traduits, cohérent avec l'absence de couche i18n
+déjà notée pour Google/lien magique).
+
+**Vérifications** : 13 tests Jest nouveaux pour l'écran
+(`sign-in-screen.test.tsx` : les trois méthodes visibles au premier rendu,
+navigation vers le formulaire et retour, bascule créer un compte/se
+connecter, bon appel (`signUpWithPassword` vs `signInWithPassword`) selon
+le mode avec e-mail rogné, bouton désactivé si mot de passe trop court,
+erreurs serveur affichées), plus 7 nouveaux dans `auth-store.test.tsx`
+(transmission des arguments, erreur serveur relayée telle quelle, garde
+« Confirm email », absence de client) — tous mutation-testés (mode
+créer-compte/se-connecter interverti, garde `session` inversée, validation
+du mot de passe retirée : chaque mutation fait échouer le test qui lui
+correspond avant d'être restaurée). Conditions réelles vérifiées
+manuellement (`expo start --web`, Chromium headless, clair **et** sombre) :
+logo visible dans les deux thèmes (capture d'écran à l'appui — c'est cette
+vérification qui a révélé le badge manquant), écran à trois options,
+formulaire e-mail + mot de passe avec bouton désactivé tant qu'invalide.
+Critère d'acceptation vérifié en conditions réelles avec une session
+Supabase pré-écrite (même technique que `e2e/auth-helpers.ts`) : une
+session valide déjà présente au démarrage saute directement aux onglets
+(jamais l'écran de connexion, y compris après un rechargement complet
+simulant un relancement) ; « Se déconnecter » depuis le menu « ⋯ » du
+Profil y ramène immédiatement. **Non vérifié** : `signUp`/
+`signInWithPassword` de bout en bout contre un vrai projet Supabase (aucun
+n'existe dans cet environnement de développement, même limite que Google/
+lien magique en session précédente) — seul le câblage (quel bouton appelle
+quelle méthode, avec quels arguments, dans quel état) est couvert, pas le
+comportement réel de l'API Supabase.
 
 ## 10. État actuel vs feuille de route
 
@@ -1119,14 +1264,17 @@ sur un bandeau large + le logo du jeu (illustrations `hero`/`logo` de
 SteamGridDB, nouveau paramètre `kind` de `/api/cover`), soit sur la
 jaquette portrait, avec repli automatique sur la jaquette quand le bandeau
 n'existe pas ou ne charge pas (voir `game-title-header.tsx`), et
-**authentification** (voir §9.7) : écran "Se connecter" (`/profile/sign-in`
-— Google OAuth en bouton plein, lien magique par e-mail en repli, ni
-téléphone ni mot de passe), pastille "Se connecter pour sauvegarder ta
-bibliothèque" sur le Profil quand personne n'est connecté, e-mail affiché
-et "Se déconnecter" réellement câblé dans le menu "⋯" sinon — à l'époque,
-sans qu'aucune donnée de jeu ne soit encore synchronisée (`user_games`/
-`achievements` le sont depuis, voir §9.5 ; `play_sessions` et `lists`/
-`list_games` restent à faire). Plus aucun stub dans le menu "⋯".
+**authentification** (voir §9.7) : formulaire "Se connecter" (Google
+OAuth en bouton plein, lien magique par e-mail en repli, ni téléphone ni
+mot de passe), e-mail affiché et "Se déconnecter" réellement câblé dans le
+menu "⋯" une fois connecté — à l'époque, sans qu'aucune donnée de jeu ne
+soit encore synchronisée (`user_games`/`achievements` le sont depuis, voir
+§9.5 ; `play_sessions` et `lists`/`list_games` restent à faire). Plus
+aucun stub dans le menu "⋯". **Connexion désormais obligatoire** (session
+3, voir §9.7) : `AuthGate` bloque l'accès aux onglets tant que `signedIn`
+n'est pas atteint, ce qui a aussi retiré la bibliothèque de démonstration
+préchargée au premier lancement — un nouvel utilisateur part d'une
+bibliothèque vide.
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,

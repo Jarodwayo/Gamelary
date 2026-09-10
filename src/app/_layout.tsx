@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from 'react-native';
 
 import AppTabs from '@/components/app-tabs';
+import { AuthGate } from '@/components/auth-gate';
 import { SearchFab } from '@/components/search-fab';
 import { SignInSyncGate } from '@/components/sign-in-sync-gate';
 import { AnimatedSplashOverlay } from '@/components/splash-overlay';
@@ -47,6 +48,12 @@ export default function TabLayout() {
           <AnimatedSplashOverlay />
           <AppTabs />
           <SearchFab />
+          {/* Verrou de connexion obligatoire (voir auth-gate.tsx) : monté en
+              dernier pour recouvrir AppTabs/SearchFab tant que `signedIn`
+              n'est pas atteint, sans les démonter (le routeur qu'AppTabs
+              porte doit rester vivant pour le lien profond du lien magique
+              natif). */}
+          <AuthGate />
         </GameStoreProvider>
       </AuthProvider>
     </ThemeProvider>

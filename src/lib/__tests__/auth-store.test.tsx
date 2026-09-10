@@ -62,6 +62,8 @@ function makeFakeClient(overrides: Partial<Record<string, jest.Mock>> = {}) {
       signInWithOAuth: jest.fn(async () => ({ data: { url: 'https://accounts.google.example/auth' }, error: null })),
       signInWithOtp: jest.fn(async () => ({ error: null })),
       exchangeCodeForSession: jest.fn(async () => ({ data: {}, error: null })),
+      signUp: jest.fn(async () => ({ data: { session: { user: { email: 'jarod@example.com' } } }, error: null })),
+      signInWithPassword: jest.fn(async () => ({ error: null })),
       ...overrides,
     },
     __emitAuthStateChange: (event: string, session: unknown) => {
@@ -243,6 +245,80 @@ test('completeSignInFromCode() échange directement le code (retour de lien magi
 
   expect(client.auth.exchangeCodeForSession).toHaveBeenCalledWith('code-du-lien-magique');
   expect(result).toEqual({ error: null });
+});
+
+test('signUpWithPassword() transmet e-mail et mot de passe à supabase-js', async () => {
+  const client = makeFakeClient();
+  const auth = await mountAuth(client);
+
+  const result = await auth().signUpWithPassword('jarod@example.com', 'un-mot-de-passe');
+
+  expect(client.auth.signUp).toHaveBeenCalledWith({ email: 'jarod@example.com', password: 'un-mot-de-passe' });
+  expect(result).toEqual({ error: null });
+});
+
+test("signUpWithPassword() remonte l'erreur serveur telle quelle (ex. e-mail déjà utilisé)", async () => {
+  const client = makeFakeClient({
+    signUp: jest.fn(async () => ({ data: { session: null }, error: { message: 'User already registered' } })),
+  });
+  const auth = await mountAuth(client);
+
+  const result = await auth().signUpWithPassword('jarod@example.com', 'un-mot-de-passe');
+
+  expect(result).toEqual({ error: 'User already registered' });
+});
+
+test('signUpWithPassword() sans session retournée : erreur explicite pointant "Confirm email" plutôt que de laisser croire à un succès', async () => {
+  // Reproduit le cas où "Confirm email" est encore actif côté dashboard
+  // Supabase (voir le commentaire de signUpWithPassword, auth-store.tsx) :
+  // signUp() réussit (pas d'erreur) mais ne renvoie aucune session tant que
+  // le lien de confirmation n'a pas été cliqué — sans ce garde, l'appelant
+  // verrait { error: null } et croirait la connexion immédiate acquise,
+  // alors que le statut reste 'signedOut'.
+  const client = makeFakeClient({
+    signUp: jest.fn(async () => ({ data: { session: null }, error: null })),
+  });
+  const auth = await mountAuth(client);
+
+  const result = await auth().signUpWithPassword('jarod@example.com', 'un-mot-de-passe');
+
+  expect(result.error).not.toBeNull();
+  expect(result.error).toMatch(/Confirm email/);
+});
+
+test('signInWithPassword() transmet e-mail et mot de passe à supabase-js', async () => {
+  const client = makeFakeClient();
+  const auth = await mountAuth(client);
+
+  const result = await auth().signInWithPassword('jarod@example.com', 'un-mot-de-passe');
+
+  expect(client.auth.signInWithPassword).toHaveBeenCalledWith({
+    email: 'jarod@example.com',
+    password: 'un-mot-de-passe',
+  });
+  expect(result).toEqual({ error: null });
+});
+
+test("signInWithPassword() remonte l'erreur générique de supabase-js (mauvais mot de passe ou e-mail inconnu)", async () => {
+  const client = makeFakeClient({
+    signInWithPassword: jest.fn(async () => ({ error: { message: 'Invalid login credentials' } })),
+  });
+  const auth = await mountAuth(client);
+
+  const result = await auth().signInWithPassword('jarod@example.com', 'mauvais-mot-de-passe');
+
+  expect(result).toEqual({ error: 'Invalid login credentials' });
+});
+
+test("sans client : signUpWithPassword/signInWithPassword renvoient le même message explicite, pas d'appel réseau", async () => {
+  const auth = await mountAuth(null);
+
+  expect(await auth().signUpWithPassword('jarod@example.com', 'un-mot-de-passe')).toEqual({
+    error: 'La connexion en ligne n’est pas configurée pour cette build.',
+  });
+  expect(await auth().signInWithPassword('jarod@example.com', 'un-mot-de-passe')).toEqual({
+    error: 'La connexion en ligne n’est pas configurée pour cette build.',
+  });
 });
 
 test('le démontage se désabonne de onAuthStateChange (pas de fuite)', async () => {

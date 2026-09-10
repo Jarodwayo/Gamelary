@@ -13,15 +13,15 @@ export function trackId(gameId: string, title: string): string {
   return `${gameId}:${slugify(title)}`;
 }
 
-// Bibliothèque personnelle de l'utilisateur : quels jeux il suit, et les
-// données qui n'existent que localement (succès, bande originale). Reste en
-// dur ici en l'absence de compte utilisateur/backend de persistance (voir
-// ARCHITECTURE.md §10) — seul le catalogue (titre/plateforme) vient
-// réellement d'IGDB, via `igdbTitle` et le hook `useGame`
-// (src/hooks/use-game.ts). N'est lu qu'une fois, pour amorcer
-// src/lib/game-store.tsx au tout premier lancement — voir ce fichier pour
-// l'état réellement mutable/persisté (succès cochés, heures, notes, piste
-// favorite...). zelda-botw illustre volontairement le cas "aucun succès
+// Catalogue curaté de succès nommés et de bande originale pour des jeux
+// connus à l'avance — jamais préchargé dans la bibliothèque d'un
+// utilisateur (voir game-store.tsx : un compte se connecte sur une
+// bibliothèque vide, il n'y a plus de mode démo à amorcer), seulement
+// consulté quand l'utilisateur ajoute lui-même l'un de ces jeux (Explorer,
+// recherche, ou résolution inverse Steam) : `useGame`
+// (src/hooks/use-game.ts) y pioche les succès/pistes pré-remplis pour ces
+// titres précis, le reste du catalogue venant réellement d'IGDB via
+// `igdbTitle`. zelda-botw illustre volontairement le cas "aucun succès
 // tracké" (jeu Switch, pas de succès Steam) pour tester l'état "Aucun
 // succès suivi" de la fiche jeu plutôt qu'un simple 0%.
 export type TrackedGame = {
@@ -30,23 +30,15 @@ export type TrackedGame = {
   achievements: SeedAchievement[];
   tracks: SeedTrack[];
   // Doit correspondre exactement au `title` d'une entrée de `tracks` :
-  // pré-sélectionne un favori par défaut pour la démo (l'utilisateur peut
-  // en choisir un autre depuis la fiche jeu). Absent = aucun favori choisi.
+  // pré-sélectionne un favori par défaut (l'utilisateur peut en choisir un
+  // autre depuis la fiche jeu). Absent = aucun favori choisi.
   favoriteTrackTitle?: string;
-  // true = fait partie des jeux ajoutés à la bibliothèque dès le premier
-  // lancement (voir seedStore, game-store.tsx). false/absent = bande
-  // originale curatée disponible si l'utilisateur tombe sur ce jeu via
-  // Explorer/recherche (voir resolveCatalogId plus bas), mais pas ajouté
-  // d'office — une entrée ici n'implique pas automatiquement une place
-  // dans la bibliothèque de démonstration.
-  demoSeed?: boolean;
 };
 
 export const trackedGames: TrackedGame[] = [
   {
     id: 'hollow-knight',
     igdbTitle: 'Hollow Knight',
-    demoSeed: true,
     achievements: [
       { name: 'Old Nail', unlocked: true },
       { name: 'Sharpened Nail', unlocked: true },
@@ -71,7 +63,6 @@ export const trackedGames: TrackedGame[] = [
   },
   {
     id: 'elden-ring',
-    demoSeed: true,
     igdbTitle: 'Elden Ring',
     achievements: [
       { name: 'Age of Fracture', unlocked: true },
@@ -96,7 +87,6 @@ export const trackedGames: TrackedGame[] = [
   },
   {
     id: 'celeste',
-    demoSeed: true,
     igdbTitle: 'Celeste',
     achievements: [
       { name: 'Forsaken City', unlocked: true },
@@ -118,7 +108,6 @@ export const trackedGames: TrackedGame[] = [
   },
   {
     id: 'hades',
-    demoSeed: true,
     igdbTitle: 'Hades',
     achievements: [
       { name: 'First Escape Attempt', unlocked: true },
@@ -143,7 +132,6 @@ export const trackedGames: TrackedGame[] = [
   },
   {
     id: 'zelda-botw',
-    demoSeed: true,
     igdbTitle: 'The Legend of Zelda: Breath of the Wild',
     achievements: [],
     tracks: [
@@ -157,7 +145,6 @@ export const trackedGames: TrackedGame[] = [
   },
   {
     id: 'stardew-valley',
-    demoSeed: true,
     igdbTitle: 'Stardew Valley',
     achievements: [
       { name: 'Greenhorn', unlocked: true },

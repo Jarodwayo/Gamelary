@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { seedSignedInSession } from './auth-helpers';
+
 // Formalise les deux scénarios vérifiés manuellement en ad hoc lors de la
 // mise en place de l'import de bibliothèque Steam (voir profile/index.tsx) :
 // mêmes mocks, mêmes assertions, mais rejouables en CI plutôt que des
@@ -69,6 +71,13 @@ async function mockIgdbSteamAppIdLookup(page: Page, appid: number, body: unknown
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
   );
 }
+
+// AuthGate (voir ARCHITECTURE.md §9.7) bloque tout écran tant que
+// `signedIn` n'est pas atteint : chaque test de ce fichier a besoin d'une
+// session déjà valide pour atteindre le Profil qu'il teste réellement.
+test.beforeEach(async ({ page }) => {
+  await seedSignedInSession(page);
+});
 
 test('succès avec jeux mixtes : complète le jeu non suivi, ne touche jamais aux heures déjà suivies', async ({
   page,

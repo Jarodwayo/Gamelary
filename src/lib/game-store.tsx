@@ -1,7 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import { trackedGames, trackId } from '@/data/tracked-games';
 import type { StoredProfile } from '@/lib/profile';
 import type { TitleArtwork } from '@/lib/title-artwork';
 import { slugify } from '@/lib/slug';
@@ -120,36 +119,17 @@ function updateGame(prev: StoreShape, id: string, patch: Partial<StoredGame>): S
 }
 
 // État initial avant toute lecture d'AsyncStorage (et avant que le premier
-// lancement ait rien écrit) : les jeux de démonstration de tracked-games.ts
-// (demoSeed: true seulement — les autres entrées n'y sont que pour leur
-// bande originale curatée, voir tracked-games.ts, pas pour peupler la
-// bibliothèque de démo), plateforme vide (résolue par useGame via IGDB),
-// aucune liste peuplée. Ancien historique déjà écrit une fois -> AsyncStorage
-// prend le dessus dans le useEffect de chargement, ce seed ne sert qu'au
-// tout premier lancement.
+// lancement ait rien écrit) : bibliothèque vide. La connexion est désormais
+// un prérequis pour atteindre cet écran (voir AuthGate, src/components/
+// auth-gate.tsx) — il n'y a plus de mode "essayer sans compte" à amorcer
+// avec des jeux de démonstration ; un nouvel utilisateur connecté part d'une
+// bibliothèque vide et ajoute/importe ses propres jeux. Ancien historique
+// déjà écrit une fois -> AsyncStorage prend le dessus dans le useEffect de
+// chargement, ce seed ne sert qu'au tout premier lancement.
 function seedStore(): StoreShape {
-  const games: Record<string, StoredGame> = {};
-  for (const tracked of trackedGames.filter((game) => game.demoSeed)) {
-    games[tracked.id] = {
-      id: tracked.id,
-      title: tracked.igdbTitle,
-      platform: '',
-      inLibrary: true,
-      stopped: false,
-      achievements: tracked.achievements.map((a) => ({
-        id: makeAchievementId(tracked.id, a.name),
-        name: a.name,
-        unlocked: a.unlocked,
-      })),
-      favoriteTrackId: tracked.favoriteTrackTitle
-        ? trackId(tracked.id, tracked.favoriteTrackTitle)
-        : undefined,
-      playSessions: [],
-    };
-  }
   return {
     version: STORE_VERSION,
-    games,
+    games: {},
     lists: {
       favoris: { id: 'favoris', name: 'Favoris', builtin: true, gameIds: [] },
       wishlist: { id: 'wishlist', name: 'Wishlist', builtin: true, gameIds: [] },

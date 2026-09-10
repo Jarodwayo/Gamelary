@@ -1,5 +1,43 @@
 import { test, expect } from '@playwright/test';
 
+import { seedSignedInSession } from './auth-helpers';
+
+// Un jeu suivi ET favori : sans lui, les rangées "Jeux joués"/"Jeux
+// préférés" du Profil (voir profile/index.tsx) affichent chacune leur état
+// vide, avec un lien "Explorer des jeux" bien plus court qu'une rangée de
+// jaquettes — cette page raccourcie ne nécessite plus le moindre défilement
+// pour tenir dans le viewport, et ce lien atterrit alors dans la bande
+// que la barre d'onglets recouvre en position absolue, PILE le piège que
+// ce fichier existe pour attraper. Peuplé ici plutôt que de laisser la
+// bibliothèque vide par défaut (voir game-store.tsx : plus de seed de
+// démo depuis que la connexion est obligatoire, ARCHITECTURE.md §9.7) —
+// sans quoi ce test confondrait ce recouvrement, réel mais distinct du
+// sien, avec sa propre vérification.
+const SEED_STATE = {
+  games: {
+    'jeu-suivi': {
+      id: 'jeu-suivi',
+      title: 'Jeu Suivi',
+      platform: 'PC',
+      inLibrary: true,
+      stopped: false,
+      achievements: [],
+      playSessions: [],
+    },
+  },
+  lists: {
+    favoris: { id: 'favoris', name: 'Favoris', builtin: true, gameIds: ['jeu-suivi'] },
+    wishlist: { id: 'wishlist', name: 'Wishlist', builtin: true, gameIds: [] },
+  },
+  settings: {},
+};
+
+async function seedGameStore(page: import('@playwright/test').Page) {
+  await page.addInitScript((state) => {
+    localStorage.setItem('gamelary/game-store/v5', JSON.stringify(state));
+  }, SEED_STATE);
+}
+
 // Sur le bundle web, la barre d'onglets est une pilule en position absolue
 // (voir src/components/app-tabs.web.tsx) : elle se superpose au contenu.
 // Un contrôle situé à sa hauteur est alors visuellement masqué ET
@@ -106,6 +144,15 @@ async function inspect(page: import('@playwright/test').Page): Promise<{ bar: Re
     return { bar, covered };
   });
 }
+
+// AuthGate (voir ARCHITECTURE.md §9.7) bloque tout écran tant que
+// `signedIn` n'est pas atteint : chaque route testée ici est derrière ce
+// verrou (toutes vivent sous les onglets), donc chaque test a besoin d'une
+// session déjà valide pour atteindre l'écran qu'il inspecte réellement.
+test.beforeEach(async ({ page }) => {
+  await seedSignedInSession(page);
+  await seedGameStore(page);
+});
 
 for (const scheme of ['light', 'dark'] as const) {
   for (const [route, label] of ROUTES) {
