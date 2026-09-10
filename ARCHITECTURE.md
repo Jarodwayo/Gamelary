@@ -560,11 +560,11 @@ garde-fou retenu est une limite par IP, la même des deux côtés :
 
 | Route | Limite | Implémentation |
 |---|---|---|
-| `/api/games` (IGDB) | 30 req/min par IP | Compteur en mémoire dans le module (`games+api.ts`) |
-| `/api/cover` (SteamGridDB) | aucune | **Trou connu**, voir plus bas |
+| `/api/games` (IGDB) | 30 req/min par IP | `createRateLimiter` (`src/lib/rate-limit.ts`), seau dédié |
+| `/api/cover` (SteamGridDB) | 120 req/min par IP | Même `createRateLimiter`, seau **séparé** et bien plus haut — voir plus bas |
 | `/api/steam/*` (gamelary-api) | 30 req/min par IP | `express-rate-limit`, monté une seule fois sur le préfixe |
 
-Deux points appris en chemin, tous deux vérifiés par des tests :
+Quatre points appris en chemin, tous vérifiés par des tests :
 
 - **Le limiteur monté sur chaque routeur plutôt que sur le préfixe compte
   double.** Monté deux fois sur `/api/steam`, une requête vers `/games`
@@ -576,6 +576,20 @@ Deux points appris en chemin, tous deux vérifiés par des tests :
   dans le même seau. Réglé à `1` (le premier hop uniquement), jamais à
   `true` : faire confiance à un `X-Forwarded-For` arbitraire laisserait
   n'importe qui se forger une IP et contourner la limite.
+- **Le premier élément de `X-Forwarded-For` est contournable, côté
+  `games+api.ts`/`cover+api.ts` cette fois.** Cet en-tête est une liste
+  "client, proxy1, proxy2..." où le PREMIER élément est écrit par
+  l'appelant lui-même — le lire revenait à offrir un compteur vierge à
+  quiconque envoie une valeur au hasard. Le proxy le plus proche AJOUTE
+  l'IP réellement vue à la **fin** : c'est le dernier élément qu'il faut
+  lire (`clientIp`, `src/lib/rate-limit.ts`), même hypothèse d'un seul hop
+  de confiance que `trust proxy: 1` côté gamelary-api.
+- **Deux routes au profil d'usage différent ne doivent pas partager un
+  seau.** `/api/cover` part en éventail depuis un seul écran (Explorer
+  demande jusqu'à 50 jaquettes d'un coup) : la limite de `/api/games`
+  (30/min) y aurait cassé l'écran au lieu de simplement le protéger, d'où
+  un seau séparé et une limite plus haute (120/min) plutôt que la même
+  valeur partout par défaut.
 
 Limites assumées à ce stade : un compteur en mémoire ne tient pas derrière
 plusieurs instances serverless (même limite que le cache, voir §8), et une
@@ -679,7 +693,7 @@ perte de données silencieuse à chaque évolution du schéma.
 
 ### 9.3 Prérequis à poser avant tout compte ✅
 
-Ces quatre points coûtaient peu tant qu'aucun compte n'existe et devenaient
+Ces six points coûtaient peu tant qu'aucun compte n'existe et devenaient
 **impossibles à rattraper** ensuite : une donnée écrite sans horodatage n'en
 aura jamais un a posteriori, et un jeu enregistré sans id IGDB devrait être
 re-résolu à l'aveugle depuis son titre. Ils sont faits — aucun n'apporte
@@ -712,8 +726,23 @@ qu'ils ont chacun leurs tests.
    jeu existent réellement — `addAchievement` n'impose aucune unicité).
 4. ✅ **Migrations de forme** à la place du bump-de-clé destructif, avec la
    version stockée *dans* le blob (`store-migrations.ts`).
-
-### 9.4 Schéma distant (Postgres / Supabase)
+5. ✅ **`steamAppId` protégé au même titre que l'id IGDB** :
+   `registerCatalogGame` remplaçait encore le `steamAppId` connu par
+   `undefined` quand une résolution n'en rapportait pas (relevé en §9.6,
+   laissé ouvert le temps du point 1 pour ne pas élargir ce chantier-là).
+   Même correctif que pour `igdbId` — repli sur la valeur déjà connue,
+   garde « rien n'a changé » comparée sur la valeur résultante — et pour
+   la même raison : un rafraîchissement dégradé ne doit jamais faire
+   perdre une identité externe déjà établie.
+6. ✅ **`steam_id64` horodaté** (`Settings.steamId64UpdatedAt`,
+   `game-store.tsx`), à côté du champ plutôt que via `updateGame` — ce
+   dernier n'a aucune notion de « jeu » ici, la ligne `profiles` distante
+   (§9.4) est une entité différente de `user_games`. Seul `steam_id64` en
+   a besoin pour l'instant : `profile` (nom, identifiant, bio, photo,
+   arrière-plan) et `titleArtwork` n'ont pas encore de colonne distante
+   (§9.4), leur politique de fusion reste à trancher séparément — les
+   horodater maintenant reviendrait à deviner un arbitrage que le schéma
+   ne définit pas encore.
 
 Row Level Security sur **les six tables** — c'est ce qui remplace la
 logique d'autorisation qu'on écrirait à la main dans un backend classique.
@@ -890,7 +919,7 @@ bien plus cher à réparer qu'à prévenir.
 | `play_sessions` | **Union** par `client_key`, corrections comprises mais jamais rejouées | Journal append-only : fusion sans perte et sans double comptage |
 | `achievements` | Union par `(source, external_key)`, `unlocked` = **OU logique** | Un succès débloqué ne doit jamais se re-verrouiller |
 | `rating`, `review` | **Le plus récent gagne** (`updated_at`) | Valeur unique : vrai conflit, arbitrage nécessaire — **dépend du prérequis 9.3.2** |
-| `steam_id64` | Le plus récent gagne | Simple réglage, enjeu faible |
+| `steam_id64` | **Le plus récent gagne** (`steamId64UpdatedAt`) | Valeur unique, même arbitrage que rating/review — **dépend du prérequis 9.3.6** |
 
 ### 9.6 Points encore ouverts
 
@@ -902,25 +931,18 @@ bien plus cher à réparer qu'à prévenir.
   cascade` couvre l'effacement, l'export reste à concevoir.
 - **Refus de migrer** : que fait l'app si l'utilisateur crée un compte mais
   décline l'envoi de sa bibliothèque locale ?
-- **Réglages non horodatés** : §9.3.2 ne portait que sur les jeux, et
-  c'est ce qui a été implémenté. Or la table de fusion de §9.5 promet « le
-  plus récent gagne » pour `steam_id64`, arbitrage aussi impossible sans
-  horodatage que pour `rating`/`review`. À trancher : ajouter un
-  `updatedAt` aux réglages, ou se contenter de l'`updated_at` posé côté
-  serveur à l'écriture (suffisant tant qu'un seul appareil écrit à la
-  fois, faux dès qu'un appareil hors ligne renvoie une valeur ancienne).
-- **`steamAppId` écrasable par une absence** : contrairement à `igdbId`,
-  `registerCatalogGame` remplace encore le `steamAppId` connu par
-  `undefined` si une résolution n'en rapporte pas. Comportement antérieur,
-  laissé tel quel pour ne pas élargir le sujet, mais c'est la même classe
-  de perte silencieuse.
-- **Quota et abus** : une limite par IP existe désormais sur `/api/games`
-  et sur `gamelary-api` (voir §7.1), mais **pas** de limite par
+- **`profile`/`titleArtwork` non horodatés** : seul `steam_id64` l'est
+  (prérequis 9.3.6) — les autres réglages (nom, identifiant, bio, photo,
+  arrière-plan, mode d'affiche) n'ont pas encore de colonne distante
+  (§9.4), donc pas encore d'arbitrage à leur appliquer. À reprendre
+  ensemble quand cette table sera conçue, plutôt que d'horodater
+  maintenant des champs dont la politique de fusion n'est pas encore
+  décidée.
+- **Quota et abus** : une limite par IP existe sur `/api/games`,
+  `/api/cover` et `gamelary-api` (voir §7.1), mais **pas** de limite par
   utilisateur — impossible tant qu'il n'y a pas de compte, et c'est
   justement ce que les comptes rendront possible. À cadrer avant toute
-  ouverture publique. `/api/cover` (SteamGridDB) n'a toujours aucune
-  limite alors qu'il consomme lui aussi un quota tiers : même exposition
-  que `/api/games`, sans le garde-fou.
+  ouverture publique.
 
 ## 10. État actuel vs feuille de route
 
