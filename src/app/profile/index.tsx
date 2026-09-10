@@ -315,7 +315,7 @@ export default function ProfileScreen() {
             lui-même n'était plus visible pour les relire/les corriger. RN
             décale et fait défiler automatiquement vers le champ actif
             plutôt qu'un KeyboardAvoidingView manuel ici. */}
-        <ScrollView contentContainerStyle={styles.content} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.content} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
           {/* Bannière derrière la photo de profil : image choisie par
               l'utilisateur (voir profile/edit.tsx), sinon un simple aplat
               du thème — jamais un trou visuel quand rien n'est choisi. La
@@ -376,18 +376,6 @@ export default function ProfileScreen() {
                   {auth.session.user.email}
                 </ThemedText>
               </View>
-            ) : null}
-            {auth.status === 'signedOut' ? (
-              <Link href="/profile/sign-in" asChild>
-                <Pressable accessibilityRole="button" accessibilityLabel="Se connecter">
-                  <ThemedView type="backgroundElement" style={styles.signInPill}>
-                    <Ionicons name="cloud-upload-outline" size={16} color={theme.accent} />
-                    <ThemedText type="smallBold" themeColor="accent">
-                      Se connecter pour sauvegarder ta bibliothèque
-                    </ThemedText>
-                  </ThemedView>
-                </Pressable>
-              </Link>
             ) : null}
             {/* Système d'amis pas encore implémenté (voir ARCHITECTURE.md §9) :
                 figés à 0 plutôt que masqués, pour garder la même structure que
@@ -571,8 +559,24 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
+  // La barre d'onglets web est en position absolue, superposée au contenu
+  // (voir app-tabs.web.tsx) : un `paddingBottom` sur le SEUL contenu
+  // défilable (`content` ci-dessous) ne protège que le DERNIER élément,
+  // et seulement quand la page déborde assez pour défiler jusqu'à lui —
+  // c'était le bug sur bibliothèque vide (page trop courte pour défiler,
+  // "Explorer des jeux" de "Jeux préférés" recouvert par la barre alors
+  // qu'il n'est même pas le dernier élément de la page). Réservé ici sur
+  // le `ScrollView` lui-même plutôt que sur son contenu : sa propre zone
+  // visible s'arrête alors `BottomTabInset` avant le bas réel de l'écran,
+  // quelle que soit la longueur du contenu — aucun élément, à n'importe
+  // quelle position dans la page, ne peut donc jamais être disposé dans
+  // la bande que la barre recouvre.
+  scrollView: {
+    flex: 1,
+    marginBottom: BottomTabInset,
+  },
   content: {
-    paddingBottom: BottomTabInset + Spacing.four,
+    paddingBottom: Spacing.four,
     gap: Spacing.four,
   },
   banner: {
@@ -621,15 +625,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.one,
     marginTop: Spacing.two,
-  },
-  signInPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    marginTop: Spacing.two,
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: 999,
   },
   shareStatus: {
     flexDirection: 'row',
