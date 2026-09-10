@@ -5,6 +5,7 @@ import { useColorScheme } from 'react-native';
 
 import AppTabs from '@/components/app-tabs';
 import { SearchFab } from '@/components/search-fab';
+import { SignInSyncGate } from '@/components/sign-in-sync-gate';
 import { AnimatedSplashOverlay } from '@/components/splash-overlay';
 import { FontsToLoad } from '@/constants/theme';
 import { AuthProvider } from '@/lib/auth-store';
@@ -42,6 +43,7 @@ export default function TabLayout() {
           le commentaire d'AuthProvider, lib/auth-store.tsx). */}
       <AuthProvider>
         <GameStoreProvider>
+          <SignInSyncGate />
           <AnimatedSplashOverlay />
           <AppTabs />
           <SearchFab />

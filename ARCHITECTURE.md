@@ -818,36 +818,102 @@ projet, mais ce n'est pas observé directement ici) — à confirmer à la
 première connexion réelle, en répétant l'esprit du test ci-dessus depuis
 deux comptes qui existent pour de vrai, pas seulement simulés en local.
 
-### 9.5 Migration local → distant 🚧 (conçu, pas implémenté)
-
-Volontairement non touché cette session (§9.4 et l'authentification de §9.7 l'étaient) : c'est un chantier à part entière, une fois l'authentification de base validée en usage réel — mélanger les deux aurait rendu chacun plus difficile à vérifier isolément.
+### 9.5 Synchronisation local ↔ distant
 
 Le risque n'est pas l'authentification : c'est de **corrompre ou perdre une
 bibliothèque déjà constituée**. Un dégât de ce type se voit tard et coûte
-bien plus cher à réparer qu'à prévenir.
+bien plus cher à réparer qu'à prévenir. D'où la politique de fusion
+ci-dessous, conçue AVANT le code (session précédente), puis implémentée et
+mutation-testée dans celle-ci — restreinte à `user_games` + `achievements`,
+voir le détail du scope plus bas.
 
-1. **Instantané avant toute écriture.** Le blob local est copié sous une clé
-   dédiée (`gamelary/game-store/pre-migration-<ts>`) qui n'est jamais
-   écrasée ni migrée. Rien d'autre ne commence tant qu'elle n'est pas écrite.
-2. **Résolution d'identité.** Les jeux sans `igdb_id` sont re-résolus par
-   titre ; ceux qui échouent partent quand même, avec `igdb_id` à null et
-   leur slug comme identité de repli — jamais abandonnés silencieusement.
-3. **Envoi atomique.** Toute la bibliothèque part dans **une seule fonction
-   RPC Postgres** (tout ou rien) plutôt qu'en N insertions : un envoi
-   interrompu ne doit jamais laisser une demi-bibliothèque côté serveur.
-4. **Bascule après accusé de réception.** Le local n'est marqué "synchronisé"
-   qu'une fois le serveur confirmé, et l'instantané de l'étape 1 est
-   conservé plusieurs jours après ça.
-5. **Fusion si le compte contient déjà des données** (2ᵉ appareil) : par
-   type, jamais un "dernier arrivé écrase tout" global.
+| Donnée | Politique de fusion | Pourquoi | Statut |
+|---|---|---|---|
+| `in_library`, `stopped` | **Union** | Ne jamais retirer ce que l'utilisateur a ajouté depuis un autre appareil | ✅ implémenté |
+| `achievements` | Union par `(source, external_key)`, `unlocked` = **OU logique** | Un succès débloqué ne doit jamais se re-verrouiller | ✅ implémenté |
+| `rating`, `review` | **Le plus récent gagne** (`updatedAt`), jamais arbitré si absent des deux côtés | Valeur unique : vrai conflit, arbitrage nécessaire | ✅ implémenté |
+| appartenance aux listes | **Union** | Même raisonnement que `in_library` | 🚧 hors scope (voir plus bas) |
+| `play_sessions` | **Union** par `client_key`, corrections comprises mais jamais rejouées | Journal append-only : fusion sans perte et sans double comptage | 🚧 hors scope (voir plus bas) |
+| `steam_id64` | **Le plus récent gagne** (`steamId64UpdatedAt`) | Valeur unique, même arbitrage que rating/review | 🚧 hors scope (voir plus bas) |
 
-| Donnée | Politique de fusion | Pourquoi |
-|---|---|---|
-| `in_library`, `stopped`, appartenance aux listes | **Union** | Ne jamais retirer ce que l'utilisateur a ajouté depuis un autre appareil |
-| `play_sessions` | **Union** par `client_key`, corrections comprises mais jamais rejouées | Journal append-only : fusion sans perte et sans double comptage |
-| `achievements` | Union par `(source, external_key)`, `unlocked` = **OU logique** | Un succès débloqué ne doit jamais se re-verrouiller |
-| `rating`, `review` | **Le plus récent gagne** (`updated_at`) | Valeur unique : vrai conflit, arbitrage nécessaire — **dépend du prérequis 9.3.2** |
-| `steam_id64` | **Le plus récent gagne** (`steamId64UpdatedAt`) | Valeur unique, même arbitrage que rating/review — **dépend du prérequis 9.3.6** |
+**Implémenté cette session** (`user_games` + `achievements` uniquement) :
+
+- **`src/lib/sync/merge-policy.ts`** — fonctions PURES : `gameMatchKey`
+  (identité de correspondance, `igdb_id` sinon `slug` — mêmes deux index
+  uniques partiels que le schéma, §9.4), `mergeGameFields` (union
+  `inLibrary`/`stopped`, dernier-écrit-gagne `rating`/`review` gated sur
+  `updatedAt`), `mergeAchievements` (union par `(source, external_key)`, OU
+  logique sur `unlocked`). Mutation-testées : chaque règle a été
+  délibérément inversée (OU → ET, garde `updatedAt` retirée, etc.) pour
+  vérifier que la suite existante la détecte — voir
+  `__tests__/merge-policy.test.ts`.
+- **`src/lib/sync/sync-service.ts`** — orchestration IMPURE : lit
+  `user_games`/`achievements` du compte, résout la correspondance EN
+  MÉMOIRE (jamais via `ON CONFLICT`, voir la note ci-dessous), applique le
+  verdict de merge-policy.ts par un INSERT (jeu nouveau) ou un UPDATE ciblé
+  par id (jeu déjà apparié), jamais un upsert aveugle.
+- **`applySyncedGames`** (`src/lib/game-store.tsx`) — nouveau chemin
+  d'écriture DÉDIÉ au service de sync, séparé d'`updateGame` : celui-ci
+  horodate systématiquement à `Date.now()`, ce qui ferait gagner à tort
+  l'arbitrage à l'appareil qui vient de synchroniser, quel que soit le côté
+  réellement le plus récent. `applySyncedGames` écrit tel quel
+  l'`updatedAt` déjà tranché par la fusion (celui d'un des deux appareils,
+  ou absent).
+- **Déclenchement** : automatique à toute transition vers `'signedIn'`
+  (`src/hooks/use-sign-in-sync.ts`, monté via `SignInSyncGate` dans
+  `app/_layout.tsx`) — y compris la confirmation d'une session déjà
+  persistée au démarrage de l'app, pas seulement un `signIn` tapé à
+  l'instant (sans quoi rester connecté plusieurs semaines ne bénéficierait
+  jamais de la synchro automatique). Et manuel, bouton "Synchroniser
+  maintenant" dans Réglages (`src/app/profile/settings.tsx`), visible
+  seulement `status === 'signedIn'`.
+- **Portée** : seuls les jeux "trackés" (`inLibrary`, `stopped`, une note,
+  un avis, ou au moins un succès) montent vers le distant — un jeu
+  simplement aperçu dans Explorer (`registerCatalogGame` sans `updatedAt`)
+  ne crée jamais de ligne `user_games`.
+- **Mode hors-ligne préservé** : AsyncStorage reste l'unique source de
+  lecture de l'app (`GameStoreProvider`) ; la sync est un aller-retour en
+  tâche de fond qui écrit dans ce même store via `applySyncedGames`, jamais
+  un chemin de lecture séparé.
+
+**Une limite acceptée sciemment** : la correspondance jeu local ↔ ligne
+distante est résolue EN MÉMOIRE (tous les `user_games` de l'utilisateur
+sont chargés, puis appariés par `gameMatchKey`) plutôt que via un upsert
+`ON CONFLICT`, parce que les deux index uniques distants sont **partiels**
+(`(user_id, igdb_id) where igdb_id is not null` / `(user_id, slug) where
+igdb_id is null`, voir §9.4) — un upsert PostgREST ne peut viser qu'une
+seule contrainte nommée à la fois, pas les deux selon le cas. Deux appareils
+qui créeraient la MÊME identité simultanément depuis zéro (aucun des deux
+n'a encore de ligne distante) se heurteraient donc à la contrainte
+d'unicité au lieu de fusionner — un vrai risque de concurrence à deux
+appareils, non traité ici, qui recoupe la "Réconciliation d'identité
+tardive" déjà listée en §9.6.
+
+**Explicitement HORS SCOPE de cette session** (à reprendre séparément) :
+
+- **`play_sessions`** — union par `client_key`, corrections jamais
+  rejouées : demande sa propre logique de merge (append-only, pas un
+  simple OR/LWW) et ses propres tests.
+- **`lists`/`list_games`** — union de l'appartenance aux listes.
+- **`steam_id64`** (ligne `profiles`) — même politique dernier-écrit-gagne
+  que rating/review, mais sur une entité distante différente
+  (`profiles`, pas `user_games`).
+- **`profile`/`titleArtwork`** — non horodatés, politique de fusion pas
+  encore décidée (voir §9.6, inchangé).
+- **`favorite_track_title`/`favorite_track_artist`** — colonnes déjà
+  présentes dans le schéma `user_games` (§9.4) mais sans politique de
+  fusion documentée nulle part, y compris dans la table ci-dessus avant
+  cette révision : ni lues ni écrites par `sync-service.ts` pour l'instant,
+  plutôt que d'en inventer une à la volée.
+- **La migration initiale « gros import unique »** décrite dans une
+  révision précédente de cette section (instantané avant écriture, envoi
+  atomique via une seule fonction RPC Postgres, bascule après accusé de
+  réception) — un chantier différent de la synchro CONTINUE implémentée
+  ici : utile pour le tout premier envoi d'une bibliothèque déjà volumineuse
+  sans jamais la laisser à moitié partie côté serveur, mais pas ce que
+  demandait cette session. `sync-service.ts` fait aujourd'hui plusieurs
+  requêtes séquentielles (une par jeu divergent), acceptable pour le volume
+  d'une bibliothèque solo (§9.3) mais pas atomique bout en bout.
 
 ### 9.6 Points encore ouverts
 
@@ -887,14 +953,15 @@ bien plus cher à réparer qu'à prévenir.
   §9.4), jamais observés directement sur un projet réel — à confirmer à la
   première connexion.
 
-### 9.7 Authentification : implémentée ✅ (sans la synchronisation)
+### 9.7 Authentification : implémentée ✅
 
 Session distincte de la précédente (qui a écrit §9.3/§9.4) : client
-Supabase, écrans de connexion, session câblée sur l'affichage. **La
-synchronisation bibliothèque/succès/sessions (§9.5) n'est PAS commencée** —
-se connecter aujourd'hui établit une identité, rien de plus ; aucune donnée
-de jeu ne part vers ni ne revient de Supabase. Ne pas confondre « connecté »
-et « synchronisé ».
+Supabase, écrans de connexion, session câblée sur l'affichage. **À
+l'écriture de cette section, la synchronisation (§9.5) n'était pas encore
+commencée** — se connecter établissait une identité, rien de plus. Depuis,
+`user_games`/`achievements` sont synchronisés (voir §9.5) ; `play_sessions`
+et `lists`/`list_games` restent hors scope. Ne pas confondre « connecté »
+et « entièrement synchronisé ».
 
 **Client** (`src/lib/supabase.ts`, `src/lib/supabase-config.ts`) —
 configuré via `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`
@@ -1041,9 +1108,10 @@ n'existe pas ou ne charge pas (voir `game-title-header.tsx`), et
 — Google OAuth en bouton plein, lien magique par e-mail en repli, ni
 téléphone ni mot de passe), pastille "Se connecter pour sauvegarder ta
 bibliothèque" sur le Profil quand personne n'est connecté, e-mail affiché
-et "Se déconnecter" réellement câblé dans le menu "⋯" sinon — sans qu'
-aucune donnée de jeu ne soit encore synchronisée (§9.5 reste à faire).
-Plus aucun stub dans le menu "⋯".
+et "Se déconnecter" réellement câblé dans le menu "⋯" sinon — à l'époque,
+sans qu'aucune donnée de jeu ne soit encore synchronisée (`user_games`/
+`achievements` le sont depuis, voir §9.5 ; `play_sessions` et `lists`/
+`list_games` restent à faire). Plus aucun stub dans le menu "⋯".
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,
