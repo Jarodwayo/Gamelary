@@ -1076,11 +1076,10 @@ déconnecter.
   positionnés approximativement, pas un vrai popover ancré dynamiquement
   (RN n'a pas d'équivalent direct du "clic en dehors pour fermer" du web
   sans mesure de layout supplémentaire). Le nouveau menu "⋯" du Profil
-  réutilise ce même composant (`OverflowMenu`) ; ses 6 options (Partager le
-  profil/Paramètres/Modifier le profil/Créer une liste/Aide et idées/Se
-  déconnecter) sont pour l'instant des entrées sans effet (pas d'écran
-  associé, pas de compte à déconnecter) — seule l'interface du menu était
-  demandée pour cette itération.
+  réutilise ce même composant (`OverflowMenu`) ; de ses 6 options, 5 ont
+  désormais un écran ou un effet réel (Partager le profil/Paramètres/
+  Modifier le profil/Créer une liste/Aide et idées, voir plus haut) — seule
+  "Se déconnecter" reste un stub, faute de compte à déconnecter.
 - Le chevron "›" du Profil (`GameShelf`, Jeux joués/Jeux préférés) est
   pour l'instant purement visuel (pas d'écran "voir tout") — non demandé
   pour cette itération. Les rangées d'Explorer n'en ont plus du tout
