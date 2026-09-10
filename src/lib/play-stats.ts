@@ -77,6 +77,34 @@ export function hoursByMonthThisYear(games: StoredGame[]): MonthBucket[] {
   return buckets;
 }
 
+export type DayBucket = { date: string; hours: number };
+
+// Analogue de hoursByMonthThisYear, mais pour la granularité "Semaine" de
+// l'écran Statistiques : le graphique "Activité" utilisait jusqu'ici les
+// mêmes 12 barres mensuelles quel que soit le filtre sélectionné, ce qui
+// n'a aucun sens pour "Semaine" (12 barres "année" pour représenter 7
+// jours). 7 jours glissants se terminant aujourd'hui (pas la semaine
+// calendaire Lundi-Dimanche : les libellés Mois utilisent déjà "les 12 mois
+// de l'année", pas une fenêtre glissante, donc les deux granularités
+// suivent des conventions différentes — assumé, voir hoursInPeriod qui
+// filtre déjà "Semaine" en fenêtre glissante de 7 jours plutôt qu'en
+// semaine calendaire).
+export function hoursByLast7Days(games: StoredGame[]): DayBucket[] {
+  const buckets: DayBucket[] = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - i));
+    return { date: toDateKey(date), hours: 0 };
+  });
+  const indexByDate = new Map(buckets.map((bucket, index) => [bucket.date, index]));
+  for (const game of games) {
+    for (const session of game.playSessions) {
+      const index = indexByDate.get(session.date.slice(0, 10));
+      if (index !== undefined) buckets[index].hours += session.hours;
+    }
+  }
+  return buckets;
+}
+
 export type PlatformStat = { platform: string; hours: number };
 
 export function hoursByPlatform(games: StoredGame[]): PlatformStat[] {
