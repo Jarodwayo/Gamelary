@@ -649,12 +649,14 @@ sépare ce projet d'un vrai produit.
   un backend maison pour arriver à quelque chose d'utilisable ; et contre
   Firebase parce que la donnée reste du **SQL standard**, donc portable si
   le service devient un jour un mauvais choix.
-- **Google OAuth + email.** Pas de vérification par téléphone :
-  l'authentification Google fournit déjà une identité vérifiée et unique,
-  le SMS coûte de l'argent chez tous les fournisseurs sérieux, ajoute de la
-  friction à l'inscription, et ne protège de rien tant qu'il n'y a ni
-  fonctionnalité sociale ni abus à contenir. À rouvrir si l'un des deux
-  arrive.
+- **Trois méthodes, aucune vérification par téléphone** : Google OAuth,
+  e-mail + mot de passe (n'importe quel fournisseur — Gmail, Outlook,
+  Yahoo...), et lien magique par e-mail (voir §9.7 pour l'écran des trois,
+  ajouté en session 4). Pas de téléphone : l'authentification Google
+  fournit déjà une identité vérifiée et unique, le SMS coûte de l'argent
+  chez tous les fournisseurs sérieux, ajoute de la friction à l'inscription,
+  et ne protège de rien tant qu'il n'y a ni fonctionnalité sociale ni abus à
+  contenir. À rouvrir si l'un des deux arrive.
 - **L'offline-first est conservé.** AsyncStorage reste la copie de travail
   et la source de vérité de l'affichage ; Supabase est une **cible de
   synchronisation**, pas la source lue à chaque rendu. Sans ça, l'app
@@ -675,6 +677,12 @@ sépare ce projet d'un vrai produit.
   en local. C'est un changement de comportement volontaire, pas un oubli :
   à rouvrir si un mode démo/vitrine redevient nécessaire (ex. capture
   d'écran pour ce même dépôt public de démonstration).
+- **Les trois méthodes de connexion sont visibles dès le premier affichage
+  (session 4)** — aucune cachée derrière le Profil ou une option
+  secondaire : Google (bouton plein), e-mail + mot de passe (ouvre un
+  second temps avec bascule créer un compte / se connecter), lien magique
+  par e-mail (inchangé, juste remonté au même niveau visuel que les deux
+  autres). Détail en §9.7.
 
 ### 9.2 Trois obstacles dans le modèle local actuel
 
@@ -1019,13 +1027,14 @@ distinct de `signedOut`, pour ne jamais proposer un bouton qui ne mène
 nulle part), `loading`, `signedOut`, `signedIn`.
 
 **Formulaire** (`src/components/sign-in-screen.tsx`) — Google OAuth en
-bouton plein (un tap, mis en avant), lien magique par e-mail en repli,
-aucun mot de passe. Sur natif, Google ouvre un navigateur in-app
-(`WebBrowser.openAuthSessionAsync`) qui capture lui-même son propre retour ;
-sur web, `signInWithOAuth` fait naviguer la page. Le lien magique, lui,
-revient toujours par un vrai lien profond ouvert depuis l'app Mail — hors du
-contrôle de ce code, donc intercepté différemment par la route
+bouton plein (un tap, mis en avant). Sur natif, Google ouvre un navigateur
+in-app (`WebBrowser.openAuthSessionAsync`) qui capture lui-même son propre
+retour ; sur web, `signInWithOAuth` fait naviguer la page. Le lien magique,
+lui, revient toujours par un vrai lien profond ouvert depuis l'app Mail —
+hors du contrôle de ce code, donc intercepté différemment par la route
 `app/profile/sign-in.tsx` (qui lit `?code=` dans ses propres paramètres).
+Troisième méthode (e-mail + mot de passe) et refonte de l'écran en
+session 4, détaillées plus bas.
 
 **Connexion obligatoire au lancement (session 3) ✅** — jusqu'ici, se
 connecter n'était qu'une option proposée depuis le Profil (pastille « Se
@@ -1098,6 +1107,76 @@ provider Google (Client ID/Secret depuis Google Cloud Console), renseigner
 les Redirect URLs (`gamelary://profile/sign-in` + l'origine du déploiement
 web) — sans cette dernière étape, Google et le lien magique refusent de
 rediriger vers l'app après connexion.
+
+**Troisième méthode et écran unique à trois options (session 4) ✅** —
+jusqu'ici, e-mail ne voulait dire que « lien magique » ; ce n'est plus
+suffisant pour quelqu'un qui préfère un mot de passe classique (n'importe
+quel fournisseur — Gmail, Outlook, Yahoo... — contrairement à
+`signInWithGoogle`, spécifique à ce provider OAuth). `signUpWithPassword`/
+`signInWithPassword` (`auth-store.tsx`) enveloppent `supabase.auth.signUp`/
+`signInWithPassword` : ni l'un ni l'autre ne mettent à jour
+`status`/`session` eux-mêmes, exactement comme les deux méthodes
+existantes — `onAuthStateChange` s'en charge dès que supabase-js reçoit une
+session valide.
+
+**Piège attendu, gardé explicitement** : `signUp()` ne renvoie de session
+que si *Confirm email* est désactivé côté dashboard Supabase
+(Authentication > Providers > Email) — sinon le compte est bien créé mais
+`data.session` est `null` tant que le lien de confirmation envoyé par
+e-mail n'a pas été cliqué, ce que le prérequis « connexion obligatoire »
+(§9.1/plus haut) ne permet justement pas d'attendre. `signUpWithPassword`
+détecte ce cas (`!data.session`) et renvoie une erreur explicite nommant le
+réglage à changer, plutôt que de laisser croire à un succès pendant que
+l'écran reste bloqué sur `signedOut` sans explication — mutation-testé
+(inverser la condition fait échouer le test dédié).
+
+**Écran** (`src/components/sign-in-screen.tsx`, entièrement redessiné) :
+logo Gamelary centré sur un badge de couleur `accent` (le fond quasi blanc
+de `gamelary-mark.png`, pensé pour l'aplat plein du splash natif, se
+confondait avec le `background` clair du thème sans lui — vérifié à
+l'écran, pas supposé), puis trois méthodes empilées en pilules, toutes
+visibles dès le premier affichage — aucune cachée derrière le Profil ou
+présentée comme secondaire sous une autre : Google (inchangé), « Créer un
+compte avec e-mail et mot de passe » (ouvre un second écran, pas tout
+affiché d'un coup), lien magique par e-mail (inchangé, juste remonté au
+même niveau visuel). Le second écran porte le formulaire e-mail + mot de
+passe avec bascule « Déjà un compte ? Se connecter » / « Pas de compte ?
+Créer un compte » (un seul écran, deux modes plutôt que deux écrans
+séparés) et un bouton « Retour ». Validation client avant tout appel réseau
+(`src/lib/password.ts`, même principe que `isValidEmail`, email.ts) :
+minimum 6 caractères (défaut Supabase), affiché en toutes lettres sous le
+champ plutôt que deviné depuis un bouton simplement désactivé — Supabase
+reste le seul juge final si ce minimum diffère côté dashboard, son message
+d'erreur remonte alors tel quel (comme « e-mail déjà utilisé » ou « mauvais
+mot de passe », jamais traduits, cohérent avec l'absence de couche i18n
+déjà notée pour Google/lien magique).
+
+**Vérifications** : 13 tests Jest nouveaux pour l'écran
+(`sign-in-screen.test.tsx` : les trois méthodes visibles au premier rendu,
+navigation vers le formulaire et retour, bascule créer un compte/se
+connecter, bon appel (`signUpWithPassword` vs `signInWithPassword`) selon
+le mode avec e-mail rogné, bouton désactivé si mot de passe trop court,
+erreurs serveur affichées), plus 7 nouveaux dans `auth-store.test.tsx`
+(transmission des arguments, erreur serveur relayée telle quelle, garde
+« Confirm email », absence de client) — tous mutation-testés (mode
+créer-compte/se-connecter interverti, garde `session` inversée, validation
+du mot de passe retirée : chaque mutation fait échouer le test qui lui
+correspond avant d'être restaurée). Conditions réelles vérifiées
+manuellement (`expo start --web`, Chromium headless, clair **et** sombre) :
+logo visible dans les deux thèmes (capture d'écran à l'appui — c'est cette
+vérification qui a révélé le badge manquant), écran à trois options,
+formulaire e-mail + mot de passe avec bouton désactivé tant qu'invalide.
+Critère d'acceptation vérifié en conditions réelles avec une session
+Supabase pré-écrite (même technique que `e2e/auth-helpers.ts`) : une
+session valide déjà présente au démarrage saute directement aux onglets
+(jamais l'écran de connexion, y compris après un rechargement complet
+simulant un relancement) ; « Se déconnecter » depuis le menu « ⋯ » du
+Profil y ramène immédiatement. **Non vérifié** : `signUp`/
+`signInWithPassword` de bout en bout contre un vrai projet Supabase (aucun
+n'existe dans cet environnement de développement, même limite que Google/
+lien magique en session précédente) — seul le câblage (quel bouton appelle
+quelle méthode, avec quels arguments, dans quel état) est couvert, pas le
+comportement réel de l'API Supabase.
 
 ## 10. État actuel vs feuille de route
 

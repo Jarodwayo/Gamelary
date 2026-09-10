@@ -21,6 +21,16 @@ type AuthContextValue = {
   session: Session | null;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signInWithEmail: (email: string) => Promise<{ error: string | null }>;
+  // Troisième méthode (voir sign-in-screen.tsx) : e-mail + mot de passe,
+  // n'importe quel fournisseur (Gmail, Outlook...), contrairement à
+  // signInWithGoogle qui est spécifique à ce provider OAuth. Deux actions
+  // distinctes plutôt qu'une seule "upsert" : Supabase lui-même distingue
+  // signUp (crée un compte, erreur si l'e-mail existe déjà) de
+  // signInWithPassword (erreur générique "Invalid login credentials" si
+  // l'e-mail est inconnu OU le mot de passe faux — jamais lequel des deux,
+  // pour ne pas révéler qu'un e-mail est enregistré).
+  signUpWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
+  signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
   // Appelé par l'écran de connexion quand il atterrit avec un `?code=` dans
   // ses paramètres (retour d'un lien magique cliqué depuis l'app Mail,
   // jamais ouvert par notre propre code — donc jamais vu par
@@ -125,6 +135,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   }
 
+  // Comme signInWithGoogle/signInWithEmail : ni l'un ni l'autre ne mettent
+  // à jour `status`/`session` eux-mêmes, ça reste le rôle unique
+  // d'onAuthStateChange ci-dessus (une session valide déclenche déjà cet
+  // événement dès que supabase-js la reçoit, pas besoin de dupliquer cette
+  // mise à jour ici).
+  async function signUpWithPassword(email: string, password: string): Promise<{ error: string | null }> {
+    if (!client) return { error: NOT_CONFIGURED_ERROR };
+    const { data, error } = await client.auth.signUp({ email, password });
+    if (error) return { error: error.message };
+    // Sans session retournée, "Confirm email" est encore actif côté
+    // dashboard Supabase (Authentication > Providers > Email) : le compte
+    // est bien créé, mais aucune session tant que le lien de confirmation
+    // envoyé par e-mail n'a pas été cliqué — ce que ce prérequis
+    // "connexion obligatoire" (voir ARCHITECTURE.md §9.1/§9.7) ne permet
+    // justement pas d'attendre. Erreur explicite plutôt qu'un écran
+    // silencieusement bloqué sur `signedOut` sans la moindre explication.
+    if (!data.session) {
+      return {
+        error:
+          'Compte créé, mais "Confirm email" est encore actif côté Supabase (Authentication > Providers > Email) — désactive-le pour une connexion immédiate.',
+      };
+    }
+    return { error: null };
+  }
+
+  async function signInWithPassword(email: string, password: string): Promise<{ error: string | null }> {
+    if (!client) return { error: NOT_CONFIGURED_ERROR };
+    const { error } = await client.auth.signInWithPassword({ email, password });
+    return { error: error?.message ?? null };
+  }
+
   async function completeSignInFromCode(code: string): Promise<{ error: string | null }> {
     if (!client) return { error: null };
     const { error } = await client.auth.exchangeCodeForSession(code);
@@ -141,6 +182,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     signInWithGoogle,
     signInWithEmail,
+    signUpWithPassword,
+    signInWithPassword,
     completeSignInFromCode,
     signOut,
   };
