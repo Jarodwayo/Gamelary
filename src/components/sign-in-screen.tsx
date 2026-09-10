@@ -32,9 +32,18 @@ import { isValidPassword, MIN_PASSWORD_LENGTH } from '@/lib/password';
 // depuis la session précédente, juste remonté au même niveau que les deux
 // autres plutôt que présenté comme un repli sous Google). Pas de vérification
 // par téléphone, cohérent avec ARCHITECTURE.md §9.1.
-type Step = 'options' | 'password';
+//
+// "Mot de passe oublié" (session 5) : lien visible uniquement en mode
+// 'signin' (créer un compte n'a pas encore de mot de passe à oublier),
+// ouvre le troisième step 'forgot-password' (saisie d'e-mail,
+// resetPasswordForEmail — voir auth-store.tsx pour le détail du mécanisme
+// de lien profond réutilisé). Une fois revenu via ce lien,
+// `auth.status === 'passwordRecovery'` court-circuite tout le step
+// ci-dessus au profit d'un formulaire "nouveau mot de passe" dédié (voir
+// plus bas, même endroit que les branches 'unconfigured'/'loading').
+type Step = 'options' | 'password' | 'forgot-password';
 type PasswordMode = 'signup' | 'signin';
-type Busy = 'google' | 'magiclink' | 'password' | null;
+type Busy = 'google' | 'magiclink' | 'password' | 'reset' | 'newPassword' | null;
 type StatusMessage = { tone: 'error' | 'info'; text: string };
 
 const LOGO_WIDTH = 56;
@@ -59,6 +68,11 @@ export function SignInScreen({ deepLinkError }: { deepLinkError?: string | null 
 
   const [pwEmail, setPwEmail] = useState('');
   const [pwPassword, setPwPassword] = useState('');
+
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+
+  const [newPassword, setNewPassword] = useState('');
 
   const [busy, setBusy] = useState<Busy>(null);
   const [status, setStatus] = useState<StatusMessage | null>(null);
@@ -116,6 +130,39 @@ export function SignInScreen({ deepLinkError }: { deepLinkError?: string | null 
     if (error) setStatus({ tone: 'error', text: error });
   }
 
+  async function handleResetPassword() {
+    if (!isValidEmail(resetEmail)) return;
+    setBusy('reset');
+    setStatus(null);
+    const { error } = await auth.resetPasswordForEmail(resetEmail.trim());
+    setBusy(null);
+    if (error) {
+      setStatus({ tone: 'error', text: error });
+      return;
+    }
+    setResetSent(true);
+    setStatus({
+      tone: 'info',
+      text: `Lien de réinitialisation envoyé à ${resetEmail.trim()}. Ouvre-le depuis cet appareil.`,
+    });
+  }
+
+  const canSubmitNewPassword = isValidPassword(newPassword) && busy === null;
+
+  // Pas de redirection manuelle au succès, comme les trois autres méthodes
+  // (voir leur commentaire) : updatePassword() fait remonter 'USER_UPDATED'
+  // avec la session de récupération déjà valide (voir auth-store.tsx),
+  // `status` repasse de lui-même à 'signedIn' et AuthGate démonte ce
+  // composant — pas de deuxième connexion à refaire.
+  async function handleUpdatePassword() {
+    if (!canSubmitNewPassword) return;
+    setBusy('newPassword');
+    setStatus(null);
+    const { error } = await auth.updatePassword(newPassword);
+    setBusy(null);
+    if (error) setStatus({ tone: 'error', text: error });
+  }
+
   if (auth.status === 'unconfigured') {
     return (
       <ThemedView style={styles.container}>
@@ -127,6 +174,79 @@ export function SignInScreen({ deepLinkError }: { deepLinkError?: string | null 
               la bibliothèque tant qu’aucun compte Supabase n’est renseigné.
             </ThemedText>
           </View>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  // Court-circuite tout le step 'options'/'password'/'forgot-password'
+  // ci-dessous, quel que soit l'endroit d'où l'utilisateur est reparti
+  // (deep link natif ou detectSessionInUrl sur web, voir auth-store.tsx) :
+  // une session de récupération valide n'a rien à faire d'un formulaire de
+  // connexion, seulement de celui-ci.
+  if (auth.status === 'passwordRecovery') {
+    return (
+      <ThemedView style={styles.container}>
+        <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
+          <ScrollView contentContainerStyle={styles.content} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
+            <View style={styles.logoRow}>
+              <View style={[styles.logoBadge, { backgroundColor: theme.accent }]}>
+                <Image style={styles.logo} source={require('@/assets/images/gamelary-mark.png')} />
+              </View>
+            </View>
+
+            <ThemedText type="subtitle" style={styles.stepTitle}>
+              Nouveau mot de passe
+            </ThemedText>
+            <ThemedText themeColor="textSecondary" style={styles.intro}>
+              Choisis un nouveau mot de passe pour ton compte.
+            </ThemedText>
+
+            <View style={styles.field}>
+              <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
+                NOUVEAU MOT DE PASSE
+              </ThemedText>
+              <TextInput
+                value={newPassword}
+                onChangeText={setNewPassword}
+                onSubmitEditing={handleUpdatePassword}
+                placeholder={`${MIN_PASSWORD_LENGTH} caractères minimum`}
+                placeholderTextColor={theme.textSecondary}
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry
+                textContentType="newPassword"
+                editable={busy === null}
+                style={[styles.input, { color: theme.text, backgroundColor: theme.backgroundElement }]}
+              />
+              <ThemedText type="small" themeColor="textSecondary">
+                Au moins {MIN_PASSWORD_LENGTH} caractères.
+              </ThemedText>
+            </View>
+
+            <Pressable
+              onPress={handleUpdatePassword}
+              disabled={!canSubmitNewPassword}
+              accessibilityRole="button"
+              accessibilityLabel="Mettre à jour le mot de passe"
+              style={[styles.pillButton, { backgroundColor: canSubmitNewPassword ? theme.accent : theme.backgroundSelected }]}>
+              {busy === 'newPassword' ? (
+                <ActivityIndicator color={theme.accentInk} />
+              ) : (
+                <ThemedText type="smallBold" style={{ color: canSubmitNewPassword ? theme.accentInk : theme.textSecondary }}>
+                  Mettre à jour le mot de passe
+                </ThemedText>
+              )}
+            </Pressable>
+
+            {displayedStatus ? (
+              <ThemedText
+                themeColor={displayedStatus.tone === 'error' ? 'danger' : 'textSecondary'}
+                style={styles.statusText}>
+                {displayedStatus.text}
+              </ThemedText>
+            ) : null}
+          </ScrollView>
         </SafeAreaView>
       </ThemedView>
     );
@@ -239,7 +359,7 @@ export function SignInScreen({ deepLinkError }: { deepLinkError?: string | null 
                 </Pressable>
               </View>
             </>
-          ) : (
+          ) : step === 'password' ? (
             <>
               <Pressable
                 onPress={backToOptions}
@@ -314,6 +434,24 @@ export function SignInScreen({ deepLinkError }: { deepLinkError?: string | null 
                 )}
               </Pressable>
 
+              {/* Uniquement en mode "se connecter" : créer un compte n'a pas
+                  encore de mot de passe à oublier. */}
+              {passwordMode === 'signin' ? (
+                <Pressable
+                  onPress={() => {
+                    setStatus(null);
+                    setStep('forgot-password');
+                  }}
+                  disabled={busy !== null}
+                  accessibilityRole="button"
+                  accessibilityLabel="Mot de passe oublié ?"
+                  style={styles.toggleRow}>
+                  <ThemedText type="small" themeColor="accent">
+                    Mot de passe oublié ?
+                  </ThemedText>
+                </Pressable>
+              ) : null}
+
               <Pressable
                 onPress={() => {
                   setStatus(null);
@@ -326,6 +464,70 @@ export function SignInScreen({ deepLinkError }: { deepLinkError?: string | null 
                 <ThemedText type="small" themeColor="accent">
                   {passwordMode === 'signup' ? 'Déjà un compte ? Se connecter' : 'Pas de compte ? Créer un compte'}
                 </ThemedText>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Pressable
+                onPress={() => {
+                  setStatus(null);
+                  setStep('password');
+                }}
+                disabled={busy !== null}
+                accessibilityRole="button"
+                accessibilityLabel="Retour"
+                style={[styles.backRow, { opacity: busy !== null ? 0.5 : 1 }]}>
+                <Ionicons name="arrow-back" size={18} color={theme.textSecondary} />
+                <ThemedText themeColor="textSecondary">Retour</ThemedText>
+              </Pressable>
+
+              <ThemedText type="subtitle" style={styles.stepTitle}>
+                Mot de passe oublié
+              </ThemedText>
+              <ThemedText themeColor="textSecondary" style={styles.intro}>
+                Indique ton e-mail : on t’envoie un lien pour choisir un nouveau mot de passe.
+              </ThemedText>
+
+              <View style={styles.field}>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
+                  E-MAIL
+                </ThemedText>
+                <TextInput
+                  value={resetEmail}
+                  onChangeText={(value) => {
+                    setResetEmail(value);
+                    setResetSent(false);
+                  }}
+                  onSubmitEditing={handleResetPassword}
+                  placeholder="toi@exemple.com"
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                  editable={busy === null}
+                  style={[styles.input, { color: theme.text, backgroundColor: theme.backgroundElement }]}
+                />
+              </View>
+
+              <Pressable
+                onPress={handleResetPassword}
+                disabled={!isValidEmail(resetEmail) || busy !== null}
+                accessibilityRole="button"
+                accessibilityLabel="Envoyer le lien de réinitialisation"
+                style={[
+                  styles.pillButtonOutline,
+                  { borderColor: isValidEmail(resetEmail) && busy === null ? theme.accent : theme.backgroundSelected },
+                ]}>
+                {busy === 'reset' ? (
+                  <ActivityIndicator color={theme.accent} />
+                ) : (
+                  <ThemedText
+                    type="smallBold"
+                    themeColor={isValidEmail(resetEmail) && busy === null ? 'accent' : 'textSecondary'}>
+                    {resetSent ? 'Renvoyer le lien de réinitialisation' : 'Envoyer le lien de réinitialisation'}
+                  </ThemedText>
+                )}
               </Pressable>
             </>
           )}

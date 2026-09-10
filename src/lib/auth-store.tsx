@@ -14,7 +14,14 @@ import { getSupabaseClient } from '@/lib/supabase';
 // qu'un bouton a du sens. Les confondre afficherait un flux de connexion
 // cassé sur une build de développement sans clés, ou masquerait un vrai
 // problème de configuration derrière un innocent "pas connecté".
-export type AuthStatus = 'unconfigured' | 'loading' | 'signedOut' | 'signedIn';
+// 'passwordRecovery' est distinct de 'signedIn' pour la même raison : le
+// lien de réinitialisation (voir resetPasswordForEmail plus bas) établit
+// une VRAIE session valide dès l'échange du code (exactement comme un lien
+// magique), mais laisser passer directement aux onglets ici court-
+// circuiterait le formulaire "nouveau mot de passe" — l'utilisateur n'aurait
+// alors aucune occasion de changer le mot de passe qu'il vient de demander
+// à réinitialiser.
+export type AuthStatus = 'unconfigured' | 'loading' | 'signedOut' | 'signedIn' | 'passwordRecovery';
 
 type AuthContextValue = {
   status: AuthStatus;
@@ -31,6 +38,11 @@ type AuthContextValue = {
   // pour ne pas révéler qu'un e-mail est enregistré).
   signUpWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
   signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
+  // Envoie le lien de réinitialisation ; met à jour le mot de passe une fois
+  // revenu dans l'app via ce lien (voir le commentaire d'AuthStatus et celui
+  // de resetPasswordForEmail plus bas pour le détail du mécanisme).
+  resetPasswordForEmail: (email: string) => Promise<{ error: string | null }>;
+  updatePassword: (password: string) => Promise<{ error: string | null }>;
   // Appelé par l'écran de connexion quand il atterrit avec un `?code=` dans
   // ses paramètres (retour d'un lien magique cliqué depuis l'app Mail,
   // jamais ouvert par notre propre code — donc jamais vu par
@@ -75,10 +87,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // completeSignInFromCode) : un seul endroit qui fait passer
     // status/session à jour, plutôt que de dupliquer cette mise à jour à
     // chaque endroit qui peut faire varier la session.
-    const { data: subscription } = client.auth.onAuthStateChange((_event, newSession) => {
+    //
+    // 'PASSWORD_RECOVERY' : supabase-js l'émet à la place de 'SIGNED_IN'
+    // quand la session qui vient d'être établie provient d'un lien de
+    // réinitialisation (voir resetPasswordForEmail) — la distinction est
+    // décidée par le SDK lui-même à l'échange du code (le vérifieur PKCE
+    // stocké localement porte l'information), pas par ce code-ci. Tous les
+    // autres événements ('SIGNED_IN', 'TOKEN_REFRESHED', 'USER_UPDATED'...)
+    // retombent sur la même règle qu'avant : une session présente veut dire
+    // connecté. C'est ce qui fait que updatePassword() (USER_UPDATED, session
+    // déjà valide conservée) reconnecte automatiquement sans repasser par
+    // 'passwordRecovery' une seconde fois.
+    const { data: subscription } = client.auth.onAuthStateChange((event, newSession) => {
       if (cancelled) return;
       setSession(newSession);
-      setStatus(newSession ? 'signedIn' : 'signedOut');
+      setStatus(event === 'PASSWORD_RECOVERY' ? 'passwordRecovery' : newSession ? 'signedIn' : 'signedOut');
     });
 
     return () => {
@@ -166,6 +189,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   }
 
+  // Réutilise exactement le même chemin que le lien magique : même URL de
+  // redirection (authRedirectUrl -> /profile/sign-in), même intercepteur des
+  // deux côtés (detectSessionInUrl sur web, completeSignInFromCode sur
+  // natif — voir app/profile/sign-in.tsx). Rien de spécifique à écrire pour
+  // la réinitialisation à cet endroit-là : exchangeCodeForSession() est déjà
+  // le même appel pour les deux liens, seul le SDK sait (via le vérifieur
+  // PKCE stocké localement à l'envoi de CE lien) qu'il doit émettre
+  // 'PASSWORD_RECOVERY' plutôt que 'SIGNED_IN' une fois le code échangé.
+  async function resetPasswordForEmail(email: string): Promise<{ error: string | null }> {
+    if (!client) return { error: NOT_CONFIGURED_ERROR };
+    const { error } = await client.auth.resetPasswordForEmail(email, {
+      redirectTo: authRedirectUrl(),
+    });
+    return { error: error?.message ?? null };
+  }
+
+  // Appelée depuis le formulaire "nouveau mot de passe" affiché pendant
+  // `status === 'passwordRecovery'` (voir sign-in-screen.tsx) : la session
+  // de récupération établie par l'échange du code ci-dessus est déjà valide,
+  // updateUser() ne fait que changer le mot de passe dessus — pas besoin
+  // d'un second aller-retour de connexion. supabase-js émet 'USER_UPDATED'
+  // (avec cette même session) après un appel réussi, que l'écouteur
+  // ci-dessus traite comme n'importe quel autre événement porteur d'une
+  // session : `status` repasse donc de lui-même à 'signedIn'.
+  async function updatePassword(password: string): Promise<{ error: string | null }> {
+    if (!client) return { error: NOT_CONFIGURED_ERROR };
+    const { error } = await client.auth.updateUser({ password });
+    return { error: error?.message ?? null };
+  }
+
   async function completeSignInFromCode(code: string): Promise<{ error: string | null }> {
     if (!client) return { error: null };
     const { error } = await client.auth.exchangeCodeForSession(code);
@@ -184,6 +237,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signInWithEmail,
     signUpWithPassword,
     signInWithPassword,
+    resetPasswordForEmail,
+    updatePassword,
     completeSignInFromCode,
     signOut,
   };

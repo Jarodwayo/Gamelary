@@ -16,12 +16,14 @@ jest.mock('@/lib/auth-store', () => ({ useAuth: jest.fn() }));
 const mockUseAuth = useAuth as jest.Mock;
 
 type AuthMock = {
-  status: 'unconfigured' | 'loading' | 'signedOut' | 'signedIn';
+  status: 'unconfigured' | 'loading' | 'signedOut' | 'signedIn' | 'passwordRecovery';
   session: null;
   signInWithGoogle: jest.Mock;
   signInWithEmail: jest.Mock;
   signUpWithPassword: jest.Mock;
   signInWithPassword: jest.Mock;
+  resetPasswordForEmail: jest.Mock;
+  updatePassword: jest.Mock;
   completeSignInFromCode: jest.Mock;
   signOut: jest.Mock;
 };
@@ -34,6 +36,8 @@ function makeAuthMock(overrides: Partial<AuthMock> = {}): AuthMock {
     signInWithEmail: jest.fn(async () => ({ error: null })),
     signUpWithPassword: jest.fn(async () => ({ error: null })),
     signInWithPassword: jest.fn(async () => ({ error: null })),
+    resetPasswordForEmail: jest.fn(async () => ({ error: null })),
+    updatePassword: jest.fn(async () => ({ error: null })),
     completeSignInFromCode: jest.fn(async () => ({ error: null })),
     signOut: jest.fn(async () => {}),
     ...overrides,
@@ -239,4 +243,114 @@ test('mauvais mot de passe (signInWithPassword) : erreur affichée', async () =>
   await press(tree, 'Se connecter');
 
   expect(renderedText(tree)).toContain('Invalid login credentials');
+});
+
+// --- Mot de passe oublié ---
+
+test('« Mot de passe oublié ? » visible en mode connexion, absent en mode création de compte', async () => {
+  const { tree } = await render();
+  await press(tree, 'Créer un compte avec e-mail et mot de passe');
+  expect(hasLabel(tree, 'Mot de passe oublié ?')).toBe(false);
+
+  await press(tree, 'Déjà un compte ? Se connecter');
+  expect(hasLabel(tree, 'Mot de passe oublié ?')).toBe(true);
+});
+
+test('« Mot de passe oublié ? » ouvre le formulaire de réinitialisation ; « Retour » revient au mode connexion', async () => {
+  const { tree } = await render();
+  await press(tree, 'Créer un compte avec e-mail et mot de passe');
+  await press(tree, 'Déjà un compte ? Se connecter');
+
+  await press(tree, 'Mot de passe oublié ?');
+
+  expect(hasLabel(tree, 'Envoyer le lien de réinitialisation')).toBe(true);
+  expect(hasLabel(tree, 'Se connecter')).toBe(false);
+
+  await press(tree, 'Retour');
+
+  expect(hasLabel(tree, 'Se connecter')).toBe(true);
+});
+
+test('réinitialisation : appelle resetPasswordForEmail avec l’e-mail rogné, affiche la confirmation', async () => {
+  const { tree, auth } = await render();
+  await press(tree, 'Créer un compte avec e-mail et mot de passe');
+  await press(tree, 'Déjà un compte ? Se connecter');
+  await press(tree, 'Mot de passe oublié ?');
+
+  const emailField = tree.root.findByProps({ placeholder: 'toi@exemple.com' });
+  await act(async () => {
+    emailField.props.onChangeText('  jarod@example.com  ');
+  });
+  await press(tree, 'Envoyer le lien de réinitialisation');
+
+  expect(auth.resetPasswordForEmail).toHaveBeenCalledWith('jarod@example.com');
+  expect(renderedText(tree)).toContain('jarod@example.com');
+});
+
+test('réinitialisation : erreur serveur affichée', async () => {
+  const { tree } = await render({
+    resetPasswordForEmail: jest.fn(async () => ({ error: 'Adresse invalide' })),
+  });
+  await press(tree, 'Créer un compte avec e-mail et mot de passe');
+  await press(tree, 'Déjà un compte ? Se connecter');
+  await press(tree, 'Mot de passe oublié ?');
+  const emailField = tree.root.findByProps({ placeholder: 'toi@exemple.com' });
+  await act(async () => {
+    emailField.props.onChangeText('jarod@example.com');
+  });
+
+  await press(tree, 'Envoyer le lien de réinitialisation');
+
+  expect(renderedText(tree)).toContain('Adresse invalide');
+});
+
+// --- passwordRecovery : formulaire "nouveau mot de passe" ---
+
+test('passwordRecovery : affiche le formulaire "nouveau mot de passe", pas le formulaire de connexion', async () => {
+  const { tree } = await render({ status: 'passwordRecovery' });
+
+  expect(hasLabel(tree, 'Mettre à jour le mot de passe')).toBe(true);
+  expect(hasLabel(tree, 'Continuer avec Google')).toBe(false);
+  expect(hasLabel(tree, 'Se connecter')).toBe(false);
+});
+
+test('passwordRecovery : soumettre appelle updatePassword avec le nouveau mot de passe', async () => {
+  const { tree, auth } = await render({ status: 'passwordRecovery' });
+  const passwordField = tree.root.findByProps({ placeholder: '6 caractères minimum' });
+  await act(async () => {
+    passwordField.props.onChangeText('nouveau-mot-de-passe');
+  });
+
+  await press(tree, 'Mettre à jour le mot de passe');
+
+  expect(auth.updatePassword).toHaveBeenCalledWith('nouveau-mot-de-passe');
+});
+
+test('passwordRecovery : mot de passe trop court, bouton désactivé, aucun appel', async () => {
+  const { tree, auth } = await render({ status: 'passwordRecovery' });
+  const passwordField = tree.root.findByProps({ placeholder: '6 caractères minimum' });
+  await act(async () => {
+    passwordField.props.onChangeText('court');
+  });
+
+  const button = findByLabel(tree, 'Mettre à jour le mot de passe');
+  expect(button.props.disabled).toBe(true);
+
+  await press(tree, 'Mettre à jour le mot de passe');
+  expect(auth.updatePassword).not.toHaveBeenCalled();
+});
+
+test('passwordRecovery : erreur serveur affichée', async () => {
+  const { tree } = await render({
+    status: 'passwordRecovery',
+    updatePassword: jest.fn(async () => ({ error: 'Mot de passe trop faible' })),
+  });
+  const passwordField = tree.root.findByProps({ placeholder: '6 caractères minimum' });
+  await act(async () => {
+    passwordField.props.onChangeText('nouveau-mdp');
+  });
+
+  await press(tree, 'Mettre à jour le mot de passe');
+
+  expect(renderedText(tree)).toContain('Mot de passe trop faible');
 });

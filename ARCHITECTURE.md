@@ -698,6 +698,16 @@ sépare ce projet d'un vrai produit.
   second temps avec bascule créer un compte / se connecter), lien magique
   par e-mail (inchangé, juste remonté au même niveau visuel que les deux
   autres). Détail en §9.7.
+- **Réinitialisation de mot de passe (session 5), même mécanisme de lien
+  profond que le lien magique** — pas un second système à maintenir :
+  `resetPasswordForEmail` réutilise la même URL de redirection
+  (`authRedirectUrl` -> `/profile/sign-in`) et le même intercepteur des
+  deux côtés (`detectSessionInUrl` sur web, `completeSignInFromCode` sur
+  natif). Le SDK distingue lui-même les deux liens à l'échange du code
+  (`PASSWORD_RECOVERY` vs `SIGNED_IN`, décidé localement, jamais par ce
+  code applicatif) — nouveau statut `passwordRecovery` dans `AuthStatus`
+  pour ne pas laisser passer directement aux onglets sans le formulaire
+  "nouveau mot de passe". Détail en §9.7.
 
 ### 9.2 Trois obstacles dans le modèle local actuel
 
@@ -1192,6 +1202,75 @@ n'existe dans cet environnement de développement, même limite que Google/
 lien magique en session précédente) — seul le câblage (quel bouton appelle
 quelle méthode, avec quels arguments, dans quel état) est couvert, pas le
 comportement réel de l'API Supabase.
+
+**Réinitialisation de mot de passe (session 5) ✅** — l'auth par mot de
+passe (session 4) restait incomplète sans un moyen d'en récupérer un
+oublié. Plutôt qu'un second mécanisme de lien profond à maintenir en
+parallèle du lien magique, `resetPasswordForEmail` (`auth-store.tsx`)
+réutilise **exactement** le même chemin : même URL de redirection
+(`authRedirectUrl` -> `/profile/sign-in`), même intercepteur des deux
+côtés (`detectSessionInUrl` sur web, `completeSignInFromCode` sur natif,
+voir plus haut) — rien de spécifique à écrire pour ce nouveau lien à cet
+endroit-là, `exchangeCodeForSession()` est déjà le même appel pour les
+deux.
+
+**Comment le SDK distingue les deux liens à l'échange du code** (pas
+évident, vérifié dans le code source de `@supabase/auth-js` avant
+d'écrire ce paragraphe, pas supposé) : `resetPasswordForEmail()` stocke
+localement le vérifieur PKCE de la requête avec un marqueur `recovery`,
+que `exchangeCodeForSession()` relit à l'échange pour émettre
+`PASSWORD_RECOVERY` au lieu de `SIGNED_IN` — décidé par un état **local**
+au device qui a demandé le lien, jamais par le contenu de l'URL ou du
+lien lui-même. Nouveau statut `passwordRecovery` dans `AuthStatus` pour
+ce cas précis : la session établie est réellement valide (comme pour un
+lien magique), mais la laisser passer directement aux onglets
+court-circuiterait le formulaire "nouveau mot de passe" — l'utilisateur
+n'aurait alors jamais l'occasion de changer le mot de passe qu'il vient
+de demander à réinitialiser.
+
+**Écran** : lien « Mot de passe oublié ? » visible uniquement en mode
+« Se connecter » (créer un compte n'a pas encore de mot de passe à
+oublier) sur `sign-in-screen.tsx`, ouvrant un troisième step (saisie
+d'e-mail, même pattern que le lien magique — confirmation « Ouvre-le
+depuis cet appareil » après envoi). `auth.status === 'passwordRecovery'`
+court-circuite tout ce step au profit d'un formulaire dédié "nouveau mot
+de passe" (un seul champ, même validation client 6 caractères que
+l'inscription, `password.ts`), affiché au même endroit que les branches
+`unconfigured`/`loading` déjà existantes. `updatePassword` (`updateUser({
+password })`) ne redirige nulle part explicitement : supabase-js émet
+`USER_UPDATED` avec la session de récupération toujours valide, traité
+par le même écouteur `onAuthStateChange` que tous les autres événements
+porteurs d'une session — `status` repasse donc de lui-même à `signedIn`,
+sans deuxième connexion à refaire (c'était le critère d'acceptation
+explicite de cette session).
+
+**Vérifications** : 6 tests Jest nouveaux dans `auth-store.test.tsx`
+(transmission e-mail/URL de redirection identique à Google/lien magique,
+erreur serveur relayée telle quelle pour les deux méthodes, absence de
+client) plus 2 dédiés à la distinction d'événement (`PASSWORD_RECOVERY`
+→ statut `passwordRecovery` malgré une session valide ; `USER_UPDATED`
+après une récupération → repasse à `signedIn` de lui-même) ; 7 nouveaux
+dans `sign-in-screen.test.tsx` (lien visible en mode connexion seulement,
+navigation vers le formulaire et retour, appel `resetPasswordForEmail`
+avec l'e-mail rogné, erreur affichée, formulaire "nouveau mot de passe"
+affiché sous `passwordRecovery` à l'exclusion du formulaire de connexion,
+appel `updatePassword`, mot de passe trop court bloqué) — tous
+mutation-testés (condition d'événement inversée, garde de mode
+« signin » inversée, statut de court-circuit inversé : chaque mutation
+fait échouer exactement les tests qui lui correspondent). Conditions
+réelles vérifiées manuellement (`expo start --web`, Chromium headless,
+clair **et** sombre) : lien « Mot de passe oublié ? » et formulaire de
+réinitialisation atteignables normalement (capture d'écran à l'appui) ;
+le formulaire "nouveau mot de passe" n'étant reproductible qu'avec un
+vrai clic sur un lien e-mail (aucun projet Supabase réel disponible ici),
+vérifié en forçant temporairement `status` à `passwordRecovery` dans
+`AuthProvider` pour la capture d'écran, retiré avant de committer — les
+deux thèmes rendent correctement, sans surprise puisque cet écran
+réutilise entièrement les mêmes styles déjà vérifiés pour le formulaire
+mot de passe. **Non vérifié** : le flux complet contre un vrai projet
+Supabase (envoi réel de l'e-mail, clic sur le lien, distinction
+`PASSWORD_RECOVERY` observée en conditions réelles plutôt que déduite du
+code source du SDK).
 
 ## 10. État actuel vs feuille de route
 
