@@ -54,5 +54,8 @@
     "test": "jest",
     "test:e2e": "playwright test"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "private": true
 }
