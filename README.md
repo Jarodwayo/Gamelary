@@ -74,7 +74,7 @@ raisonnement complet est dans [ARCHITECTURE.md §6.3 et §7](./ARCHITECTURE.md).
 
 ### Prérequis
 
-- Node.js 20+
+- Node.js 22+
 - Un simulateur iOS / émulateur Android, ou simplement un navigateur pour la version web
 
 ### Installation
