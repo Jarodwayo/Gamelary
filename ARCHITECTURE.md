@@ -87,17 +87,29 @@ avant de coder Explorer/Profil/Statistiques pour éviter de styliser chaque
   écrans, contrairement à Profil qui la garde, voir plus bas).
 - **Rangée horizontale** (`GameShelf`, `src/components/game-shelf.tsx`) —
   Profil ("Jeux joués"/"Jeux préférés") uniquement désormais : titre de
-  section en gras + chevron "›" + scroll horizontal sans indicateur
+  section en gras, compteur de jeux **sous** le titre (petit texte
+  secondaire, comme le ferait un sous-titre — pas à côté sur la même
+  ligne : posé à côté, un total se lisait comme une seconde donnée au même
+  niveau que le titre plutôt que comme la légende discrète qu'il est) +
+  chevron "›" seul sur la droite + scroll horizontal sans indicateur
   visible, plateforme affichée sous le titre (seul contexte à la garder).
-  Prop `size` ('small', par défaut — utilisée par "Jeux préférés' — ou
-  'large' — "Jeux joués") : cartes `LargeShelfCard` à la même largeur que
-  `GameGrid` (`useGridItemWidth`, exportée depuis `game-grid.tsx` — un seul
-  point de vérité pour cette taille, pas une valeur choisie à part), mais
-  toujours dans un scroll horizontal, pas une grille qui retourne à la
-  ligne (le Profil reste un aperçu). `emptyAction` (optionnel) affiche un
-  lien vers Explorer sous le message d'état vide — un nouvel utilisateur
-  sans jeu joué/favori voit un vrai point de départ plutôt qu'un texte
-  explicatif suivi de rien à faire. `FeaturedShelf` (même fichier) est la
+  `ScrollView horizontal` plutôt que `FlatList` : ces rangées n'affichent
+  jamais qu'une poignée de jeux (aperçu du Profil, pas un parcours
+  complet), donc rien à virtualiser — et une `FlatList` imbriquée dans le
+  `ScrollView` vertical du Profil s'est révélée moins fiable au geste
+  tactile qu'un `ScrollView` simple (voir §10, Bugs corrigés). Prop `size`
+  ('small', par défaut — utilisée par "Jeux préférés' — ou 'large' —
+  "Jeux joués") : cartes `LargeShelfCard` à la même largeur que `GameGrid`
+  (`useGridItemWidth`, exportée depuis `game-grid.tsx` — un seul point de
+  vérité pour cette taille, pas une valeur choisie à part), mais toujours
+  dans un scroll horizontal, pas une grille qui retourne à la ligne (le
+  Profil reste un aperçu) — jamais de scroll forcé quand le contenu tient
+  déjà dans la largeur visible (ex. 2 favoris), comportement natif d'un
+  `ScrollView` horizontal. `emptyAction` (optionnel) affiche un lien vers
+  Explorer sous le message d'état vide — un nouvel utilisateur sans jeu
+  joué/favori voit un vrai point de départ plutôt qu'un texte explicatif
+  suivi de rien à faire. `FeaturedShelf` (même fichier, toujours une
+  `FlatList` — Explorer, pas concerné par ce changement) est la
   variante utilisée par "Recommandé pour toi" sur Explorer : cartes
   `GameCoverFeatured` (plus grandes) avec un badge ("Recommandé") superposé
   sur la jaquette, jamais de plateforme — délibérément distincte de la
@@ -121,8 +133,11 @@ différents :
 - Un `style` sous forme de **fonction** (`({pressed}) => ({...})`, même
   quand elle renvoie un objet propre, sans tableau) ne plante pas mais
   applique la largeur/le fond de façon incohérente selon la position de la
-  carte dans une liste horizontale (`FlatList horizontal`) — chaque carte
-  affectée retombant sur la taille de son propre contenu. Trouvé sur
+  carte dans une liste horizontale (`FlatList horizontal` à l'époque —
+  `GameShelf` est passé à `ScrollView` depuis, voir plus haut, mais le
+  piège concerne `<Link asChild>` lui-même, pas le conteneur qui l'entoure)
+  — chaque carte affectée retombant sur la taille de son propre contenu.
+  Trouvé sur
   `LargeShelfCard` (Profil, "Jeux joués" : les cartes rétrécissaient une
   par une après les deux premières) et sur la carte "Temps de jeu" du
   Profil (fond/coins/padding disparus, alors que "Jeux joués" juste à côté,
@@ -1296,7 +1311,8 @@ bibliothèque vide.
 - Toujours sur `<Link asChild>`, un `style` sous forme de fonction
   (`({ pressed }) => ({...})`) — donc pas un tableau, cette fois — ne fait
   pas planter le rendu mais s'applique de façon incohérente sur les cartes
-  d'une `FlatList` horizontale : trouvé sur "Jeux joués" du Profil (cartes
+  d'une liste horizontale (`FlatList` à l'époque — voir §2, `GameShelf` est
+  passé à `ScrollView` depuis) : trouvé sur "Jeux joués" du Profil (cartes
   à des largeurs différentes selon le titre, retombant sur la taille de
   leur propre contenu) et sur la case "Temps de jeu" (fond/padding
   manquants, visible sur appareil réel à côté de "Jeux joués" qui lui en
@@ -1324,6 +1340,34 @@ bibliothèque vide.
   retombe automatiquement sur l'icône classique (`icon.png`, voir
   `withIosIcons.js` dans `@expo/prebuild-config`) — un bundle `.icon`
   correctement recréé resterait à faire si l'app vise iOS 18+.
+- Le graphique "Activité" de l'écran Statistiques (`/profile/stats`)
+  n'avait qu'une seule granularité (`hoursByMonthThisYear`, toujours 12
+  barres mensuelles), réutilisée telle quelle pour les trois filtres
+  Semaine/Mois/Tout — "Semaine" affichait donc un graphique sans aucun
+  rapport avec les 7 derniers jours (les 12 barres de l'année, dont une
+  seule correspond au mois en cours) plutôt qu'un résultat vide ou une
+  vraie vue hebdomadaire ; le nombre d'heures au-dessus, lui, était déjà
+  correctement filtré par `hoursInPeriod`. Ajouté `hoursByLast7Days`
+  (`play-stats.ts`) : 7 buckets glissants se terminant aujourd'hui — pas la
+  semaine calendaire Lundi-Dimanche, qui suivrait une convention différente
+  de "Mois"/"Tout" (déjà des fenêtres glissantes 7j/30j côté
+  `hoursInPeriod`, pas le mois calendaire). `stats.tsx` bascule entre les
+  deux agrégations selon le filtre sélectionné (`chartBuckets`, un seul
+  rendu de graphique paramétré par `label`/`hours`/`current` plutôt que
+  deux blocs JSX dupliqués).
+- Le compteur de jeux d'une rangée `GameShelf` (Profil) était affiché à
+  côté du titre, sur la même ligne que le chevron "›" ("Séries 124 ›",
+  motif emprunté aux apps de séries/films) — déplacé en dessous du titre,
+  en petit texte secondaire, plus lisible comme le sous-titre discret qu'il
+  est plutôt que comme une seconde donnée au même niveau que le titre. À
+  cette occasion, la rangée horizontale (`FlatList horizontal`) est passée
+  à un `ScrollView horizontal` : ces rangées n'affichent jamais qu'une
+  poignée de jeux (aperçu, pas un parcours complet), la virtualisation de
+  `FlatList` n'y apporte donc rien, seulement sa complexité de gestes en
+  plus une fois imbriquée dans le `ScrollView` vertical du Profil — un
+  geste de swipe horizontal s'y révélait moins fiable qu'avec un
+  `ScrollView` simple. `FeaturedShelf` (Explorer) n'est pas concerné, elle
+  garde `FlatList`.
 
 **Simplifications assumées pour cette itération** :
 - Le menu "⋯" de la fiche jeu (Partager/Arrêter de jouer/Ajouter à une
