@@ -34,6 +34,10 @@ succès et le temps de jeu réel).
   lien de profil partageable, créer une liste (nom, description,
   visibilité), et un réglage d'affichage de la fiche jeu (bandeau large +
   logo, ou jaquette portrait).
+- **Comptes** — connexion par Google OAuth ou lien magique par e-mail
+  (Supabase), sans mot de passe ni téléphone. La bibliothèque reste locale
+  et fonctionne sans compte ; la synchronisation entre appareils n'est pas
+  encore implémentée (voir [ARCHITECTURE.md §9](./ARCHITECTURE.md)).
 
 ## Stack
 
@@ -106,6 +110,8 @@ Créer un fichier `.env` à la racine (voir [`.env.example`](.env.example)) :
 | `EXPO_PUBLIC_STEAM_API_URL` | URL du backend Steam déployé (succès + temps de jeu) | Fournie par ton déploiement de [gamelary-api](https://github.com/Jarodwayo/gamelary-api) |
 | `EXPO_PUBLIC_API_URL` | URL des routes API de Gamelary (`/api/games`, `/api/cover`) pour un build **natif de production** — inutile en dev et sur le web | L'hébergeur Node qui sert l'app (voir `src/lib/api-url.ts`) |
 | `EXPO_PUBLIC_PROFILE_BASE_URL` | Domaine des liens de profil partagés (`/u/<identifiant>`) — facultatif | Ton domaine public ; à défaut, le lien retombe sur l'URL de l'app |
+| `EXPO_PUBLIC_SUPABASE_URL` | Comptes (Google OAuth + e-mail, voir ARCHITECTURE.md §9) | Project Settings > API, sur [ton projet Supabase](https://supabase.com/dashboard) |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | idem — clé "anon public", pas "service_role" | idem |
 | `EXPO_PUBLIC_SUPPORT_EMAIL` | Adresse de "Contacter l'assistance" (Aide et idées) — facultatif | La tienne ; absente, vide ou mal formée, la ligne ouvre une issue GitHub |
 
 ⚠️ Seules les variables préfixées `EXPO_PUBLIC_` finissent dans le bundle
@@ -132,8 +138,9 @@ dépend d'une vraie clé d'API ni d'un service distant.
 
 Projet actif, développé en itérations. Les fonctionnalités implémentées, celles
 prévues, et les limites volontairement assumées (cache en mémoire côté serveur,
-absence de compte utilisateur) sont listées et justifiées dans
-[ARCHITECTURE.md §10](./ARCHITECTURE.md).
+compte utilisateur sans synchronisation de la bibliothèque) sont listées et
+justifiées dans [ARCHITECTURE.md §9](./ARCHITECTURE.md) et
+[§10](./ARCHITECTURE.md).
 
 ## Licence
 
