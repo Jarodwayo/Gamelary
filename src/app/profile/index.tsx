@@ -12,6 +12,7 @@ import { ProfileAvatar } from '@/components/profile-avatar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Fonts, ProfileHeaderDrop, Spacing } from '@/constants/theme';
+import { useAuth } from '@/lib/auth-store';
 import { useTheme } from '@/hooks/use-theme';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
 import { useGameStore, type StoredGame } from '@/lib/game-store';
@@ -107,6 +108,7 @@ const HEADER_CHIP_ICON = '#F5F1EC';
 
 export default function ProfileScreen() {
   const store = useGameStore();
+  const auth = useAuth();
   const theme = useTheme();
   const router = useRouter();
   const profile = store.settings.profile;
@@ -256,11 +258,12 @@ export default function ProfileScreen() {
     }
   }
 
-  // Seul "Se déconnecter" reste un stub : il n'y a pas de compte à
-  // déconnecter tant que l'authentification n'existe pas (voir
-  // ARCHITECTURE.md §9). Marqué `destructive` (voir overflow-menu.tsx) et
-  // gardé en dernier : séparé visuellement du reste, comme une action
-  // irréversible.
+  // "Se déconnecter" appelle désormais le vrai signOut() (voir
+  // lib/auth-store.tsx) — sans effet perceptible tant qu'aucun compte
+  // n'est configuré ou connecté (auth.signOut() se contente de ne rien
+  // faire, voir son commentaire). Marqué `destructive` (voir
+  // overflow-menu.tsx) et gardé en dernier : séparé visuellement du reste,
+  // comme une action irréversible.
   const profileMenuItems: OverflowMenuItem[] = [
     { key: 'share-profile', label: 'Partager le profil', icon: 'share-outline', onPress: copyProfileLink },
     {
@@ -287,7 +290,15 @@ export default function ProfileScreen() {
       icon: 'bulb-outline',
       onPress: () => router.push('/profile/help'),
     },
-    { key: 'sign-out', label: 'Se déconnecter', icon: 'log-out-outline', destructive: true, onPress: () => {} },
+    {
+      key: 'sign-out',
+      label: 'Se déconnecter',
+      icon: 'log-out-outline',
+      destructive: true,
+      onPress: () => {
+        auth.signOut();
+      },
+    },
   ];
   // Sous topRow (TOP_ROW_PADDING_TOP + hauteur d'icône 24px), pour ancrer le
   // menu juste sous le bouton plutôt qu'à la hauteur (différente) de la
@@ -352,6 +363,31 @@ export default function ProfileScreen() {
               <ThemedText type="small" themeColor="textSecondary" style={styles.bio}>
                 {profile.bio}
               </ThemedText>
+            ) : null}
+            {/* 'unconfigured'/'loading' : rien à afficher ici — ni un bouton
+                de connexion qui ne mènerait nulle part sur une build sans
+                clés Supabase, ni un flash "Se connecter" pendant les quelques
+                millisecondes où le statut réel se résout (voir
+                lib/auth-store.tsx). */}
+            {auth.status === 'signedIn' && auth.session?.user.email ? (
+              <View style={styles.accountRow}>
+                <Ionicons name="checkmark-circle" size={14} color={theme.success} />
+                <ThemedText type="small" themeColor="textSecondary">
+                  {auth.session.user.email}
+                </ThemedText>
+              </View>
+            ) : null}
+            {auth.status === 'signedOut' ? (
+              <Link href="/profile/sign-in" asChild>
+                <Pressable accessibilityRole="button" accessibilityLabel="Se connecter">
+                  <ThemedView type="backgroundElement" style={styles.signInPill}>
+                    <Ionicons name="cloud-upload-outline" size={16} color={theme.accent} />
+                    <ThemedText type="smallBold" themeColor="accent">
+                      Se connecter pour sauvegarder ta bibliothèque
+                    </ThemedText>
+                  </ThemedView>
+                </Pressable>
+              </Link>
             ) : null}
             {/* Système d'amis pas encore implémenté (voir ARCHITECTURE.md §9) :
                 figés à 0 plutôt que masqués, pour garder la même structure que
@@ -579,6 +615,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: Spacing.four,
     marginTop: Spacing.one,
+  },
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    marginTop: Spacing.two,
+  },
+  signInPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginTop: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.two,
+    borderRadius: 999,
   },
   shareStatus: {
     flexDirection: 'row',
