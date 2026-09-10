@@ -187,6 +187,7 @@ type GameStoreContextValue = {
   setFavoriteTrack: (id: string, favoriteTrackId: string | undefined) => void;
   toggleListMembership: (listId: string, gameId: string) => void;
   createList: (name: string, options?: { description?: string; hidden?: boolean }) => string;
+  applySyncedGames: (games: StoredGame[]) => void;
 };
 
 const GameStoreContext = createContext<GameStoreContextValue | null>(null);
@@ -444,6 +445,22 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       },
       setTitleArtwork: (titleArtwork: TitleArtwork) => {
         setState((prev) => ({ ...prev, settings: { ...prev.settings, titleArtwork } }));
+      },
+      // Chemin d'écriture DÉDIÉ pour le service de synchronisation (voir
+      // lib/sync/sync-service.ts), volontairement séparé d'updateGame :
+      // celui-ci horodate systématiquement à `Date.now()`, ce qui ferait
+      // gagner à tort l'arbitrage §9.5 à l'appareil qui vient juste de
+      // synchroniser, quel que soit le côté qui a réellement écrit en
+      // dernier. Les jeux fournis ici portent déjà le résultat complet de la
+      // fusion (voir mergeGameFields) — `updatedAt` y est soit celui d'un
+      // des deux appareils, soit absent, jamais "maintenant".
+      applySyncedGames: (games: StoredGame[]) => {
+        if (games.length === 0) return;
+        setState((prev) => {
+          const nextGames = { ...prev.games };
+          for (const game of games) nextGames[game.id] = game;
+          return { ...prev, games: nextGames };
+        });
       },
     }),
     []

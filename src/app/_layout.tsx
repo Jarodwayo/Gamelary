@@ -5,8 +5,10 @@ import { useColorScheme } from 'react-native';
 
 import AppTabs from '@/components/app-tabs';
 import { SearchFab } from '@/components/search-fab';
+import { SignInSyncGate } from '@/components/sign-in-sync-gate';
 import { AnimatedSplashOverlay } from '@/components/splash-overlay';
 import { FontsToLoad } from '@/constants/theme';
+import { AuthProvider } from '@/lib/auth-store';
 import { GameStoreProvider } from '@/lib/game-store';
 
 // Empêche Expo de masquer le splash natif tant que le JS n'a pas fini de
@@ -33,11 +35,20 @@ export default function TabLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <GameStoreProvider>
-        <AnimatedSplashOverlay />
-        <AppTabs />
-        <SearchFab />
-      </GameStoreProvider>
+      {/* AuthProvider est un FRÈRE de GameStoreProvider, pas imbriqué à
+          l'intérieur : l'identité Supabase (session, tokens) est gérée et
+          persistée par supabase-js lui-même (voir lib/supabase.ts), sans
+          rapport avec le blob AsyncStorage de la bibliothèque de jeux — les
+          mélanger créerait deux sources de vérité pour la même donnée (voir
+          le commentaire d'AuthProvider, lib/auth-store.tsx). */}
+      <AuthProvider>
+        <GameStoreProvider>
+          <SignInSyncGate />
+          <AnimatedSplashOverlay />
+          <AppTabs />
+          <SearchFab />
+        </GameStoreProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

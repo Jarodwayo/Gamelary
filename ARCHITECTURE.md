@@ -744,6 +744,8 @@ qu'ils ont chacun leurs tests.
    horodater maintenant reviendrait à deviner un arbitrage que le schéma
    ne définit pas encore.
 
+### 9.4 Schéma distant (Postgres / Supabase) ✅ écrit et vérifié
+
 Row Level Security sur **les six tables** — c'est ce qui remplace la
 logique d'autorisation qu'on écrirait à la main dans un backend classique.
 Deux précisions qui ont leur importance, la première rédaction de cette
@@ -761,165 +763,157 @@ tables portent `user_id` » et n'activait RLS que sur `user_games`) :
   tables sur six étaient dans ce cas dans la version précédente de ce
   schéma.
 
-```sql
-alter table profiles      enable row level security;
-alter table user_games    enable row level security;
-alter table achievements  enable row level security;
-alter table play_sessions enable row level security;
-alter table lists         enable row level security;
-alter table list_games    enable row level security;
+Le SQL complet (tables, policies, et deux ajouts absents de la première
+rédaction — voir plus bas) vit maintenant dans
+[`supabase/migrations/20260910120000_initial_schema.sql`](supabase/migrations/20260910120000_initial_schema.sql)
+plutôt que dupliqué ici : un schéma et sa documentation qui divergent
+silencieusement est pire qu'une documentation absente — ce fichier est
+l'unique source de vérité, celle-ci n'en donne que le résumé et le
+raisonnement.
 
--- Tables portant directement l'identité : comparaison directe.
-create policy "soi-même uniquement" on profiles
-  for all using (id = auth.uid()) with check (id = auth.uid());
-create policy "propriétaire uniquement" on user_games
-  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
-create policy "propriétaire uniquement" on lists
-  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+Deux manques que la première rédaction de cette section n'avait pas comblés
+(elle citait l'indexation comme un « à faire », sans l'écrire ; l'autre
+n'était même pas mentionné) :
 
--- Tables filles : la politique remonte au parent. `with check` autant que
--- `using` — sans lui, `using` filtrerait bien la LECTURE mais laisserait
--- insérer une ligne rattachée au jeu de quelqu'un d'autre.
-create policy "via le jeu parent" on achievements
-  for all using (exists (select 1 from user_games g
-                         where g.id = user_game_id and g.user_id = auth.uid()))
-  with check (exists (select 1 from user_games g
-                      where g.id = user_game_id and g.user_id = auth.uid()));
+- **Index sur les colonnes de rattachement des tables filles**
+  (`achievements.user_game_id`, `play_sessions.user_game_id`,
+  `list_games.user_game_id`) — sans eux, chaque ligne lue déclenche un scan
+  complet de la table parent pour évaluer la policy RLS (le sous-select
+  `exists (...)`), et chaque suppression en cascade fait de même.
+- **`updated_at` n'avance jamais tout seul.** `default now()` ne s'applique
+  qu'à l'INSERT ; sans trigger, la colonne resterait figée à la date de
+  création pour toujours, rendant l'arbitrage « le plus récent gagne » du
+  §9.5 systématiquement faux dès la première modification — un bug qu'aucune
+  ligne de ce document ne signalait avant que le fichier de migration ne
+  soit réellement écrit. Un trigger partagé (`set_updated_at`) couvre les
+  trois tables concernées (`profiles`, `user_games`, `achievements` —
+  `play_sessions`/`lists`/`list_games` n'ont pas cette colonne : append-only
+  ou fusion par union, rien à arbitrer par date).
 
-create policy "via le jeu parent" on play_sessions
-  for all using (exists (select 1 from user_games g
-                         where g.id = user_game_id and g.user_id = auth.uid()))
-  with check (exists (select 1 from user_games g
-                      where g.id = user_game_id and g.user_id = auth.uid()));
+Un troisième ajout, qui ne comblait pas un manque documenté mais s'est
+avéré nécessaire à l'usage : un trigger sur `auth.users` (`handle_new_user`,
+`security definer` avec `search_path` figé) crée la ligne `profiles`
+correspondante à l'inscription, plutôt que de compter sur un upsert
+applicatif après coup qui pourrait échouer en silence et laisser un compte
+sans profil.
 
--- list_games a DEUX parents : les deux doivent appartenir au demandeur,
--- sinon on pourrait ajouter le jeu d'autrui à sa liste, ou son propre jeu
--- à la liste d'autrui.
-create policy "via les deux parents" on list_games
-  for all using (
-    exists (select 1 from lists l      where l.id = list_id      and l.user_id = auth.uid())
-    and exists (select 1 from user_games g where g.id = user_game_id and g.user_id = auth.uid()))
-  with check (
-    exists (select 1 from lists l      where l.id = list_id      and l.user_id = auth.uid())
-    and exists (select 1 from user_games g where g.id = user_game_id and g.user_id = auth.uid()));
-```
+**Vérifié pour de vrai, pas seulement relu** : ce fichier de migration a
+été appliqué tel quel à un Postgres 16 local (schéma `auth` minimal simulé,
+`auth.uid()` lisant une variable de session pour changer d'identité à
+volonté), puis 20 vérifications ont tourné dessus — deux utilisateurs
+simulés, chacun lisant/écrivant ses propres lignes sur les six tables, et
+échouant (comme attendu) à lire ou modifier celles de l'autre, y compris en
+tentant un INSERT côté table fille rattaché au jeu d'autrui (le cas que
+`with check` existe pour bloquer) ; le trigger `updated_at` observé en train
+d'avancer réellement après un UPDATE ; les suppressions en cascade et la
+contrainte d'unicité `(user_id, igdb_id)` vérifiées de la même façon. Toutes
+passent — le détail exact de ce qui a été testé est dans l'en-tête du
+fichier de migration lui-même.
 
-Ces politiques n'ont pas encore été appliquées à une vraie instance
-Supabase (aucune n'existe à ce stade) : elles sont écrites, pas vérifiées à
-l'exécution. À la première mise en place, deux choses à faire avant de s'en
-remettre à elles — indexer les colonnes de rattachement
-(`achievements.user_game_id`, `play_sessions.user_game_id`,
-`list_games.list_id`), sans quoi chaque ligne lue déclenche le sous-select ;
-et vérifier depuis DEUX comptes réels qu'aucun ne voit les données de
-l'autre, plutôt que de faire confiance à la relecture du SQL.
+Ce qui n'est **pas** vérifié, faute d'un vrai projet Supabase à ce stade :
+que les rôles `anon`/`authenticated` d'un projet réel reçoivent bien par
+défaut les mêmes privilèges de table que ceux accordés à la main pour ce
+test (Supabase les pose normalement automatiquement à la création du
+projet, mais ce n'est pas observé directement ici) — à confirmer à la
+première connexion réelle, en répétant l'esprit du test ci-dessus depuis
+deux comptes qui existent pour de vrai, pas seulement simulés en local.
 
-```sql
-create table profiles (
-  id           uuid primary key references auth.users on delete cascade,
-  display_name text,
-  steam_id64   text,
-  created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now()
-);
-
--- Un jeu tel que CET utilisateur le suit (jamais le catalogue lui-même :
--- titre/plateforme restent dérivés d'IGDB, voir §6.1).
-create table user_games (
-  id                   uuid primary key default gen_random_uuid(),
-  user_id              uuid not null references auth.users on delete cascade,
-  igdb_id              bigint,       -- identité canonique ; null si non résolue
-  slug                 text not null,-- id local historique, conservé pour la reprise
-  title                text not null,
-  platform             text,
-  steam_app_id         integer,
-  in_library           boolean not null default false,
-  stopped              boolean not null default false,
-  rating               smallint check (rating between 0 and 20),
-  review               text,
-  -- Le favori local pointe vers un id issu d'un fichier statique
-  -- (tracked-games.ts) : stocké ici en clair, sinon la référence pend dès
-  -- que ce fichier change.
-  favorite_track_title text,
-  favorite_track_artist text,
-  created_at           timestamptz not null default now(),
-  updated_at           timestamptz not null default now()
-);
-
--- Identité : l'id IGDB fait foi quand il est connu, le slug sert de repli.
-create unique index on user_games (user_id, igdb_id) where igdb_id is not null;
-create unique index on user_games (user_id, slug)    where igdb_id is null;
-
-create table achievements (
-  id            uuid primary key default gen_random_uuid(),
-  user_game_id  uuid not null references user_games on delete cascade,
-  source        text not null check (source in ('manual', 'steam')),
-  external_key  text not null,  -- apiname Steam, ou nom normalisé si manuel
-  name          text not null,
-  unlocked      boolean not null default false,
-  updated_at    timestamptz not null default now(),
-  -- Rend l'import Steam idempotent par construction, et supprime les
-  -- doublons dus aux ids horodatés (voir 9.2.3).
-  unique (user_game_id, source, external_key)
-);
-
-create table play_sessions (
-  id           uuid primary key default gen_random_uuid(),
-  user_game_id uuid not null references user_games on delete cascade,
-  played_at    timestamptz not null,
-  hours        numeric(6,2) not null,
-  -- setTotalHours (§6.6) enregistre une session CORRECTRICE égale à l'écart,
-  -- pas du temps réellement joué ce jour-là. Sans cette distinction, fusionner
-  -- deux appareils rejouerait les corrections et gonflerait les totaux.
-  kind         text not null default 'logged' check (kind in ('logged', 'correction')),
-  client_key   text not null,  -- déterministe : rend un ré-upload idempotent
-  unique (user_game_id, client_key)
-);
-
-create table lists (
-  id          uuid primary key default gen_random_uuid(),
-  user_id     uuid not null references auth.users on delete cascade,
-  builtin_key text,             -- 'favoris' | 'wishlist' | null si liste créée
-  name        text not null,
-  created_at  timestamptz not null default now(),
-  unique (user_id, builtin_key)
-);
-
-create table list_games (
-  list_id      uuid not null references lists on delete cascade,
-  user_game_id uuid not null references user_games on delete cascade,
-  added_at     timestamptz not null default now(),
-  primary key (list_id, user_game_id)
-);
-```
-
-### 9.5 Migration local → distant
+### 9.5 Synchronisation local ↔ distant
 
 Le risque n'est pas l'authentification : c'est de **corrompre ou perdre une
 bibliothèque déjà constituée**. Un dégât de ce type se voit tard et coûte
-bien plus cher à réparer qu'à prévenir.
+bien plus cher à réparer qu'à prévenir. D'où la politique de fusion
+ci-dessous, conçue AVANT le code (session précédente), puis implémentée et
+mutation-testée dans celle-ci — restreinte à `user_games` + `achievements`,
+voir le détail du scope plus bas.
 
-1. **Instantané avant toute écriture.** Le blob local est copié sous une clé
-   dédiée (`gamelary/game-store/pre-migration-<ts>`) qui n'est jamais
-   écrasée ni migrée. Rien d'autre ne commence tant qu'elle n'est pas écrite.
-2. **Résolution d'identité.** Les jeux sans `igdb_id` sont re-résolus par
-   titre ; ceux qui échouent partent quand même, avec `igdb_id` à null et
-   leur slug comme identité de repli — jamais abandonnés silencieusement.
-3. **Envoi atomique.** Toute la bibliothèque part dans **une seule fonction
-   RPC Postgres** (tout ou rien) plutôt qu'en N insertions : un envoi
-   interrompu ne doit jamais laisser une demi-bibliothèque côté serveur.
-4. **Bascule après accusé de réception.** Le local n'est marqué "synchronisé"
-   qu'une fois le serveur confirmé, et l'instantané de l'étape 1 est
-   conservé plusieurs jours après ça.
-5. **Fusion si le compte contient déjà des données** (2ᵉ appareil) : par
-   type, jamais un "dernier arrivé écrase tout" global.
+| Donnée | Politique de fusion | Pourquoi | Statut |
+|---|---|---|---|
+| `in_library`, `stopped` | **Union** | Ne jamais retirer ce que l'utilisateur a ajouté depuis un autre appareil | ✅ implémenté |
+| `achievements` | Union par `(source, external_key)`, `unlocked` = **OU logique** | Un succès débloqué ne doit jamais se re-verrouiller | ✅ implémenté |
+| `rating`, `review` | **Le plus récent gagne** (`updatedAt`), jamais arbitré si absent des deux côtés | Valeur unique : vrai conflit, arbitrage nécessaire | ✅ implémenté |
+| appartenance aux listes | **Union** | Même raisonnement que `in_library` | 🚧 hors scope (voir plus bas) |
+| `play_sessions` | **Union** par `client_key`, corrections comprises mais jamais rejouées | Journal append-only : fusion sans perte et sans double comptage | 🚧 hors scope (voir plus bas) |
+| `steam_id64` | **Le plus récent gagne** (`steamId64UpdatedAt`) | Valeur unique, même arbitrage que rating/review | 🚧 hors scope (voir plus bas) |
 
-| Donnée | Politique de fusion | Pourquoi |
-|---|---|---|
-| `in_library`, `stopped`, appartenance aux listes | **Union** | Ne jamais retirer ce que l'utilisateur a ajouté depuis un autre appareil |
-| `play_sessions` | **Union** par `client_key`, corrections comprises mais jamais rejouées | Journal append-only : fusion sans perte et sans double comptage |
-| `achievements` | Union par `(source, external_key)`, `unlocked` = **OU logique** | Un succès débloqué ne doit jamais se re-verrouiller |
-| `rating`, `review` | **Le plus récent gagne** (`updated_at`) | Valeur unique : vrai conflit, arbitrage nécessaire — **dépend du prérequis 9.3.2** |
-| `steam_id64` | **Le plus récent gagne** (`steamId64UpdatedAt`) | Valeur unique, même arbitrage que rating/review — **dépend du prérequis 9.3.6** |
+**Implémenté cette session** (`user_games` + `achievements` uniquement) :
+
+- **`src/lib/sync/merge-policy.ts`** — fonctions PURES : `gameMatchKey`
+  (identité de correspondance, `igdb_id` sinon `slug` — mêmes deux index
+  uniques partiels que le schéma, §9.4), `mergeGameFields` (union
+  `inLibrary`/`stopped`, dernier-écrit-gagne `rating`/`review` gated sur
+  `updatedAt`), `mergeAchievements` (union par `(source, external_key)`, OU
+  logique sur `unlocked`). Mutation-testées : chaque règle a été
+  délibérément inversée (OU → ET, garde `updatedAt` retirée, etc.) pour
+  vérifier que la suite existante la détecte — voir
+  `__tests__/merge-policy.test.ts`.
+- **`src/lib/sync/sync-service.ts`** — orchestration IMPURE : lit
+  `user_games`/`achievements` du compte, résout la correspondance EN
+  MÉMOIRE (jamais via `ON CONFLICT`, voir la note ci-dessous), applique le
+  verdict de merge-policy.ts par un INSERT (jeu nouveau) ou un UPDATE ciblé
+  par id (jeu déjà apparié), jamais un upsert aveugle.
+- **`applySyncedGames`** (`src/lib/game-store.tsx`) — nouveau chemin
+  d'écriture DÉDIÉ au service de sync, séparé d'`updateGame` : celui-ci
+  horodate systématiquement à `Date.now()`, ce qui ferait gagner à tort
+  l'arbitrage à l'appareil qui vient de synchroniser, quel que soit le côté
+  réellement le plus récent. `applySyncedGames` écrit tel quel
+  l'`updatedAt` déjà tranché par la fusion (celui d'un des deux appareils,
+  ou absent).
+- **Déclenchement** : automatique à toute transition vers `'signedIn'`
+  (`src/hooks/use-sign-in-sync.ts`, monté via `SignInSyncGate` dans
+  `app/_layout.tsx`) — y compris la confirmation d'une session déjà
+  persistée au démarrage de l'app, pas seulement un `signIn` tapé à
+  l'instant (sans quoi rester connecté plusieurs semaines ne bénéficierait
+  jamais de la synchro automatique). Et manuel, bouton "Synchroniser
+  maintenant" dans Réglages (`src/app/profile/settings.tsx`), visible
+  seulement `status === 'signedIn'`.
+- **Portée** : seuls les jeux "trackés" (`inLibrary`, `stopped`, une note,
+  un avis, ou au moins un succès) montent vers le distant — un jeu
+  simplement aperçu dans Explorer (`registerCatalogGame` sans `updatedAt`)
+  ne crée jamais de ligne `user_games`.
+- **Mode hors-ligne préservé** : AsyncStorage reste l'unique source de
+  lecture de l'app (`GameStoreProvider`) ; la sync est un aller-retour en
+  tâche de fond qui écrit dans ce même store via `applySyncedGames`, jamais
+  un chemin de lecture séparé.
+
+**Une limite acceptée sciemment** : la correspondance jeu local ↔ ligne
+distante est résolue EN MÉMOIRE (tous les `user_games` de l'utilisateur
+sont chargés, puis appariés par `gameMatchKey`) plutôt que via un upsert
+`ON CONFLICT`, parce que les deux index uniques distants sont **partiels**
+(`(user_id, igdb_id) where igdb_id is not null` / `(user_id, slug) where
+igdb_id is null`, voir §9.4) — un upsert PostgREST ne peut viser qu'une
+seule contrainte nommée à la fois, pas les deux selon le cas. Deux appareils
+qui créeraient la MÊME identité simultanément depuis zéro (aucun des deux
+n'a encore de ligne distante) se heurteraient donc à la contrainte
+d'unicité au lieu de fusionner — un vrai risque de concurrence à deux
+appareils, non traité ici, qui recoupe la "Réconciliation d'identité
+tardive" déjà listée en §9.6.
+
+**Explicitement HORS SCOPE de cette session** (à reprendre séparément) :
+
+- **`play_sessions`** — union par `client_key`, corrections jamais
+  rejouées : demande sa propre logique de merge (append-only, pas un
+  simple OR/LWW) et ses propres tests.
+- **`lists`/`list_games`** — union de l'appartenance aux listes.
+- **`steam_id64`** (ligne `profiles`) — même politique dernier-écrit-gagne
+  que rating/review, mais sur une entité distante différente
+  (`profiles`, pas `user_games`).
+- **`profile`/`titleArtwork`** — non horodatés, politique de fusion pas
+  encore décidée (voir §9.6, inchangé).
+- **`favorite_track_title`/`favorite_track_artist`** — colonnes déjà
+  présentes dans le schéma `user_games` (§9.4) mais sans politique de
+  fusion documentée nulle part, y compris dans la table ci-dessus avant
+  cette révision : ni lues ni écrites par `sync-service.ts` pour l'instant,
+  plutôt que d'en inventer une à la volée.
+- **La migration initiale « gros import unique »** décrite dans une
+  révision précédente de cette section (instantané avant écriture, envoi
+  atomique via une seule fonction RPC Postgres, bascule après accusé de
+  réception) — un chantier différent de la synchro CONTINUE implémentée
+  ici : utile pour le tout premier envoi d'une bibliothèque déjà volumineuse
+  sans jamais la laisser à moitié partie côté serveur, mais pas ce que
+  demandait cette session. `sync-service.ts` fait aujourd'hui plusieurs
+  requêtes séquentielles (une par jeu divergent), acceptable pour le volume
+  d'une bibliothèque solo (§9.3) mais pas atomique bout en bout.
 
 ### 9.6 Points encore ouverts
 
@@ -943,6 +937,101 @@ bien plus cher à réparer qu'à prévenir.
   utilisateur — impossible tant qu'il n'y a pas de compte, et c'est
   justement ce que les comptes rendront possible. À cadrer avant toute
   ouverture publique.
+- **Rendu serveur (`web.output: "server"`) et code exécuté au montage :
+  vigilance structurelle, pas ponctuelle.** Un vrai crash serveur a été
+  trouvé et corrigé cette session (voir §9.7) — construire un client
+  Supabase pendant le rendu SSR faisait tomber le processus Node entier,
+  sur n'importe quelle page, parce qu'`AuthProvider` enveloppe toute l'app.
+  La leçon dépasse ce seul cas : tout code qui s'exécute au montage d'un
+  Provider global (pas seulement au clic) doit être vérifié en conditions
+  réelles (`expo start --web`), pas seulement sous Jest — Jest ne l'aurait
+  jamais révélé, puisqu'AsyncStorage n'y fonctionne de toute façon pas du
+  tout (voir le commentaire de `supabase.test.ts`). À garder en tête pour
+  toute future logique ajoutée à `AuthProvider` ou à un Provider similaire.
+- **Grants par défaut du rôle `authenticated` sur un vrai projet Supabase**
+  supposés identiques à ceux posés à la main pour le test local (voir
+  §9.4), jamais observés directement sur un projet réel — à confirmer à la
+  première connexion.
+
+### 9.7 Authentification : implémentée ✅
+
+Session distincte de la précédente (qui a écrit §9.3/§9.4) : client
+Supabase, écrans de connexion, session câblée sur l'affichage. **À
+l'écriture de cette section, la synchronisation (§9.5) n'était pas encore
+commencée** — se connecter établissait une identité, rien de plus. Depuis,
+`user_games`/`achievements` sont synchronisés (voir §9.5) ; `play_sessions`
+et `lists`/`list_games` restent hors scope. Ne pas confondre « connecté »
+et « entièrement synchronisé ».
+
+**Client** (`src/lib/supabase.ts`, `src/lib/supabase-config.ts`) —
+configuré via `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`
+(voir `.env.example`), absent desquels l'app se comporte exactement comme
+avant cette session (mode hors-ligne intégral, aucun bouton mort) plutôt
+que d'échouer bruyamment — même philosophie que `steamApiUrl()`/`apiUrl()`.
+Mémoïsé (une seule instance par process, jamais deux `GoTrueClient`
+gérant la même session AsyncStorage en parallèle). PKCE (`flowType:
+'pkce'`) plutôt que le flux implicite : le retour, natif comme web, se fait
+par un `?code=` explicite à échanger, jamais par un fragment `#access_token`
+exposé dans l'URL.
+
+**Bug trouvé et corrigé en conditions réelles, pas en théorie** :
+construire ce client pendant le rendu serveur (`web.output: "server"`,
+voir §7) faisait planter tout le processus Node — `ReferenceError: window
+is not defined`, provoqué par un chargement de session que GoTrueClient
+déclenche lui-même dès sa construction, jamais attendu par l'appelant.
+Comme `AuthProvider` enveloppe toute l'app (voir plus bas), ce n'était pas
+un problème de l'écran de connexion : n'importe quelle page aurait fait
+tomber le serveur, dès que des clés Supabase auraient été configurées en
+production. Corrigé par un garde-fou qui distingue le rendu serveur du
+bundle web (pas de `window`) de l'exécution native (jamais de `window` non
+plus, mais jamais un problème là-bas) — voir le commentaire de
+`getSupabaseClient()`. Un test Jest dédié retire `window` pour de vrai
+plutôt que de supposer le garde-fou suffisant ; il aurait été impossible à
+écrire en se fiant uniquement au mock d'AsyncStorage utilisé par les autres
+tests de ce fichier, qui masque ce crash précis (voir le commentaire de
+`supabase.test.ts` sur pourquoi AsyncStorage ne fonctionne pas du tout sous
+Jest dans ce projet — une découverte de cette session, distincte du bug
+lui-même).
+
+**Provider** (`src/lib/auth-store.tsx`, `AuthProvider`/`useAuth`) — frère
+de `GameStoreProvider` (voir `app/_layout.tsx`), pas imbriqué dedans :
+l'identité Supabase est gérée et persistée par supabase-js lui-même, la
+mélanger au blob AsyncStorage de la bibliothèque créerait deux sources de
+vérité pour la même donnée. Quatre statuts : `unconfigured` (pas de clés —
+distinct de `signedOut`, pour ne jamais proposer un bouton qui ne mène
+nulle part), `loading`, `signedOut`, `signedIn`.
+
+**Écran** (`src/app/profile/sign-in.tsx`) — Google OAuth en bouton plein
+(un tap, mis en avant), lien magique par e-mail en repli, aucun mot de
+passe. Sur natif, Google ouvre un navigateur in-app
+(`WebBrowser.openAuthSessionAsync`) qui capture lui-même son propre retour ;
+sur web, `signInWithOAuth` fait naviguer la page. Le lien magique, lui,
+revient toujours par un vrai lien profond ouvert depuis l'app Mail — hors du
+contrôle de ce code, donc intercepté différemment (l'écran lit `?code=`
+dans ses propres paramètres de route). Le menu « ⋯ » du Profil appelle
+désormais un vrai `signOut()` ; « Se connecter pour sauvegarder ta
+bibliothèque » n'apparaît que si `signedOut` (jamais en `unconfigured`, où
+ça ne mènerait nulle part ; jamais en `loading`, pour éviter un flash).
+
+**Vérifications** : 32 tests Jest nouveaux (config, e-mail, redirection,
+client, provider — mutation-testés : chaque assertion a été confirmée
+capable d'échouer, pas seulement de passer), plus les 20 vérifications SQL
+de §9.4. Conditions réelles vérifiées manuellement (`expo start --web`,
+clair et sombre) : écran non configuré (message explicite), formulaire
+configuré (bouton lien magique désactivé/activé selon la validité de
+l'e-mail), pastille « Se connecter » du Profil et sa navigation. **Non
+vérifié** : Google OAuth et lien magique de bout en bout contre un vrai
+projet Supabase (aucun n'existe dans cet environnement de développement) ;
+rendu natif (pas de simulateur disponible ici, limite déjà documentée
+ailleurs dans ce fichier).
+
+**Étapes manuelles restantes côté Supabase** avant que ça fonctionne pour de
+vrai (détail complet dans `.env.example`) : créer le projet, appliquer
+`supabase/migrations/20260910120000_initial_schema.sql`, activer le
+provider Google (Client ID/Secret depuis Google Cloud Console), renseigner
+les Redirect URLs (`gamelary://profile/sign-in` + l'origine du déploiement
+web) — sans cette dernière étape, Google et le lien magique refusent de
+rediriger vers l'app après connexion.
 
 ## 10. État actuel vs feuille de route
 
@@ -1014,9 +1103,15 @@ avec le réglage **"Affiche de la page titre"** : la fiche jeu s'ouvre soit
 sur un bandeau large + le logo du jeu (illustrations `hero`/`logo` de
 SteamGridDB, nouveau paramètre `kind` de `/api/cover`), soit sur la
 jaquette portrait, avec repli automatique sur la jaquette quand le bandeau
-n'existe pas ou ne charge pas (voir `game-title-header.tsx`). Seul "Se
-déconnecter" reste un stub dans le menu "⋯", faute de compte à
-déconnecter.
+n'existe pas ou ne charge pas (voir `game-title-header.tsx`), et
+**authentification** (voir §9.7) : écran "Se connecter" (`/profile/sign-in`
+— Google OAuth en bouton plein, lien magique par e-mail en repli, ni
+téléphone ni mot de passe), pastille "Se connecter pour sauvegarder ta
+bibliothèque" sur le Profil quand personne n'est connecté, e-mail affiché
+et "Se déconnecter" réellement câblé dans le menu "⋯" sinon — à l'époque,
+sans qu'aucune donnée de jeu ne soit encore synchronisée (`user_games`/
+`achievements` le sont depuis, voir §9.5 ; `play_sessions` et `lists`/
+`list_games` restent à faire). Plus aucun stub dans le menu "⋯".
 
 **Bugs corrigés** :
 - Les liens vers la fiche jeu (rangées Explorer, liste de bibliothèque,
@@ -1088,10 +1183,11 @@ déconnecter.
   positionnés approximativement, pas un vrai popover ancré dynamiquement
   (RN n'a pas d'équivalent direct du "clic en dehors pour fermer" du web
   sans mesure de layout supplémentaire). Le nouveau menu "⋯" du Profil
-  réutilise ce même composant (`OverflowMenu`) ; de ses 6 options, 5 ont
-  désormais un écran ou un effet réel (Partager le profil/Paramètres/
-  Modifier le profil/Créer une liste/Aide et idées, voir plus haut) — seule
-  "Se déconnecter" reste un stub, faute de compte à déconnecter.
+  réutilise ce même composant (`OverflowMenu`) ; ses 6 options ont
+  désormais toutes un écran ou un effet réel (Partager le profil/
+  Paramètres/Modifier le profil/Créer une liste/Aide et idées, voir plus
+  haut ; "Se déconnecter" appelle le vrai `signOut()` depuis §9.7) — plus
+  aucun stub.
 - Le chevron "›" du Profil (`GameShelf`, Jeux joués/Jeux préférés) est
   pour l'instant purement visuel (pas d'écran "voir tout") — non demandé
   pour cette itération. Les rangées d'Explorer n'en ont plus du tout
