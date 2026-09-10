@@ -30,6 +30,10 @@ succès et le temps de jeu réel).
   plus jouée de la bibliothèque locale.
 - **Statistiques** — temps de jeu par période, plateformes les plus jouées,
   jeux terminés à 100%.
+- **Profil** — photo et arrière-plan personnalisés, nom/identifiant/bio,
+  lien de profil partageable, créer une liste (nom, description,
+  visibilité), et un réglage d'affichage de la fiche jeu (bandeau large +
+  logo, ou jaquette portrait).
 
 ## Stack
 
@@ -128,8 +132,8 @@ dépend d'une vraie clé d'API ni d'un service distant.
 
 Projet actif, développé en itérations. Les fonctionnalités implémentées, celles
 prévues, et les limites volontairement assumées (cache en mémoire côté serveur,
-absence de compte utilisateur, pas de rate limiting) sont listées et justifiées
-dans [ARCHITECTURE.md §10](./ARCHITECTURE.md).
+absence de compte utilisateur) sont listées et justifiées dans
+[ARCHITECTURE.md §10](./ARCHITECTURE.md).
 
 ## Licence
 

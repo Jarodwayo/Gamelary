@@ -108,6 +108,50 @@ test("une résolution sans id IGDB n'efface pas celui déjà connu, et n'écrit 
   expect(store().games['jeu-test'].updatedAt).toBe(stampAfterCreate);
 });
 
+test("un jeu déjà stocké sans app id Steam le gagne quand une résolution le fournit", async () => {
+  // Même raisonnement que pour igdbId ci-dessus, appliqué à steamAppId :
+  // un jeu enregistré via une résolution IGDB sans external_games Steam (ou
+  // avant que cette correspondance existe côté IGDB) ne doit pas être
+  // bloqué à jamais si une résolution ultérieure la fournit.
+  const store = await mountStore();
+
+  act(() => {
+    store().registerCatalogGame({ id: 'jeu-test', title: 'Jeu Test', platform: 'PC', igdbId: 1234 });
+  });
+  expect(store().games['jeu-test'].steamAppId).toBeUndefined();
+
+  act(() => {
+    store().registerCatalogGame(CATALOG_GAME);
+  });
+
+  expect(store().games['jeu-test'].steamAppId).toBe(42);
+});
+
+test("une résolution sans app id Steam n'efface pas celui déjà connu, et n'écrit rien", async () => {
+  // Reproduit avant correction : registerCatalogGame écrivait `steamAppId:
+  // game.steamAppId` sans repli sur `existing.steamAppId`, contrairement au
+  // traitement déjà correct d'igdbId juste au-dessus. Un jeu d'abord
+  // résolu AVEC son app id Steam (ex. via /api/games?steamAppId=), puis
+  // rafraîchi par une résolution par titre qui n'en trouve pas (le jeu
+  // n'apparaît pas dans les external_games retournés cette fois), perdait
+  // silencieusement l'app id déjà connu — cassant au passage GameCover
+  // (correspondance par app id, voir cover+api.ts) et un futur import de
+  // bibliothèque Steam qui dépend de ce champ pour reconnaître le jeu.
+  const store = await mountStore();
+
+  act(() => {
+    store().registerCatalogGame(CATALOG_GAME);
+  });
+  const stampAfterCreate = store().games['jeu-test'].updatedAt;
+
+  act(() => {
+    store().registerCatalogGame({ id: 'jeu-test', title: 'Jeu Test', platform: 'PC', igdbId: 1234 });
+  });
+
+  expect(store().games['jeu-test'].steamAppId).toBe(42);
+  expect(store().games['jeu-test'].updatedAt).toBe(stampAfterCreate);
+});
+
 // Chaque mutation d'un jeu doit avancer son updatedAt. Écrit comme une table
 // plutôt qu'en neuf tests copiés : une action ajoutée plus tard sans
 // horodatage se repère en ajoutant sa ligne ici, et l'oubli devient visible
@@ -271,4 +315,72 @@ test("l'appartenance à une liste n'horodate pas le jeu", async () => {
 
   expect(store().lists.favoris.gameIds).toContain('jeu-test');
   expect(store().games['jeu-test'].updatedAt).toBe(before);
+});
+
+// steamId64 est un réglage, pas un jeu : son horodatage vit dans
+// settings.steamId64UpdatedAt, à côté du champ, plutôt que de passer par
+// updateGame (qui n'a aucune notion de "jeu" ici). Même politique de fusion
+// que rating/review pour un JEU (§9.5 : « le plus récent gagne »), mais
+// appliquée à la ligne `profiles` distante (§9.4) plutôt qu'à `user_games`.
+test('setSteamId64 horodate le réglage', async () => {
+  const store = await mountStore();
+
+  expect(store().settings.steamId64UpdatedAt).toBeUndefined();
+
+  act(() => {
+    store().setSteamId64('76561197960287930');
+  });
+
+  expect(store().settings.steamId64).toBe('76561197960287930');
+  expect(store().settings.steamId64UpdatedAt).toBeGreaterThan(0);
+});
+
+test('re-confirmer le même SteamID64 (ou délier un compte déjà délié) n’horodate pas', async () => {
+  // Même garde "rien n'a changé" que partout ailleurs (voir updateGame) :
+  // l'écran de profil appelle setSteamId64 sur chaque confirmation, y
+  // compris quand la valeur saisie est identique à celle déjà stockée
+  // (voir confirmSteamId, profile/index.tsx) — ça ne doit pas faire gagner
+  // l'arbitrage §9.5 à un appareil qui n'a rien changé.
+  const store = await mountStore();
+
+  act(() => {
+    store().setSteamId64('76561197960287930');
+  });
+  const stampAfterFirstSave = store().settings.steamId64UpdatedAt;
+
+  act(() => {
+    store().setSteamId64('76561197960287930');
+  });
+  expect(store().settings.steamId64UpdatedAt).toBe(stampAfterFirstSave);
+
+  act(() => {
+    store().setSteamId64(undefined);
+  });
+  const stampAfterUnlink = store().settings.steamId64UpdatedAt;
+  expect(stampAfterUnlink).toBeGreaterThan(stampAfterFirstSave!);
+
+  act(() => {
+    store().setSteamId64(undefined);
+  });
+  expect(store().settings.steamId64UpdatedAt).toBe(stampAfterUnlink);
+});
+
+test("modifier un autre réglage n'horodate pas steamId64", async () => {
+  // steamId64UpdatedAt n'arbitre QUE steam_id64 (une seule colonne de la
+  // ligne `profiles` distante) : une mutation d'un autre réglage ne doit
+  // pas le faire bouger, sans quoi il cesserait de refléter la dernière
+  // écriture réelle de ce champ précis.
+  const store = await mountStore();
+
+  act(() => {
+    store().setSteamId64('76561197960287930');
+  });
+  const stamp = store().settings.steamId64UpdatedAt;
+
+  act(() => {
+    store().updateProfile({ displayName: 'Nouveau nom' });
+    store().setTitleArtwork('poster');
+  });
+
+  expect(store().settings.steamId64UpdatedAt).toBe(stamp);
 });

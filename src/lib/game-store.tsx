@@ -64,6 +64,14 @@ export type StoredList = {
 // grossir si d'autres réglages s'ajoutent.
 type Settings = {
   steamId64?: string;
+  // Horodatage dédié, PAS le mécanisme partagé des jeux (updateGame) : la
+  // table de fusion de §9.5 promet « le plus récent gagne » pour
+  // `steam_id64` spécifiquement (ligne `profiles` distante, voir §9.4),
+  // pas pour les autres réglages ci-dessous — `profile`/`titleArtwork` ne
+  // sont pas encore représentés côté schéma distant, leur politique de
+  // fusion reste à trancher (voir §9.6). Absent = jamais modifié depuis
+  // l'écran des réglages, même sens que `StoredGame.updatedAt`.
+  steamId64UpdatedAt?: number;
   // Absent tant que l'utilisateur n'a rien personnalisé : les écrans
   // passent alors par les valeurs par défaut de profile.ts (displayNameOf,
   // usernameOf) plutôt que d'afficher des champs vides.
@@ -224,23 +232,28 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
         setState((prev) => {
           const existing = prev.games[game.id];
           if (existing) {
-            // Une absence n'écrase jamais un igdbId déjà connu : une
-            // résolution IGDB qui échoue, ou une réponse sans
-            // correspondance, ne doit pas faire perdre l'identité canonique
-            // — un jeu qui la perd doit être re-résolu à l'aveugle depuis
-            // son titre (voir ARCHITECTURE.md §9.3).
+            // Une absence n'écrase jamais un igdbId OU un steamAppId déjà
+            // connus : une résolution IGDB qui échoue, ou une réponse sans
+            // correspondance (ex. le jeu ne référence plus external_games
+            // côté IGDB au moment de ce rafraîchissement), ne doit pas
+            // faire perdre l'identité canonique — un jeu qui la perd doit
+            // être re-résolu à l'aveugle depuis son titre (voir
+            // ARCHITECTURE.md §9.3). Même raisonnement pour les deux : ce
+            // sont deux identifiants externes re-dérivables, jamais des
+            // données que l'absence d'une réponse doit effacer.
             const igdbId = game.igdbId ?? existing.igdbId;
-            // La garde compare la valeur RÉSULTANTE, pas celle qui arrive.
-            // Sans igdbId du tout ici, un jeu enregistré avant
-            // l'introduction du champ ne le gagnerait jamais (la garde
-            // court-circuiterait dès que titre/plateforme sont déjà à
-            // jour) ; avec la valeur entrante brute, une résolution sans id
-            // rouvrirait une écriture qui ne change rien, et un updatedAt
-            // injustifié avec elle.
+            const steamAppId = game.steamAppId ?? existing.steamAppId;
+            // La garde compare les valeurs RÉSULTANTES, pas celles qui
+            // arrivent. Sans igdbId/steamAppId du tout ici, un jeu
+            // enregistré avant l'introduction du champ ne le gagnerait
+            // jamais (la garde court-circuiterait dès que titre/plateforme
+            // sont déjà à jour) ; avec la valeur entrante brute, une
+            // résolution sans id rouvrirait une écriture qui ne change
+            // rien, et un updatedAt injustifié avec elle.
             if (
               existing.title === game.title &&
               existing.platform === game.platform &&
-              existing.steamAppId === game.steamAppId &&
+              existing.steamAppId === steamAppId &&
               existing.igdbId === igdbId
             ) {
               return prev;
@@ -255,7 +268,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
               ...existing,
               title: game.title,
               platform: game.platform,
-              steamAppId: game.steamAppId,
+              steamAppId,
               igdbId,
             };
             return { ...prev, games: { ...prev.games, [game.id]: refreshed } };
@@ -405,7 +418,18 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       // colle lui-même son SteamID64 (Profil, "Lier mon compte Steam"), utilisé
       // pour appeler gamelary-api (voir §6.3) — jamais vérifié côté serveur.
       setSteamId64: (steamId64: string | undefined) => {
-        setState((prev) => ({ ...prev, settings: { ...prev.settings, steamId64 } }));
+        setState((prev) => {
+          // Garde "rien n'a changé", même raisonnement que partout ailleurs
+          // (voir updateGame) : re-confirmer le même identifiant (ou délier
+          // un compte déjà délié) ne doit pas avancer l'horodatage — ça
+          // ferait gagner l'arbitrage §9.5 à un appareil qui n'a rien
+          // modifié.
+          if (prev.settings.steamId64 === steamId64) return prev;
+          return {
+            ...prev,
+            settings: { ...prev.settings, steamId64, steamId64UpdatedAt: Date.now() },
+          };
+        });
       },
       // Un patch partiel plutôt qu'un setter par champ : l'écran d'édition
       // (voir profile/edit.tsx) enregistre nom/identifiant/bio d'un coup,
