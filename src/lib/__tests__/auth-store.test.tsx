@@ -64,6 +64,8 @@ function makeFakeClient(overrides: Partial<Record<string, jest.Mock>> = {}) {
       exchangeCodeForSession: jest.fn(async () => ({ data: {}, error: null })),
       signUp: jest.fn(async () => ({ data: { session: { user: { email: 'jarod@example.com' } } }, error: null })),
       signInWithPassword: jest.fn(async () => ({ error: null })),
+      resetPasswordForEmail: jest.fn(async () => ({ error: null })),
+      updateUser: jest.fn(async () => ({ error: null })),
       ...overrides,
     },
     __emitAuthStateChange: (event: string, session: unknown) => {
@@ -319,6 +321,101 @@ test("sans client : signUpWithPassword/signInWithPassword renvoient le même mes
   expect(await auth().signInWithPassword('jarod@example.com', 'un-mot-de-passe')).toEqual({
     error: 'La connexion en ligne n’est pas configurée pour cette build.',
   });
+});
+
+test('resetPasswordForEmail() transmet l’e-mail et la même URL de redirection que Google/lien magique', async () => {
+  const client = makeFakeClient();
+  const auth = await mountAuth(client);
+
+  const result = await auth().resetPasswordForEmail('jarod@example.com');
+
+  expect(client.auth.resetPasswordForEmail).toHaveBeenCalledWith('jarod@example.com', {
+    redirectTo: 'gamelary://profile/sign-in',
+  });
+  expect(result).toEqual({ error: null });
+});
+
+test("resetPasswordForEmail() remonte l'erreur serveur telle quelle", async () => {
+  const client = makeFakeClient({
+    resetPasswordForEmail: jest.fn(async () => ({ error: { message: 'Adresse invalide' } })),
+  });
+  const auth = await mountAuth(client);
+
+  const result = await auth().resetPasswordForEmail('pas-un-email');
+
+  expect(result).toEqual({ error: 'Adresse invalide' });
+});
+
+test('updatePassword() appelle updateUser avec le nouveau mot de passe', async () => {
+  const client = makeFakeClient();
+  const auth = await mountAuth(client);
+
+  const result = await auth().updatePassword('nouveau-mot-de-passe');
+
+  expect(client.auth.updateUser).toHaveBeenCalledWith({ password: 'nouveau-mot-de-passe' });
+  expect(result).toEqual({ error: null });
+});
+
+test("updatePassword() remonte l'erreur serveur telle quelle", async () => {
+  const client = makeFakeClient({
+    updateUser: jest.fn(async () => ({ error: { message: 'Mot de passe trop faible' } })),
+  });
+  const auth = await mountAuth(client);
+
+  const result = await auth().updatePassword('123');
+
+  expect(result).toEqual({ error: 'Mot de passe trop faible' });
+});
+
+test("sans client : resetPasswordForEmail/updatePassword renvoient le même message explicite, pas d'appel réseau", async () => {
+  const auth = await mountAuth(null);
+
+  expect(await auth().resetPasswordForEmail('jarod@example.com')).toEqual({
+    error: 'La connexion en ligne n’est pas configurée pour cette build.',
+  });
+  expect(await auth().updatePassword('nouveau-mot-de-passe')).toEqual({
+    error: 'La connexion en ligne n’est pas configurée pour cette build.',
+  });
+});
+
+test("onAuthStateChange('PASSWORD_RECOVERY', ...) : statut 'passwordRecovery', pas 'signedIn' malgré une session valide", async () => {
+  // Le piège que ce test existe pour attraper : un lien de réinitialisation
+  // établit une VRAIE session (voir le commentaire d'AuthStatus,
+  // auth-store.tsx) — sans ce cas spécial, l'utilisateur passerait tout
+  // droit aux onglets sans jamais voir le formulaire "nouveau mot de passe".
+  const client = makeFakeClient();
+  const auth = await mountAuth(client);
+  expect(auth().status).toBe('signedOut');
+
+  const recoverySession = { user: { email: 'jarod@example.com' } };
+  await act(async () => {
+    client.__emitAuthStateChange('PASSWORD_RECOVERY', recoverySession);
+  });
+
+  expect(auth().status).toBe('passwordRecovery');
+  expect(auth().session).toBe(recoverySession);
+});
+
+test("onAuthStateChange('USER_UPDATED', ...) après une récupération : repasse à 'signedIn' de lui-même", async () => {
+  // Simule exactement la séquence réelle : le lien établit d'abord la
+  // session de récupération (PASSWORD_RECOVERY), puis updatePassword()
+  // (appelé depuis le formulaire "nouveau mot de passe") déclenche
+  // USER_UPDATED avec cette même session toujours valide — traité comme
+  // n'importe quel autre événement porteur d'une session, donc 'signedIn'
+  // sans repasser par un second écran de connexion.
+  const client = makeFakeClient();
+  const auth = await mountAuth(client);
+  const session = { user: { email: 'jarod@example.com' } };
+
+  await act(async () => {
+    client.__emitAuthStateChange('PASSWORD_RECOVERY', session);
+  });
+  expect(auth().status).toBe('passwordRecovery');
+
+  await act(async () => {
+    client.__emitAuthStateChange('USER_UPDATED', session);
+  });
+  expect(auth().status).toBe('signedIn');
 });
 
 test('le démontage se désabonne de onAuthStateChange (pas de fuite)', async () => {
