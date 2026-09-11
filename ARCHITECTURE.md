@@ -473,6 +473,16 @@ seul blob JSON, largement suffisant pour le volume de données d'un solo
 (quelques dizaines de jeux) ; pas besoin d'une vraie base locale (SQLite)
 pour l'instant.
 
+`@react-native-async-storage/async-storage` est épinglé à **exactement**
+`2.2.0` dans `package.json` (pas de `^`) : les 3.x cassent le module natif
+sous Expo Go/SDK 57 sur appareil réel (`AsyncStorageError: Native module is
+null, cannot access legacy storage`), un incompatibilité confirmée côté
+Expo pour SDK 54+ — `2.2.0` est la version que `node_modules/expo/
+bundledNativeModules.json` (la même source que lirait `expo install`) donne
+comme compatible avec ce SDK. Ne pas remonter cette version, même vers une
+release apparemment plus récente, sans avoir d'abord vérifié qu'Expo la
+liste comme compatible avec le SDK alors utilisé par le projet.
+
 - **`games`** : un jeu par id, `inLibrary` (suivi ou simplement vu/en liste),
   `stopped`, `achievements` (liste nommée, voir §6.3), `favoriteTrackId`
   (référence vers une piste de `tracked-games.ts`, voir §6.4 — jamais la

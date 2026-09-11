@@ -6,6 +6,7 @@
 // précisément pour ça qu'ils ont besoin de tests.
 // Même harnais que game-store-batching.test.tsx : react-test-renderer, déjà
 // présent via jest-expo, suffit pour piloter le provider.
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, create } from 'react-test-renderer';
 
 import { GameStoreProvider, useGameStore } from '../game-store';
@@ -284,6 +285,10 @@ test("le scénario de perte d'avis : ouvrir Explorer ne prend pas le dessus sur 
   });
   const horodatageA = appareilA().games['jeu-test'].updatedAt!;
 
+  // Appareil B n'a jamais synchronisé avec A : sans ce clear, les deux
+  // mountStore() de ce test partagent le même stockage en mémoire (voir
+  // jest.async-storage-mock.js) et B lirait à tort l'avis déjà écrit par A.
+  await AsyncStorage.clear();
   const appareilB = await mountStore();
   act(() => {
     appareilB().registerCatalogGame(CATALOG_GAME);

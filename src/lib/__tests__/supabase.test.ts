@@ -1,15 +1,11 @@
-// AsyncStorage ne fonctionne pas du tout sous Jest dans ce projet (vérifié :
-// tout appel réel rejette avec "Native module is null, cannot access legacy
-// storage"). Les tests existants du store ne le voient jamais parce que
-// game-store.tsx avale l'échec en silence (repli sur le seed, voir son
-// commentaire "Lecture impossible..."). Le client Supabase, lui, ne l'avale
-// pas : createClient() déclenche en interne un chargement de session
-// (_emitInitialSession) qui n'est jamais attendu par l'appelant — un rejet
-// non intercepté à cet endroit fait planter tout le worker Jest, pas
-// seulement échouer le test. D'où ce mock, scopé à ce fichier plutôt qu'au
-// jest.config.js global : corriger le problème pour tout le projet
-// changerait le comportement de tests existants qui reposent aujourd'hui
-// sur cet échec silencieux, un chantier séparé de celui-ci.
+// Mock scopé à ce fichier plutôt que de dépendre du mock global
+// (jest.async-storage-mock.js, voir jest.config.js) : createClient()
+// déclenche en interne un chargement de session (_emitInitialSession) qui
+// n'est jamais attendu par l'appelant — un rejet non intercepté à cet
+// endroit fait planter tout le worker Jest, pas seulement échouer le test.
+// Un mock minimal et local, garanti disponible avant tout `require('../
+// supabase')` (voir jest.resetModules ci-dessous), retire toute dépendance
+// à l'ordre de résolution des mocks partagés pour ce risque précis.
 jest.mock('@react-native-async-storage/async-storage', () => {
   const store = new Map<string, string>();
   return {
