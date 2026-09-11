@@ -1,5 +1,17 @@
 # Gamelary
 
+🔗 **Démo en ligne** : [<URL_DEMO>](<URL_DEMO>)
+
+J'ai construit Gamelary pendant ma reconversion vers le métier de développeur
+full stack (formation OpenClassrooms, complétée par des certifications
+LinkedIn), pour sortir des exercices guidés et affronter les vrais problèmes
+d'une app en production : gérer des secrets d'API sur plusieurs sources
+externes (IGDB, Steam, SteamGridDB), faire cohabiter une bibliothèque locale
+avec un compte utilisateur synchronisé, et tenir une vraie discipline de
+tests (unitaires, E2E, mutation testing) plutôt que du code qui "marche chez
+moi". Développé seul, du schéma de base de données jusqu'à l'interface
+mobile et web.
+
 Application mobile (iOS, Android, + web) façon **"Letterboxd pour les jeux vidéo"** :
 bibliothèque de jeux suivis, wishlist, listes personnalisées, notes et avis,
 suivi des succès, temps de jeu, et un onglet Explorer pour découvrir de
@@ -8,6 +20,17 @@ nouveaux titres.
 Projet personnel, développé en solo — Expo (React Native) + TypeScript, avec
 deux sources de données externes (IGDB pour le catalogue, Steam pour les
 succès et le temps de jeu réel).
+
+## Captures d'écran
+
+| | |
+|---|---|
+| ![Bibliothèque](./docs/screenshots/library.png) | ![Fiche jeu](./docs/screenshots/game-detail.png) |
+| **Bibliothèque** | **Fiche jeu** |
+| ![Explorer](./docs/screenshots/explorer.png) | ![Profil](./docs/screenshots/profile.png) |
+| **Explorer** | **Profil** |
+| ![Statistiques](./docs/screenshots/stats.png) | ![Connexion](./docs/screenshots/sign-in.png) |
+| **Statistiques** | **Connexion** |
 
 > ### 📐 [**ARCHITECTURE.md**](./ARCHITECTURE.md) — les décisions techniques et *pourquoi* elles ont été prises
 > C'est le document principal du projet : choix de stack, gestion des
@@ -34,17 +57,20 @@ succès et le temps de jeu réel).
   lien de profil partageable, créer une liste (nom, description,
   visibilité), et un réglage d'affichage de la fiche jeu (bandeau large +
   logo, ou jaquette portrait).
-- **Comptes** — connexion par Google OAuth ou lien magique par e-mail
-  (Supabase), sans mot de passe ni téléphone. La bibliothèque reste locale
-  et fonctionne sans compte ; la synchronisation entre appareils n'est pas
-  encore implémentée (voir [ARCHITECTURE.md §9](./ARCHITECTURE.md)).
+- **Comptes** — connexion **obligatoire** pour accéder à l'app, par Google
+  OAuth, e-mail/mot de passe (avec réinitialisation), ou lien magique par
+  e-mail (Supabase). La bibliothèque suivie et les succès sont
+  **synchronisés entre appareils** (`user_games`, `achievements`) ; le
+  temps de jeu par session (`play_sessions`) et les listes personnalisées
+  restent pour l'instant propres à chaque appareil, pas encore
+  synchronisés (voir [ARCHITECTURE.md §9](./ARCHITECTURE.md)).
 
 ## Stack
 
 | | |
 |---|---|
 | **App** | Expo SDK 57 (React Native), TypeScript, `expo-router` (routing par fichiers) |
-| **État local** | React Context + AsyncStorage (pas de compte utilisateur, tout vit sur l'appareil) |
+| **État local** | React Context + AsyncStorage — bibliothèque suivie/succès synchronisés via le compte (Supabase), temps de jeu par session et listes personnalisées propres à l'appareil |
 | **Backend intégré** | Routes serveur `expo-router` (`src/app/api/*+api.ts`) — gardent les secrets IGDB/SteamGridDB hors du bundle client |
 | **Backend séparé** | [**gamelary-api**](https://github.com/Jarodwayo/gamelary-api) — proxy Steam Web API (voir plus bas) |
 | **Tests** | Jest (unitaire + routes serveur), Playwright (E2E), typecheck TypeScript, ESLint |
@@ -92,8 +118,9 @@ npm run ios       # simulateur iOS
 npm run android   # émulateur Android
 ```
 
-La connexion (Google ou e-mail, voir [ARCHITECTURE.md §9.7](./ARCHITECTURE.md))
-est désormais **obligatoire** pour accéder aux onglets : `EXPO_PUBLIC_SUPABASE_URL`
+La connexion (Google, e-mail/mot de passe ou lien magique, voir
+[ARCHITECTURE.md §9.7](./ARCHITECTURE.md)) est désormais **obligatoire**
+pour accéder aux onglets : `EXPO_PUBLIC_SUPABASE_URL`
 et `EXPO_PUBLIC_SUPABASE_ANON_KEY` sont donc les deux seules variables
 réellement indispensables pour utiliser l'app — sans elles, l'écran de
 connexion reste bloqué en permanence (message explicite, pas d'écran
@@ -142,8 +169,8 @@ dépend d'une vraie clé d'API ni d'un service distant.
 
 Projet actif, développé en itérations. Les fonctionnalités implémentées, celles
 prévues, et les limites volontairement assumées (cache en mémoire côté serveur,
-compte utilisateur sans synchronisation de la bibliothèque) sont listées et
-justifiées dans [ARCHITECTURE.md §9](./ARCHITECTURE.md) et
+temps de jeu et listes personnalisées pas encore synchronisés entre appareils)
+sont listées et justifiées dans [ARCHITECTURE.md §9](./ARCHITECTURE.md) et
 [§10](./ARCHITECTURE.md).
 
 ## Licence
