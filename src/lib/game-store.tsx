@@ -179,6 +179,7 @@ type GameStoreContextValue = {
   settings: Settings;
   registerCatalogGame: (game: CatalogGame) => void;
   addToLibrary: (id: string) => void;
+  removeFromLibrary: (id: string) => void;
   toggleStopped: (id: string) => void;
   setTotalHours: (id: string, totalHours: number) => void;
   setRating: (id: string, rating: number) => void;
@@ -309,6 +310,20 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           const existing = prev.games[id];
           if (!existing || existing.inLibrary) return prev;
           return updateGame(prev, id, { inLibrary: true });
+        });
+      },
+      // Symétrique d'addToLibrary : ne touche que `inLibrary`, jamais
+      // `stopped`/`rating`/`review`/`achievements`/`playSessions` — un
+      // retrait de bibliothèque n'efface aucune de ces autres données
+      // utilisateur. C'est précisément ce qui permet à isSyncWorthy
+      // (sync-service.ts) de garder le jeu synchronisé après ce retrait
+      // s'il porte encore l'un de ces signaux (ex. un avis déjà écrit) —
+      // il ne redevient "non traqué" que si plus aucun ne le qualifie.
+      removeFromLibrary: (id: string) => {
+        setState((prev) => {
+          const existing = prev.games[id];
+          if (!existing || !existing.inLibrary) return prev;
+          return updateGame(prev, id, { inLibrary: false });
         });
       },
       toggleStopped: (id: string) => {
