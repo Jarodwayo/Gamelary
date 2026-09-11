@@ -47,7 +47,27 @@ test('résout un appid Steam vers son jeu IGDB quand la correspondance est uniqu
     platform: 'PC',
     steamAppId: 367520,
     igdbId: 14593,
+    summary: null,
     ambiguous: false,
+  });
+});
+
+test('transmet le résumé IGDB quand il est présent', async () => {
+  mockIgdbGamesFetch([
+    {
+      id: 555555,
+      name: 'Dispatch',
+      summary: 'Une exploration désolée dans un royaume déchu.',
+      platforms: [{ name: 'Xbox Series X|S' }],
+      external_games: [{ uid: '3241660', external_game_source: 1 }],
+    },
+  ]);
+
+  const res = await GET(request('steamAppId=3241660'));
+
+  expect(res.status).toBe(200);
+  await expect(res.json()).resolves.toMatchObject({
+    summary: 'Une exploration désolée dans un royaume déchu.',
   });
 });
 
@@ -106,6 +126,7 @@ test('traite une absence de correspondance IGDB comme "non trouvé", pas une err
     platform: null,
     steamAppId: null,
     igdbId: null,
+    summary: null,
     ambiguous: false,
   });
 });
@@ -129,6 +150,7 @@ test('dédoublonne par nom : deux lignes IGDB redondantes pour le même jeu ne s
     platform: 'PC',
     steamAppId: 367521,
     igdbId: 14593,
+    summary: null,
     ambiguous: false,
   });
 });
@@ -147,6 +169,7 @@ test('signale une ambiguïté quand deux jeux IGDB distincts revendiquent le mê
     platform: null,
     steamAppId: null,
     igdbId: null,
+    summary: null,
     ambiguous: true,
   });
 });
