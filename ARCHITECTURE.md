@@ -499,6 +499,14 @@ liste comme compatible avec le SDK alors utilisé par le projet.
   ajoute une session "correctrice" égale à l'écart avec le total actuel,
   ce qui garde l'historique daté exploitable même quand l'utilisateur
   corrige son total au lieu d'ajouter du temps au fil de l'eau.
+  `removeFromLibrary(id)` (bouton "Retirer de ma bibliothèque" de la fiche
+  jeu, affiché seulement quand `inLibrary` est déjà vrai — pendant
+  symétrique de "Ajouter à ma bibliothèque") ne touche QUE `inLibrary` :
+  jamais `stopped`/`rating`/`review`/`achievements`/`playSessions`, qui
+  restent tels quels. C'est précisément ce qui garde un jeu synchronisé
+  (`isSyncWorthy`, `src/lib/sync/sync-service.ts`, voir §9.5) après ce
+  retrait tant qu'il porte encore l'un de ces signaux — il ne redevient
+  "non traqué" que si plus aucun ne le qualifie.
 - **`lists`** : deux listes intégrées non supprimables (`favoris`,
   `wishlist`) plus les listes créées par l'utilisateur. "Jeux préférés" sur
   le Profil est simplement la liste `favoris` résolue en jeux ; la Wishlist
@@ -524,6 +532,11 @@ liste comme compatible avec le SDK alors utilisé par le projet.
     Explorer/une fiche jeu — peu importe `inLibrary`), et ne retombe sur une
     vraie recherche IGDB (même route que `library/search.tsx`) que pour un
     titre jamais croisé du tout.
+  - Retrait d'un jeu directement depuis la grille de l'écran d'une liste
+    (bouton en overlay sur chaque carte, `ListGameCard`, `profile/list/
+    [id].tsx`) — jusqu'ici, seul moyen de retirer un jeu était de rouvrir
+    `GamePickerSheet` et de retaper sur le jeu déjà coché, pas assez
+    découvrable. Réutilise `toggleListMembership`, comme l'ajout.
   - `OverflowMenu` (`src/components/overflow-menu.tsx`) retarde de 300ms
     l'action d'un item après avoir fermé son propre menu, plutôt que de
     l'appeler dans le même tick : présenter un second `<Modal>` RN (ex.

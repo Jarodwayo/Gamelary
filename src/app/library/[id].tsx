@@ -255,7 +255,20 @@ export default function GameDetailScreen() {
           </ThemedView>
         )}
 
-        {!game.inLibrary && (
+        {game.inLibrary ? (
+          // Pendant symétrique du bouton ci-dessous : ne touche que
+          // `inLibrary` (removeFromLibrary, game-store.tsx) — jamais
+          // `stopped`/note/avis/succès, qui restent intacts après ce
+          // retrait. C'est justement ce qui garde le jeu synchronisé
+          // (isSyncWorthy, sync-service.ts) s'il porte encore l'un de ces
+          // signaux ; il ne redevient non traqué que si plus aucun ne le
+          // qualifie.
+          <Pressable
+            onPress={() => store.removeFromLibrary(id)}
+            style={[styles.primaryButton, { backgroundColor: theme.backgroundSelected }]}>
+            <ThemedText>Retirer de ma bibliothèque</ThemedText>
+          </Pressable>
+        ) : (
           <Pressable
             onPress={() => store.addToLibrary(id)}
             style={[styles.primaryButton, { backgroundColor: theme.accent }]}>
