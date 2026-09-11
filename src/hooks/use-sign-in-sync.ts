@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import { useAuth } from '@/lib/auth-store';
 import { useGameStore } from '@/lib/game-store';
-import { syncLibrary } from '@/lib/sync/sync-service';
+import { syncLibrary, syncLists } from '@/lib/sync/sync-service';
 
 // Déclenche la synchronisation §9.5 automatiquement à la connexion, sans
 // vivre DANS auth-store.tsx : AuthProvider et GameStoreProvider restent deux
@@ -23,7 +23,7 @@ import { syncLibrary } from '@/lib/sync/sync-service';
 // du bouton manuel des réglages.
 export function useSignInSync() {
   const { status, session } = useAuth();
-  const { games, applySyncedGames } = useGameStore();
+  const { games, lists, applySyncedGames, applySyncedLists } = useGameStore();
   const previousStatus = useRef(status);
 
   useEffect(() => {
@@ -33,8 +33,15 @@ export function useSignInSync() {
 
     const userId = session?.user?.id;
     if (!userId) return;
-    syncLibrary(userId, games, applySyncedGames);
-    // `games` est volontairement absent des dépendances : cet effet ne doit
+    // Bibliothèque d'abord : `syncLists` a besoin des lignes `user_games`
+    // distantes déjà créées pour traduire l'appartenance aux listes (voir
+    // sync-service.ts) — un jeu de la Wishlist qui vient tout juste de
+    // monter (portée élargie par les listes) doit exister côté distant
+    // AVANT que list_games ne tente de le référencer.
+    syncLibrary(userId, games, lists, applySyncedGames).then(() => {
+      syncLists(userId, games, lists, applySyncedLists);
+    });
+    // `games`/`lists` sont volontairement absents des dépendances : cet effet ne doit
     // se redéclencher qu'à un changement de statut/session RÉEL (voir le
     // commentaire ci-dessus), jamais à chaque mutation de la bibliothèque —
     // la garde `wasSignedIn` l'empêcherait de toute façon de resynchroniser

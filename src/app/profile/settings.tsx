@@ -8,7 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth-store';
 import { useGameStore } from '@/lib/game-store';
-import { syncLibrary } from '@/lib/sync/sync-service';
+import { syncLibrary, syncLists } from '@/lib/sync/sync-service';
 import { DEFAULT_TITLE_ARTWORK, titleArtworkLabel } from '@/lib/title-artwork';
 
 type SyncState = { kind: 'idle' } | { kind: 'syncing' } | { kind: 'success' } | { kind: 'error'; message: string };
@@ -66,8 +66,14 @@ export default function SettingsScreen() {
       onPress: async () => {
         if (!userId || syncState.kind === 'syncing') return;
         setSyncState({ kind: 'syncing' });
-        const result = await syncLibrary(userId, store.games, store.applySyncedGames);
-        setSyncState(result.error ? { kind: 'error', message: result.error } : { kind: 'success' });
+        // Bibliothèque d'abord : syncLists a besoin des lignes user_games
+        // distantes déjà créées pour traduire l'appartenance aux listes
+        // (voir sync-service.ts et hooks/use-sign-in-sync.ts, même ordre).
+        const libraryResult = await syncLibrary(userId, store.games, store.lists, store.applySyncedGames);
+        const listsResult = libraryResult.error
+          ? libraryResult
+          : await syncLists(userId, store.games, store.lists, store.applySyncedLists);
+        setSyncState(listsResult.error ? { kind: 'error', message: listsResult.error } : { kind: 'success' });
       },
     });
   }

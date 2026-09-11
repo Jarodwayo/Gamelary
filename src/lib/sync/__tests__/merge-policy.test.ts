@@ -3,8 +3,14 @@ import {
   gameMatchKey,
   mergeAchievements,
   mergeGameFields,
+  mergeListMembership,
+  mergeListMetadata,
+  mergePlaySessions,
   parseAchievementId,
   type RemoteAchievementRow,
+  type RemoteListMembershipRow,
+  type RemoteListRow,
+  type RemotePlaySessionRow,
   type RemoteUserGameRow,
 } from '../merge-policy';
 
@@ -214,5 +220,248 @@ describe('mergeAchievements — union par (source, external_key), unlocked = OU 
     const result = mergeAchievements('g', local, []);
     expect(result.achievements).toEqual(local);
     expect(result.remoteUpserts).toEqual([]);
+  });
+});
+
+describe('mergePlaySessions — union par clientKey/client_key, registre immuable', () => {
+  test('session locale absente côté distant -> conservée telle quelle, poussée vers le distant', () => {
+    const local = [{ date: '2026-01-01T00:00:00.000Z', hours: 3, clientKey: 'k1' }];
+    const result = mergePlaySessions(local, []);
+    expect(result.sessions).toEqual(local);
+    expect(result.changed).toBe(false);
+    expect(result.remoteInserts).toEqual([{ client_key: 'k1', played_at: '2026-01-01T00:00:00.000Z', hours: 3 }]);
+  });
+
+  test('session distante absente localement -> importée, jamais poussée en retour', () => {
+    const remote: RemotePlaySessionRow[] = [{ client_key: 'k2', played_at: '2026-01-02T00:00:00.000Z', hours: 5 }];
+    const result = mergePlaySessions([], remote);
+    expect(result.sessions).toEqual([{ date: '2026-01-02T00:00:00.000Z', hours: 5, clientKey: 'k2' }]);
+    expect(result.changed).toBe(true);
+    expect(result.remoteInserts).toEqual([]);
+  });
+
+  test('même clientKey des deux côtés -> aucun doublon, aucune écriture', () => {
+    const local = [{ date: '2026-01-01T00:00:00.000Z', hours: 3, clientKey: 'k1' }];
+    const remote: RemotePlaySessionRow[] = [{ client_key: 'k1', played_at: '2026-01-01T00:00:00.000Z', hours: 3 }];
+    const result = mergePlaySessions(local, remote);
+    expect(result.sessions).toEqual(local);
+    expect(result.changed).toBe(false);
+    expect(result.remoteInserts).toEqual([]);
+  });
+
+  test('mélange réel à deux appareils : chacun garde ses propres sessions, plus celles importées de l’autre', () => {
+    const local = [
+      { date: '2026-01-01T00:00:00.000Z', hours: 3, clientKey: 'a-local-1' },
+      { date: '2026-01-03T00:00:00.000Z', hours: 1, clientKey: 'shared' },
+    ];
+    const remote: RemotePlaySessionRow[] = [
+      { client_key: 'shared', played_at: '2026-01-03T00:00:00.000Z', hours: 1 },
+      { client_key: 'b-remote-1', played_at: '2026-01-02T00:00:00.000Z', hours: 2 },
+    ];
+    const result = mergePlaySessions(local, remote);
+    expect(result.sessions).toEqual([
+      ...local,
+      { date: '2026-01-02T00:00:00.000Z', hours: 2, clientKey: 'b-remote-1' },
+    ]);
+    expect(result.changed).toBe(true);
+    // Seule la session vraiment absente côté distant est poussée.
+    expect(result.remoteInserts).toEqual([
+      { client_key: 'a-local-1', played_at: '2026-01-01T00:00:00.000Z', hours: 3 },
+    ]);
+  });
+
+  test('rien des deux côtés -> résultat vide, aucune écriture', () => {
+    const result = mergePlaySessions([], []);
+    expect(result.sessions).toEqual([]);
+    expect(result.changed).toBe(false);
+    expect(result.remoteInserts).toEqual([]);
+  });
+});
+
+function remoteList(overrides: Partial<RemoteListRow> = {}): RemoteListRow {
+  return {
+    name: 'Favoris',
+    description: null,
+    hidden: false,
+    updated_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+describe('mergeListMetadata — dernier-écrit-gagne sur updatedAt, comme rating/review', () => {
+  test('local plus récent -> nom/description/visibilité LOCAUX gagnent des deux côtés', () => {
+    const localUpdatedAt = Date.parse('2026-02-01T00:00:00.000Z');
+    const merged = mergeListMetadata(
+      { name: 'À finir (local)', description: 'Écrit après le distant', hidden: true, updatedAt: localUpdatedAt },
+      remoteList({ name: 'À finir (distant)', description: 'Vieille description', hidden: false })
+    );
+    expect(merged).toEqual({
+      name: 'À finir (local)',
+      description: 'Écrit après le distant',
+      hidden: true,
+      updatedAt: localUpdatedAt,
+    });
+  });
+
+  test('distant plus récent -> nom/description/visibilité DISTANTS gagnent des deux côtés', () => {
+    const localUpdatedAt = Date.parse('2026-01-01T00:00:00.000Z');
+    const remoteUpdatedAt = '2026-02-01T00:00:00.000Z';
+    const merged = mergeListMetadata(
+      { name: 'Ancien nom', description: 'Ancienne description', hidden: false, updatedAt: localUpdatedAt },
+      remoteList({ name: 'Nouveau nom', description: 'Nouvelle description', hidden: true, updated_at: remoteUpdatedAt })
+    );
+    expect(merged).toEqual({
+      name: 'Nouveau nom',
+      description: 'Nouvelle description',
+      hidden: true,
+      updatedAt: Date.parse(remoteUpdatedAt),
+    });
+  });
+
+  test('updatedAt local absent -> ni gagnant ni perdant, métadonnées locales inchangées', () => {
+    const merged = mergeListMetadata(
+      { name: 'Favoris', description: undefined, hidden: false, updatedAt: undefined },
+      remoteList({ name: 'Nom distant plus récent', hidden: true, updated_at: '2026-02-01T00:00:00.000Z' })
+    );
+    expect(merged).toEqual({ name: 'Favoris', description: undefined, hidden: false, updatedAt: undefined });
+  });
+
+  test('égalité stricte des horodatages -> le local est conservé (pas de bascule inutile)', () => {
+    const sameInstant = '2026-01-01T00:00:00.000Z';
+    const merged = mergeListMetadata(
+      { name: 'Nom local', description: undefined, hidden: false, updatedAt: Date.parse(sameInstant) },
+      remoteList({ name: 'Nom distant', updated_at: sameInstant })
+    );
+    expect(merged.name).toBe('Nom local');
+  });
+
+  test('description distante à null mais plus récente -> la description locale est bien effacée', () => {
+    const localUpdatedAt = Date.parse('2026-01-01T00:00:00.000Z');
+    const merged = mergeListMetadata(
+      { name: 'Nom', description: 'À effacer', hidden: false, updatedAt: localUpdatedAt },
+      remoteList({ description: null, updated_at: '2026-02-01T00:00:00.000Z' })
+    );
+    expect(merged.description).toBeUndefined();
+  });
+});
+
+describe('mergeListMembership — union par jeu, tombstone gated sur updatedAt', () => {
+  test('jeu actif seulement local (jamais synchronisé) -> reste actif, poussé au distant', () => {
+    const result = mergeListMembership(['hollow-knight'], {}, []);
+    expect(result.gameIds).toEqual(['hollow-knight']);
+    expect(result.changed).toBe(false);
+    expect(result.remoteUpserts).toEqual([{ gameId: 'hollow-knight', removed: false }]);
+  });
+
+  test('tombstone seulement local (jamais synchronisé) -> absent des membres actifs, poussé au distant', () => {
+    const result = mergeListMembership(
+      [],
+      { 'hollow-knight': { removed: true, updatedAt: Date.parse('2026-01-01T00:00:00.000Z') } },
+      []
+    );
+    expect(result.gameIds).toEqual([]);
+    expect(result.remoteUpserts).toEqual([{ gameId: 'hollow-knight', removed: true }]);
+  });
+
+  test('jeu actif seulement distant -> importé (union), jamais repoussé', () => {
+    const remote: RemoteListMembershipRow[] = [
+      { gameId: 'zelda-botw', removedAt: null, updatedAt: '2026-01-01T00:00:00.000Z' },
+    ];
+    const result = mergeListMembership([], {}, remote);
+    expect(result.gameIds).toEqual(['zelda-botw']);
+    expect(result.changed).toBe(true);
+    expect(result.remoteUpserts).toEqual([]);
+  });
+
+  test('tombstone seulement distant -> importé (le jeu reste retiré localement), jamais repoussé', () => {
+    const remote: RemoteListMembershipRow[] = [
+      { gameId: 'zelda-botw', removedAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+    ];
+    const result = mergeListMembership([], {}, remote);
+    expect(result.gameIds).toEqual([]);
+    expect(result.memberships['zelda-botw']).toEqual({ removed: true, updatedAt: Date.parse('2026-01-01T00:00:00.000Z') });
+  });
+
+  test('les deux côtés actifs -> aucune écriture, aucun changement', () => {
+    const remote: RemoteListMembershipRow[] = [
+      { gameId: 'hollow-knight', removedAt: null, updatedAt: '2026-01-01T00:00:00.000Z' },
+    ];
+    const result = mergeListMembership(
+      ['hollow-knight'],
+      { 'hollow-knight': { updatedAt: Date.parse('2026-01-05T00:00:00.000Z') } },
+      remote
+    );
+    expect(result.gameIds).toEqual(['hollow-knight']);
+    expect(result.changed).toBe(false);
+    expect(result.remoteUpserts).toEqual([]);
+  });
+
+  test('les deux côtés retirés -> aucune écriture, aucun changement', () => {
+    const remote: RemoteListMembershipRow[] = [
+      { gameId: 'hollow-knight', removedAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+    ];
+    const result = mergeListMembership(
+      [],
+      { 'hollow-knight': { removed: true, updatedAt: Date.parse('2026-01-05T00:00:00.000Z') } },
+      remote
+    );
+    expect(result.gameIds).toEqual([]);
+    expect(result.changed).toBe(false);
+    expect(result.remoteUpserts).toEqual([]);
+  });
+
+  // Le scénario de conflit demandé explicitement : actif d'un côté, retiré
+  // de l'autre — jamais un simple "compiler les deux", un vrai arbitrage.
+  test('conflit réel : actif localement (plus récent), retiré à distance -> le local gagne, le distant est corrigé', () => {
+    const remote: RemoteListMembershipRow[] = [
+      { gameId: 'hollow-knight', removedAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+    ];
+    const result = mergeListMembership(
+      ['hollow-knight'],
+      { 'hollow-knight': { removed: false, updatedAt: Date.parse('2026-02-01T00:00:00.000Z') } },
+      remote
+    );
+    expect(result.gameIds).toEqual(['hollow-knight']);
+    expect(result.changed).toBe(false);
+    expect(result.remoteUpserts).toEqual([{ gameId: 'hollow-knight', removed: false }]);
+  });
+
+  test('conflit réel : retiré localement, actif à distance (plus récent) -> le distant gagne, réintégré localement', () => {
+    const remote: RemoteListMembershipRow[] = [
+      { gameId: 'hollow-knight', removedAt: null, updatedAt: '2026-02-01T00:00:00.000Z' },
+    ];
+    const result = mergeListMembership(
+      [],
+      { 'hollow-knight': { removed: true, updatedAt: Date.parse('2026-01-01T00:00:00.000Z') } },
+      remote
+    );
+    expect(result.gameIds).toEqual(['hollow-knight']);
+    expect(result.changed).toBe(true);
+    expect(result.remoteUpserts).toEqual([]);
+  });
+
+  test('conflit réel mais sans updatedAt local -> ni gagnant ni perdant, rien ne bouge nulle part', () => {
+    const remote: RemoteListMembershipRow[] = [
+      { gameId: 'hollow-knight', removedAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+    ];
+    // Membre actif hérité (gameIds), jamais passé par toggleListMembership
+    // depuis l'introduction de `memberships` -> pas d'entrée du tout.
+    const result = mergeListMembership(['hollow-knight'], {}, remote);
+    expect(result.gameIds).toEqual(['hollow-knight']);
+    expect(result.changed).toBe(false);
+    expect(result.remoteUpserts).toEqual([]);
+  });
+
+  test('égalité stricte des horodatages -> le local est conservé (pas de bascule inutile)', () => {
+    const sameInstant = '2026-01-01T00:00:00.000Z';
+    const remote: RemoteListMembershipRow[] = [
+      { gameId: 'hollow-knight', removedAt: sameInstant, updatedAt: sameInstant },
+    ];
+    const result = mergeListMembership(
+      ['hollow-knight'],
+      { 'hollow-knight': { removed: false, updatedAt: Date.parse(sameInstant) } },
+      remote
+    );
+    expect(result.gameIds).toEqual(['hollow-knight']);
   });
 });

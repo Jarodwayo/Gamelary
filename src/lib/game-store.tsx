@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 
 import type { StoredProfile } from '@/lib/profile';
 import type { TitleArtwork } from '@/lib/title-artwork';
+import { makePlaySessionClientKey } from '@/lib/play-session-key';
 import { slugify } from '@/lib/slug';
 import { migrateStore, STORE_VERSION } from '@/lib/store-migrations';
 import type { Achievement, CatalogGame, PlaySession } from '@/types/game';
@@ -43,6 +44,20 @@ export type StoredGame = {
   playSessions: PlaySession[];
 };
 
+// Métadonnées de synchro d'UNE appartenance (gameId -> liste), voir
+// ARCHITECTURE.md §9.5 : `gameIds` reste la seule source de vérité pour
+// « ce jeu est-il actuellement dans cette liste » (tout le reste de l'app
+// le lit ainsi, inchangé) — `memberships` ne porte que ce qu'il faut pour
+// arbitrer un conflit de synchro : `removed` distingue un retrait (tombstone)
+// d'un ajout, `updatedAt` date ce dernier changement. Absent pour une
+// entrée jamais touchée depuis l'introduction de ce champ, même convention
+// que `StoredGame.updatedAt` — une simple union suffit alors, rien à
+// arbitrer par date.
+export type ListMembership = {
+  removed?: boolean;
+  updatedAt?: number;
+};
+
 export type StoredList = {
   id: string;
   name: string;
@@ -55,7 +70,13 @@ export type StoredList = {
   // simplement pas dans les rangées du Profil (voir profile/index.tsx).
   // Absent = visible, pour ne pas avoir à migrer les listes déjà stockées.
   hidden?: boolean;
+  // Horodatage des métadonnées (nom/description/hidden) pour l'arbitrage
+  // "le plus récent gagne" de la synchro (§9.5) — même principe que
+  // StoredGame.updatedAt : absent = jamais modifié depuis l'introduction du
+  // champ, rien à arbitrer plutôt que de deviner un gagnant.
+  updatedAt?: number;
   gameIds: string[];
+  memberships?: Record<string, ListMembership>;
 };
 
 // Réglages globaux, pas propres à un jeu (SteamID64, identité affichée du
@@ -168,6 +189,7 @@ type GameStoreContextValue = {
   toggleListMembership: (listId: string, gameId: string) => void;
   createList: (name: string, options?: { description?: string; hidden?: boolean }) => string;
   applySyncedGames: (games: StoredGame[]) => void;
+  applySyncedLists: (lists: StoredList[]) => void;
 };
 
 const GameStoreContext = createContext<GameStoreContextValue | null>(null);
@@ -299,7 +321,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           const currentTotal = existing.playSessions.reduce((sum, s) => sum + s.hours, 0);
           const delta = target - currentTotal;
           if (delta === 0) return prev;
-          const session: PlaySession = { date: new Date().toISOString(), hours: delta };
+          const session: PlaySession = { date: new Date().toISOString(), hours: delta, clientKey: makePlaySessionClientKey() };
           return updateGame(prev, id, { playSessions: [...existing.playSessions, session] });
         });
       },
@@ -364,19 +386,34 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           return updateGame(prev, id, { favoriteTrackId });
         });
       },
+      // Consigne aussi, dans `memberships`, l'horodatage et le sens de ce
+      // changement (voir ListMembership) — nécessaire à la synchro §9.5
+      // pour distinguer un vrai retrait (à répercuter côté distant via un
+      // tombstone) d'un simple ajout, ce qu'une union de `gameIds` seule ne
+      // permettrait pas de faire une fois les deux appareils fusionnés.
       toggleListMembership: (listId: string, gameId: string) => {
         setState((prev) => {
           const list = prev.lists[listId];
           if (!list) return prev;
-          const gameIds = list.gameIds.includes(gameId)
+          const wasMember = list.gameIds.includes(gameId);
+          const gameIds = wasMember
             ? list.gameIds.filter((existingId) => existingId !== gameId)
             : [...list.gameIds, gameId];
-          return { ...prev, lists: { ...prev.lists, [listId]: { ...list, gameIds } } };
+          const memberships: Record<string, ListMembership> = {
+            ...list.memberships,
+            [gameId]: { removed: wasMember, updatedAt: Date.now() },
+          };
+          return { ...prev, lists: { ...prev.lists, [listId]: { ...list, gameIds, memberships } } };
         });
       },
       // `options` facultatif : la création à la volée depuis la fiche jeu
       // (voir list-picker-sheet.tsx) ne demande qu'un nom, l'écran dédié
       // (profile/create-list.tsx) y ajoute description et visibilité.
+      // `updatedAt` horodate ces métadonnées dès la création (voir §9.5) :
+      // une liste tout juste créée EST une vraie donnée utilisateur, au
+      // même titre qu'une note ou un avis — contrairement à
+      // registerCatalogGame, qui n'horodate jamais un simple aperçu de
+      // catalogue.
       createList: (name: string, options?: { description?: string; hidden?: boolean }): string => {
         const id = `${slugify(name)}-${Date.now().toString(36)}`;
         setState((prev) => ({
@@ -389,6 +426,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
               builtin: false,
               description: options?.description,
               hidden: options?.hidden,
+              updatedAt: Date.now(),
               gameIds: [],
             },
           },
@@ -440,6 +478,19 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           const nextGames = { ...prev.games };
           for (const game of games) nextGames[game.id] = game;
           return { ...prev, games: nextGames };
+        });
+      },
+      // Même chemin dédié qu'applySyncedGames, et pour la même raison :
+      // jamais d'horodatage posé ici, les listes fournies portent déjà le
+      // résultat complet de la fusion (voir mergeListMetadata/
+      // mergeListMembership, lib/sync/merge-policy.ts) — `updatedAt` y est
+      // soit celui d'un des deux appareils, soit absent, jamais "maintenant".
+      applySyncedLists: (lists: StoredList[]) => {
+        if (lists.length === 0) return;
+        setState((prev) => {
+          const nextLists = { ...prev.lists };
+          for (const list of lists) nextLists[list.id] = list;
+          return { ...prev, lists: nextLists };
         });
       },
     }),

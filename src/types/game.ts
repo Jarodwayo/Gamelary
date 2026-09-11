@@ -12,9 +12,20 @@ export type Track = {
 // main (pas de tracking automatique, voir ARCHITECTURE.md §6.6). Stocker
 // des sessions datées plutôt qu'un seul total permet de dériver Semaine/
 // Mois/Tout à l'affichage (Statistiques) sans données inventées.
+//
+// `clientKey` : identité stable de LA SESSION elle-même (voir
+// ARCHITECTURE.md §9.5, synchro `play_sessions`) — jamais dérivée de
+// `date`/`hours` : deux appareils qui enregistrent chacun une correction
+// vers le même total, un jour différent l'un de l'autre par exemple,
+// produisent deux entrées réellement distinctes qu'une clé basée sur le
+// contenu ferait fusionner à tort (contrairement aux succès, où deux
+// saisies du même nom SONT censées désigner le même succès). Assignée une
+// fois à la création (game-store.tsx) et jamais régénérée — voir
+// merge-policy.ts, mergePlaySessions.
 export type PlaySession = {
   date: string; // ISO 8601
   hours: number;
+  clientKey: string;
 };
 
 // En l'absence d'API succès réelle (Steam Web API, voir ARCHITECTURE.md

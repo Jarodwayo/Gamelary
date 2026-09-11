@@ -1,23 +1,31 @@
 // Vérifie le déclenchement, pas la fusion elle-même (déjà couverte par
-// lib/sync/__tests__/sync-service.test.ts) : syncLibrary est mocké ici, seul
-// le COMPTAGE et le MOMENT des appels sont en jeu — une seule synchro par
-// transition RÉELLE vers 'signedIn', jamais à chaque rendu tant qu'on y
-// reste, et jamais avant d'y être entré pour de vrai (une session déjà
-// active à l'ouverture de l'app ne doit pas en redéclencher une).
+// lib/sync/__tests__/sync-service.test.ts) : syncLibrary/syncLists sont
+// mockés ici, seuls le COMPTAGE, l'ORDRE et le MOMENT des appels sont en jeu
+// — une seule synchro par transition RÉELLE vers 'signedIn', jamais à chaque
+// rendu tant qu'on y reste, et jamais avant d'y être entré pour de vrai (une
+// session déjà active à l'ouverture de l'app ne doit pas en redéclencher
+// une). syncLists attend la résolution de syncLibrary (voir le commentaire
+// du hook : la bibliothèque doit monter en premier, list_games en dépend).
 import { act, create } from 'react-test-renderer';
 
 import { AuthProvider } from '@/lib/auth-store';
 import { GameStoreProvider } from '@/lib/game-store';
 import { getSupabaseClient } from '@/lib/supabase';
-import { syncLibrary } from '@/lib/sync/sync-service';
+import { syncLibrary, syncLists } from '@/lib/sync/sync-service';
 
 import { useSignInSync } from '../use-sign-in-sync';
 
 jest.mock('@/lib/supabase', () => ({ getSupabaseClient: jest.fn() }));
-jest.mock('@/lib/sync/sync-service', () => ({ syncLibrary: jest.fn() }));
+jest.mock('@/lib/sync/sync-service', () => ({ syncLibrary: jest.fn(), syncLists: jest.fn() }));
 
 const mockGetSupabaseClient = getSupabaseClient as jest.Mock;
 const mockSyncLibrary = syncLibrary as jest.Mock;
+const mockSyncLists = syncLists as jest.Mock;
+
+beforeEach(() => {
+  mockSyncLibrary.mockResolvedValue({ error: null });
+  mockSyncLists.mockResolvedValue({ error: null });
+});
 
 // Même fake client que auth-store.test.tsx : la forme exacte attendue par
 // AuthProvider (getSession/onAuthStateChange), avec un moyen de simuler un
@@ -62,6 +70,14 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
+// Flush supplémentaire pour laisser le temps à la chaîne syncLibrary ->
+// .then() -> syncLists de se résoudre (deux mocks résolus, jamais
+// synchrones) avant les assertions.
+async function flush() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 test('une connexion réelle (transition vers signedIn) déclenche syncLibrary une fois', async () => {
   const client = makeFakeClient(null);
   await mount(client);
@@ -69,11 +85,36 @@ test('une connexion réelle (transition vers signedIn) déclenche syncLibrary un
 
   await act(async () => {
     client.__emitAuthStateChange('SIGNED_IN', { user: { id: 'user-1' } });
+    await flush();
   });
 
   expect(mockSyncLibrary).toHaveBeenCalledTimes(1);
   const [userId] = mockSyncLibrary.mock.calls[0];
   expect(userId).toBe('user-1');
+});
+
+test('syncLists est appelé APRÈS la résolution de syncLibrary, avec le même userId', async () => {
+  const callOrder: string[] = [];
+  mockSyncLibrary.mockImplementation(async () => {
+    callOrder.push('syncLibrary');
+    return { error: null };
+  });
+  mockSyncLists.mockImplementation(async () => {
+    callOrder.push('syncLists');
+    return { error: null };
+  });
+
+  const client = makeFakeClient(null);
+  await mount(client);
+
+  await act(async () => {
+    client.__emitAuthStateChange('SIGNED_IN', { user: { id: 'user-1' } });
+    await flush();
+  });
+
+  expect(mockSyncLists).toHaveBeenCalledTimes(1);
+  expect(mockSyncLists.mock.calls[0][0]).toBe('user-1');
+  expect(callOrder).toEqual(['syncLibrary', 'syncLists']);
 });
 
 test('une session déjà active retrouvée au démarrage (cold start) déclenche aussi une synchro', async () => {
@@ -84,21 +125,26 @@ test('une session déjà active retrouvée au démarrage (cold start) déclenche
   // jamais de la synchro automatique, seulement du bouton manuel.
   const client = makeFakeClient({ user: { id: 'user-1' } });
   await mount(client);
+  await act(flush);
 
   expect(mockSyncLibrary).toHaveBeenCalledTimes(1);
   expect(mockSyncLibrary.mock.calls[0][0]).toBe('user-1');
+  expect(mockSyncLists).toHaveBeenCalledTimes(1);
 });
 
 test('rester signedIn après la confirmation de session au démarrage ne redéclenche pas la synchro', async () => {
   const client = makeFakeClient({ user: { id: 'user-1' } });
   await mount(client);
+  await act(flush);
   expect(mockSyncLibrary).toHaveBeenCalledTimes(1);
 
   await act(async () => {
     client.__emitAuthStateChange('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+    await flush();
   });
 
   expect(mockSyncLibrary).toHaveBeenCalledTimes(1);
+  expect(mockSyncLists).toHaveBeenCalledTimes(1);
 });
 
 test('rester signedIn (pas de transition) ne redéclenche pas syncLibrary', async () => {
@@ -107,6 +153,7 @@ test('rester signedIn (pas de transition) ne redéclenche pas syncLibrary', asyn
 
   await act(async () => {
     client.__emitAuthStateChange('SIGNED_IN', { user: { id: 'user-1' } });
+    await flush();
   });
   expect(mockSyncLibrary).toHaveBeenCalledTimes(1);
 
@@ -115,9 +162,11 @@ test('rester signedIn (pas de transition) ne redéclenche pas syncLibrary', asyn
   // connexion.
   await act(async () => {
     client.__emitAuthStateChange('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+    await flush();
   });
 
   expect(mockSyncLibrary).toHaveBeenCalledTimes(1);
+  expect(mockSyncLists).toHaveBeenCalledTimes(1);
 });
 
 test('déconnexion puis reconnexion déclenche une nouvelle synchro (deux vraies connexions)', async () => {
@@ -126,21 +175,26 @@ test('déconnexion puis reconnexion déclenche une nouvelle synchro (deux vraies
 
   await act(async () => {
     client.__emitAuthStateChange('SIGNED_IN', { user: { id: 'user-1' } });
+    await flush();
   });
   expect(mockSyncLibrary).toHaveBeenCalledTimes(1);
 
   await act(async () => {
     client.__emitAuthStateChange('SIGNED_OUT', null);
+    await flush();
   });
   expect(mockSyncLibrary).toHaveBeenCalledTimes(1);
 
   await act(async () => {
     client.__emitAuthStateChange('SIGNED_IN', { user: { id: 'user-1' } });
+    await flush();
   });
   expect(mockSyncLibrary).toHaveBeenCalledTimes(2);
+  expect(mockSyncLists).toHaveBeenCalledTimes(2);
 });
 
 test('sans client configuré : jamais de synchro (rien à observer)', async () => {
   await mount(null);
   expect(mockSyncLibrary).not.toHaveBeenCalled();
+  expect(mockSyncLists).not.toHaveBeenCalled();
 });
