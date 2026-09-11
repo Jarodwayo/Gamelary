@@ -100,17 +100,19 @@ test('succès avec jeux mixtes : complète le jeu non suivi, ne touche jamais au
   );
 
   // Jeu non suivi : complété avec le temps de jeu Steam (600 min = 10h) et
-  // ajouté à la bibliothèque.
+  // ajouté à la bibliothèque. `clientKey` (voir types/game.ts, ARCHITECTURE.md
+  // §9.5) est assigné à la création par setTotalHours, jamais prévisible.
   expect(games['test-untracked'].playSessions).toEqual([
-    { date: expect.any(String), hours: 10 },
+    { date: expect.any(String), hours: 10, clientKey: expect.any(String) },
   ]);
   expect(games['test-untracked'].inLibrary).toBe(true);
 
   // Le piège verrouillé : un jeu déjà suivi (ici PS5, steamAppId présent par
   // coïncidence) ne doit JAMAIS être écrasé par le temps de jeu Steam,
-  // strictement inchangé.
+  // strictement inchangé. `clientKey` est comblé par la migration de forme au
+  // chargement (voir store-migrations.ts) : absent du seed, présent ici.
   expect(games['test-tracked'].playSessions).toEqual([
-    { date: '2024-01-01T00:00:00.000Z', hours: 5 },
+    { date: '2024-01-01T00:00:00.000Z', hours: 5, clientKey: expect.any(String) },
   ]);
 });
 
@@ -157,7 +159,7 @@ test('jeu Steam inconnu du catalogue : résolu via la route IGDB de Gamelary pui
     inLibrary: true,
   });
   expect((created as { playSessions: unknown }).playSessions).toEqual([
-    { date: expect.any(String), hours: 15 },
+    { date: expect.any(String), hours: 15, clientKey: expect.any(String) },
   ]);
 });
 
@@ -181,6 +183,6 @@ test('bibliothèque Steam vide (profil privé) : message explicite, rien de modi
   expect(games['test-untracked'].playSessions).toEqual([]);
   expect(games['test-untracked'].inLibrary).toBe(false);
   expect(games['test-tracked'].playSessions).toEqual([
-    { date: '2024-01-01T00:00:00.000Z', hours: 5 },
+    { date: '2024-01-01T00:00:00.000Z', hours: 5, clientKey: expect.any(String) },
   ]);
 });
