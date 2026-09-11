@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Clipboard from 'expo-clipboard';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
 
 import { ExternalLink } from '@/components/external-link';
@@ -15,10 +16,15 @@ import { useGame } from '@/hooks/use-game';
 import { useTheme } from '@/hooks/use-theme';
 import { useGameStore } from '@/lib/game-store';
 import { formatHours, hoursInPeriod } from '@/lib/hours';
+import { gameShareMessage, steamStoreLink } from '@/lib/share-game';
 import { steamApiUrl } from '@/lib/steam-api-url';
 import { DEFAULT_TITLE_ARTWORK } from '@/lib/title-artwork';
 
 type SteamAchievement = { apiname: string; name: string; unlocked: boolean };
+
+// Même délai que profile/index.tsx (copyProfileLink) : un simple accusé de
+// réception ponctuel, pas une valeur qui mérite sa propre justification ici.
+const SHARE_STATUS_TIMEOUT_MS = 4000;
 
 // [id].tsx : nom de fichier expo-router pour une route dynamique. Le segment
 // d'URL /library/hollow-knight se retrouve dans useLocalSearchParams().id —
@@ -35,6 +41,16 @@ export default function GameDetailScreen() {
   const [achievementName, setAchievementName] = useState('');
   const [importingAchievements, setImportingAchievements] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [shareStatus, setShareStatus] = useState<string | null>(null);
+
+  // La confirmation de repli presse-papiers s'efface d'elle-même (même motif
+  // que copyProfileLink dans profile/index.tsx) : un accusé de réception
+  // ponctuel, pas un état du jeu qu'il faudrait fermer à la main.
+  useEffect(() => {
+    if (!shareStatus) return;
+    const timer = setTimeout(() => setShareStatus(null), SHARE_STATUS_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [shareStatus]);
 
   // useGame ne renvoie null que si l'id n'existe dans aucune source connue
   // (id invalide dans l'URL, lien partagé cassé...) : ce n'est jamais l'état
@@ -128,20 +144,43 @@ export default function GameDetailScreen() {
     }
   }
 
+  // Capturés ici (où `game` est déjà non-null) plutôt que lus dans
+  // shareGame ci-dessous : même raison que hasExistingAchievements plus
+  // haut, TypeScript ne fait pas persister ce narrowing dans une fonction
+  // imbriquée définie plus loin. Logique extraite dans lib/share-game.ts
+  // (testable sans monter tout l'écran).
+  const steamStoreUrl = steamStoreLink(game.steamAppId);
+  const shareMessage = gameShareMessage(game.title, game.steamAppId);
+
+  async function shareGame() {
+    // `url` (ShareContent) n'est lu que côté iOS — Android l'ignore
+    // entièrement et ne construit son intent qu'à partir de `message`/
+    // `title` (voir react-native/Libraries/Share/Share.js) — d'où le lien
+    // intégré directement dans le texte partagé plutôt que passé à part,
+    // pour apparaître sur les deux plateformes.
+    try {
+      await Share.share(steamStoreUrl ? { message: shareMessage, url: steamStoreUrl } : { message: shareMessage });
+    } catch {
+      // La feuille système a rejeté (erreur) ou n'existe pas du tout sur
+      // cette plateforme (web sans navigator.share, voir
+      // react-native-web/Share) : sans repli, le clic ne produisait
+      // jusqu'ici aucun effet visible, d'où ce bug remonté. Presse-papiers
+      // en repli, même motif que copyProfileLink (profile/index.tsx).
+      try {
+        await Clipboard.setStringAsync(shareMessage);
+        setShareStatus(steamStoreUrl ? `Lien copié : ${steamStoreUrl}` : 'Copié dans le presse-papiers.');
+      } catch {
+        setShareStatus('Partage indisponible sur cet appareil.');
+      }
+    }
+  }
+
   const menuItems: OverflowMenuItem[] = [
     {
       key: 'share',
       label: 'Partager',
       onPress: () => {
-        // Share.share peut aussi bien rejeter (fermeture de la feuille
-        // système) que lever une exception synchrone (non supporté sur
-        // certains navigateurs web) : les deux sont des échecs silencieux,
-        // rien à faire de plus dans un cas comme dans l'autre.
-        try {
-          Share.share({ message: `${game.title} sur Gamelary` }).catch(() => {});
-        } catch {
-          // ignoré
-        }
+        shareGame();
       },
     },
     game.inLibrary
@@ -199,6 +238,15 @@ export default function GameDetailScreen() {
             </Pressable>
           }
         />
+
+        {shareStatus ? (
+          <ThemedView type="backgroundElement" style={styles.shareStatus}>
+            <Ionicons name="link-outline" size={16} color={theme.accent} />
+            <ThemedText type="small" themeColor="textSecondary" style={styles.shareStatusText}>
+              {shareStatus}
+            </ThemedText>
+          </ThemedView>
+        ) : null}
 
         {!game.inLibrary && (
           <Pressable
@@ -431,6 +479,20 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingVertical: Spacing.three,
     alignItems: 'center',
+  },
+  // Même motif que shareStatus dans profile/index.tsx (copyProfileLink) :
+  // ici pas de marginTop/marginHorizontal, le `gap` de `content` ci-dessus
+  // espace déjà les enfants de la ScrollView.
+  shareStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.three,
+  },
+  shareStatusText: {
+    flexShrink: 1,
   },
   section: {
     borderRadius: Spacing.three,

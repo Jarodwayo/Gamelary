@@ -525,6 +525,21 @@ liste comme compatible avec le SDK alors utilisé par le projet.
   migrations pour une appli sans utilisateurs existants à préserver ; à
   reconsidérer si l'app a de vrais utilisateurs un jour.
 
+**Partager** (menu ⋯ de la fiche jeu, `src/lib/share-game.ts`) : titre du
+jeu, suivi du lien de sa fiche boutique Steam sur sa propre ligne quand
+`steamAppId` est connu (aucun lien de fiche Gamelary — la bibliothèque
+reste strictement locale, ci-dessus). Passé à `Share.share()` (React
+Native, pas un module Expo séparé) en `message` plutôt qu'en `url` : sur
+Android, `url` est ignoré et l'intent ne lit que `message`/`title` (voir
+`node_modules/react-native/Libraries/Share/Share.js`), le lien doit donc
+être dans le texte pour apparaître sur les deux plateformes. Repli
+presse-papiers (même motif que `copyProfileLink`, §6.6 profil ci-dessus)
+si `Share.share()` rejette ou n'existe pas sur la plateforme — cas
+courant sur le web desktop, où `navigator.share` est absent (voir
+`react-native-web`) : sans ce repli, le clic ne produisait auparavant
+aucun effet visible, d'où le bug remonté et `e2e/game-share.spec.ts`, qui
+le reproduit (Chromium headless n'a pas non plus `navigator.share`).
+
 `useGame` (`src/hooks/use-game.ts`) fait la jointure entre ce store et IGDB
 (titre/plateforme canoniques, §6.1) : le store est la seule source de
 vérité pour le rendu, IGDB ne fait qu'y écrire une fois résolu
