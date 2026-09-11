@@ -581,6 +581,30 @@ le reproduit (Chromium headless n'a pas non plus `navigator.share`).
 vérité pour le rendu, IGDB ne fait qu'y écrire une fois résolu
 (`registerCatalogGame`), jamais lu directement par un écran.
 
+**Contexte du store : un seul objet, pas de sélecteurs (décision assumée)**
+— `GameStoreContextValue` (ce fichier, ~21 champs/méthodes) et
+`AuthContextValue` (`src/lib/auth-store.tsx`, §9.7, ~10 champs) exposent
+l'intégralité de leur état via `useGameStore()`/`useAuth()`, sans
+sélecteurs plus étroits. La `value` du Context est reconstruite à chaque
+changement de `state` (`useMemo` avec `state` en dépendance) — tout
+composant appelant l'un de ces hooks se re-rend donc à chaque mutation du
+store, même pour un champ qu'il ne lit jamais (ex. un composant qui ne lit
+que `settings.titleArtwork` se re-rend aussi sur `setRating`/
+`toggleAchievement`).
+
+C'est une violation ISP (voir AGENTS.md, « Ségrégation des interfaces »)
+identifiée lors d'un audit dédié (~19 fichiers consommateurs, la plupart
+n'utilisant que 2 à 4 champs sur 21). Le remède existe (sélecteurs, ou
+scinder en plusieurs contexts — ex. un `SettingsContext` séparé) mais n'a
+pas été appliqué : à la taille actuelle de la bibliothèque, le coût en
+re-renders est négligeable, alors que le remède toucherait la quasi-totalité
+des écrans pour un gain qui ne se mesure pas encore.
+
+Décision : reporté délibérément, pas oublié. À revisiter si un profiling
+réel montre un ralentissement perceptible (beaucoup plus d'écrans, ou
+bibliothèques utilisateur de plusieurs centaines de jeux) — pas avant, pour
+éviter l'optimisation prématurée.
+
 ### 6.7 Statistiques — dérivées des sessions de jeu ✅
 
 `src/lib/play-stats.ts` calcule, à partir des mêmes `playSessions` que
@@ -1171,7 +1195,9 @@ l'identité Supabase est gérée et persistée par supabase-js lui-même, la
 mélanger au blob AsyncStorage de la bibliothèque créerait deux sources de
 vérité pour la même donnée. Quatre statuts : `unconfigured` (pas de clés —
 distinct de `signedOut`, pour ne jamais proposer un bouton qui ne mène
-nulle part), `loading`, `signedOut`, `signedIn`.
+nulle part), `loading`, `signedOut`, `signedIn`. `AuthContextValue`
+expose lui aussi tout son état sans sélecteurs, même décision assumée que
+`GameStoreContextValue` — voir §6.6.
 
 **Formulaire** (`src/components/sign-in-screen.tsx`) — Google OAuth en
 bouton plein (un tap, mis en avant). Sur natif, Google ouvre un navigateur
