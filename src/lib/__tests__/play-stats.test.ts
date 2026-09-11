@@ -9,7 +9,7 @@ function makeGame(playSessions: { date: string; hours: number }[]): StoredGame {
     inLibrary: true,
     stopped: false,
     achievements: [],
-    playSessions,
+    playSessions: playSessions.map((session, index) => ({ ...session, clientKey: `k${index}` })),
   };
 }
 

@@ -46,8 +46,13 @@ describe('non-destruction : rien d’écrasé, seulement des ajouts', () => {
     expect(after.favoriteTrackId).toBe(before.favoriteTrackId);
     expect(after.rating).toBe(before.rating);
     expect(after.review).toBe(before.review);
-    // Journal de jeu : aucune session ajoutée, retirée ni modifiée.
-    expect(after.playSessions).toEqual(before.playSessions);
+    // Journal de jeu : aucune session ajoutée, retirée ni modifiée — seul un
+    // `clientKey` manquant est comblé (voir la section dédiée plus bas), le
+    // contenu réel (date/heures) ressort identique.
+    expect(after.playSessions).toHaveLength(before.playSessions.length);
+    expect(after.playSessions.map((s) => [s.date, s.hours])).toEqual(
+      before.playSessions.map((s) => [s.date, s.hours])
+    );
   });
 
   test('le contenu des succès est préservé — seul l’id est normalisé', () => {
@@ -121,9 +126,18 @@ describe('idempotence : rejouer la migration ne change plus rien', () => {
   });
 
   test('une troisième exécution ne change toujours rien', () => {
-    const thrice = migrateStore(migrateStore(migrateStore(legacyBlob())));
+    // Comparé à `once` (partagé), pas à un second `migrateStore(legacyBlob())`
+    // indépendant : `clientKey` (voir plus bas) comble une absence par une
+    // valeur non déterministe par construction (deux appareils ne doivent
+    // jamais dériver la même identité de session à partir du même contenu,
+    // contrairement aux succès) — deux migrations indépendantes d'un MÊME
+    // blob tout juste chargé n'ont donc plus à produire un résultat
+    // identique, seul rejouer la migration SUR UN RÉSULTAT DÉJÀ MIGRÉ doit
+    // rester un no-op, ce que cette chaîne vérifie.
+    const once = migrateStore(legacyBlob());
+    const thrice = migrateStore(migrateStore(once));
 
-    expect(thrice).toEqual(migrateStore(legacyBlob()));
+    expect(thrice).toEqual(once);
   });
 });
 
@@ -187,6 +201,74 @@ describe('collision de noms : deux succès homonymes ne doivent jamais fusionner
     expect(new Set(achievements.map((a) => a.id)).size).toBe(2);
     // Les deux états distincts sont conservés, pas écrasés l'un par l'autre.
     expect(achievements.map((a) => a.unlocked)).toEqual([true, false]);
+  });
+});
+
+describe('playSessions : clientKey comblé, jamais dupliqué ni réécrit', () => {
+  test('une session sans clientKey en reçoit un', () => {
+    const after = migrateStore(legacyBlob());
+    const [session] = after.games['hollow-knight'].playSessions;
+    expect(typeof session.clientKey).toBe('string');
+    expect(session.clientKey.length).toBeGreaterThan(0);
+  });
+
+  test('un clientKey déjà présent survit à la migration, inchangé', () => {
+    const after = migrateStore({
+      version: STORE_VERSION,
+      games: {
+        celeste: {
+          id: 'celeste',
+          title: 'Celeste',
+          platform: 'PC',
+          inLibrary: true,
+          stopped: false,
+          achievements: [],
+          playSessions: [{ date: '2024-01-01T00:00:00.000Z', hours: 3, clientKey: 'deja-la' }],
+        },
+      },
+      lists: {},
+      settings: {},
+    });
+
+    expect(after.games.celeste.playSessions[0].clientKey).toBe('deja-la');
+  });
+
+  test('deux sessions sans clientKey dans le même jeu reçoivent des clés distinctes', () => {
+    const after = migrateStore({
+      version: STORE_VERSION,
+      games: {
+        hades: {
+          id: 'hades',
+          title: 'Hades',
+          platform: 'PC',
+          inLibrary: true,
+          stopped: false,
+          achievements: [],
+          playSessions: [
+            { date: '2024-01-01T00:00:00.000Z', hours: 3 },
+            { date: '2024-01-02T00:00:00.000Z', hours: 2 },
+          ],
+        },
+      },
+      lists: {},
+      settings: {},
+    });
+
+    const keys = after.games.hades.playSessions.map((s) => s.clientKey);
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  test('rejouer la migration ne réattribue jamais un clientKey déjà comblé', () => {
+    // Même piège que pour les succès (voir plus haut) : sans la garde
+    // "déjà présent -> inchangé", une implémentation qui régénère à chaque
+    // passage romprait l'idempotence sans qu'aucun des tests précédents ne
+    // le détecte forcément si le hasard retombait sur la même valeur.
+    const once = migrateStore(legacyBlob());
+    const twice = migrateStore(once);
+
+    expect(twice.games['hollow-knight'].playSessions[0].clientKey).toBe(
+      once.games['hollow-knight'].playSessions[0].clientKey
+    );
   });
 });
 
