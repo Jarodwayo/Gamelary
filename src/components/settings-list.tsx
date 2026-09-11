@@ -17,21 +17,41 @@ import { useTheme } from '@/hooks/use-theme';
 // interactive du design system (voir ARCHITECTURE.md §2), donc les
 // pastilles partagent la même couleur — sauf `destructive`, qui passe en
 // `danger`, la seule autre couleur autorisée pour une action irréversible.
-export type SettingsItem = {
+type SettingsItemBase = {
   key: string;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   // Valeur courante affichée à droite (ex. "Arrière-plan" en face de
   // "Affiche de la page titre"), avant le chevron.
   value?: string;
-  // Exactement l'un des deux : `href` pour une URL externe (ouverte dans le
-  // navigateur in-app sur mobile, voir external-link.tsx), `to` pour une
-  // route interne. `onPress` reste possible pour une action sans navigation.
-  href?: Href & string;
-  to?: Href;
-  onPress?: () => void;
   destructive?: boolean;
 };
+
+// Union discriminée par `kind` plutôt que trois champs de navigation
+// optionnels (`href`/`to`/`onPress`) sur un seul type plat : cette dernière
+// forme laissait le compilateur accepter deux modes fournis à la fois (le
+// second silencieusement ignoré par SettingsGroup, qui les départageait par
+// PRÉSENCE de champ) — repéré lors d'un audit LSP/ISP (voir AGENTS.md,
+// "Revue de code : substitution de Liskov et ségrégation des interfaces").
+// Même motif que SyncState (profile/settings.tsx), qui fait déjà ça
+// correctement.
+export type SettingsItem =
+  | (SettingsItemBase & {
+      kind: 'external';
+      // URL ouverte dans le navigateur in-app sur mobile (voir
+      // external-link.tsx).
+      href: Href & string;
+    })
+  | (SettingsItemBase & {
+      kind: 'internal';
+      // Route interne (expo-router).
+      to: Href;
+    })
+  | (SettingsItemBase & {
+      kind: 'action';
+      // Action sans navigation.
+      onPress: () => void;
+    });
 
 function RowContent({ item }: { item: SettingsItem }) {
   const theme = useTheme();
@@ -53,12 +73,43 @@ function RowContent({ item }: { item: SettingsItem }) {
       {/* Flèche sortante pour un lien externe, chevron pour une navigation
           interne : la différence prévient qu'on quitte l'app. */}
       <Ionicons
-        name={item.href ? 'open-outline' : 'chevron-forward'}
+        name={item.kind === 'external' ? 'open-outline' : 'chevron-forward'}
         size={16}
         color={theme.textSecondary}
       />
     </View>
   );
+}
+
+// Switch exhaustif sur `kind` (pas de `default`) : si une variante est
+// ajoutée un jour sans être traitée ici, TypeScript refuse la compilation
+// plutôt que de laisser SettingsGroup retomber silencieusement sur un autre
+// mode de navigation.
+function SettingsRow({ item }: { item: SettingsItem }) {
+  switch (item.kind) {
+    case 'external':
+      return (
+        <ExternalLink href={item.href} asChild>
+          <Pressable accessibilityRole="link" accessibilityLabel={item.label}>
+            <RowContent item={item} />
+          </Pressable>
+        </ExternalLink>
+      );
+    case 'internal':
+      return (
+        <Link href={item.to} asChild>
+          <Pressable accessibilityRole="button" accessibilityLabel={item.label}>
+            <RowContent item={item} />
+          </Pressable>
+        </Link>
+      );
+    case 'action':
+      return (
+        <Pressable onPress={item.onPress} accessibilityRole="button" accessibilityLabel={item.label}>
+          <RowContent item={item} />
+        </Pressable>
+      );
+  }
 }
 
 export function SettingsGroup({ items }: { items: SettingsItem[] }) {
@@ -74,23 +125,7 @@ export function SettingsGroup({ items }: { items: SettingsItem[] }) {
               ? [styles.separated, { borderTopColor: theme.backgroundSelected }]
               : undefined
           }>
-          {item.href ? (
-            <ExternalLink href={item.href} asChild>
-              <Pressable accessibilityRole="link" accessibilityLabel={item.label}>
-                <RowContent item={item} />
-              </Pressable>
-            </ExternalLink>
-          ) : item.to ? (
-            <Link href={item.to} asChild>
-              <Pressable accessibilityRole="button" accessibilityLabel={item.label}>
-                <RowContent item={item} />
-              </Pressable>
-            </Link>
-          ) : (
-            <Pressable onPress={item.onPress} accessibilityRole="button" accessibilityLabel={item.label}>
-              <RowContent item={item} />
-            </Pressable>
-          )}
+          <SettingsRow item={item} />
         </View>
       ))}
     </ThemedView>
