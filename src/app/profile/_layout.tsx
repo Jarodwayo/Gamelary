@@ -12,6 +12,10 @@ export default function ProfileLayout() {
       <Stack.Screen name="edit" options={{ title: 'Modifier le profil', headerBackTitle: 'Profil' }} />
       <Stack.Screen name="sign-in" options={{ title: 'Se connecter', headerBackTitle: 'Profil' }} />
       <Stack.Screen name="create-list" options={{ title: 'Créer une liste', headerBackTitle: 'Profil' }} />
+      {/* Titre par défaut, écrasé dynamiquement par l'écran lui-même (voir
+          profile/list/[id].tsx) une fois la liste résolue — même motif que
+          library/_layout.tsx pour la fiche jeu. */}
+      <Stack.Screen name="list/[id]" options={{ title: 'Liste', headerBackTitle: 'Profil' }} />
       <Stack.Screen name="help" options={{ title: 'Aide et idées', headerBackTitle: 'Profil' }} />
       <Stack.Screen name="settings" options={{ title: 'Paramètres', headerBackTitle: 'Profil' }} />
       <Stack.Screen

@@ -500,16 +500,39 @@ liste comme compatible avec le SDK alors utilisé par le projet.
   ce qui garde l'historique daté exploitable même quand l'utilisateur
   corrige son total au lieu d'ajouter du temps au fil de l'eau.
 - **`lists`** : deux listes intégrées non supprimables (`favoris`,
-  `wishlist`) plus les listes créées par l'utilisateur
-  (`ListPickerSheet`, depuis le menu ⋯ de la fiche jeu). "Jeux préférés" sur
+  `wishlist`) plus les listes créées par l'utilisateur. "Jeux préférés" sur
   le Profil est simplement la liste `favoris` résolue en jeux ; la Wishlist
   est volontairement une liste à part, distincte de la bibliothèque suivie
   — un jeu peut y figurer sans jamais avoir été ajouté à la bibliothèque
-  (`inLibrary: false`, `achievements` vide). Bascule directe pour `favoris`
-  spécifiquement : icône cœur sur la fiche jeu (`toggleListMembership
-  ('favoris', id)`), en plus de l'entrée générique "Ajouter à une liste" du
-  menu ⋯ — sans ce bouton dédié, marquer un favori demandait de passer par
-  le sélecteur de listes complet pour une action très fréquente.
+  (`inLibrary: false`, `achievements` vide) : `toggleListMembership` ne
+  touche jamais `inLibrary`, les deux sont des actions indépendantes.
+  Bascule directe pour `favoris` spécifiquement : icône cœur sur la fiche
+  jeu (`toggleListMembership('favoris', id)`), en plus de l'entrée
+  générique "Ajouter à une liste" du menu ⋯ — sans ce bouton dédié, marquer
+  un favori demandait de passer par le sélecteur de listes complet pour une
+  action très fréquente.
+  - Deux sens, deux sélecteurs symétriques, tous deux réutilisant les mêmes
+    actions du store (`toggleListMembership`/`createList`, jamais
+    dupliquées) : **listes pour un jeu donné** (`ListPickerSheet`, menu ⋯ de
+    la fiche jeu — coche/décoche l'appartenance à chaque liste, "+ Créer une
+    liste" à la volée) et **jeux pour une liste donnée**
+    (`GamePickerSheet`, bouton "+" de l'écran dédié d'une liste,
+    `profile/list/[id].tsx` — jusqu'ici une liste créée n'était qu'une
+    rangée en LECTURE SEULE du Profil, aucun moyen d'y ajouter un jeu après
+    coup). `GamePickerSheet` filtre d'abord parmi les jeux déjà connus
+    localement (`store.games`, bibliothèque ou simplement déjà croisés via
+    Explorer/une fiche jeu — peu importe `inLibrary`), et ne retombe sur une
+    vraie recherche IGDB (même route que `library/search.tsx`) que pour un
+    titre jamais croisé du tout.
+  - `OverflowMenu` (`src/components/overflow-menu.tsx`) retarde de 300ms
+    l'action d'un item après avoir fermé son propre menu, plutôt que de
+    l'appeler dans le même tick : présenter un second `<Modal>` RN (ex.
+    `ListPickerSheet` depuis "Ajouter à une liste") avant que celui du menu
+    ait fini de se fermer peut faire disparaître silencieusement sa
+    présentation sur natif — iOS ne présente qu'un view controller modal à
+    la fois. Jamais reproduit sur le web (react-native-web n'a pas de vraie
+    présentation native), ce qui avait caché ce bug jusqu'ici ; voir le test
+    unitaire de `overflow-menu.tsx` pour le mécanisme du correctif.
 - **`settings`** : réglages globaux, pas propres à un jeu — pour l'instant
   seulement `steamId64` (Profil, "Lier mon compte Steam"), utilisé pour
   appeler `gamelary-api` (voir §6.3). Pas une vraie authentification :
