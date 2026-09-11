@@ -461,6 +461,11 @@ export default function ProfileScreen() {
               items={list.gameIds.map((gameId) => store.games[gameId]).filter(Boolean)}
               size="large"
               emptyLabel="Aucun jeu dans cette liste pour le moment."
+              // Seul moyen d'ajouter un jeu à une liste APRÈS sa création
+              // (voir profile/list/[id].tsx) : la fiche jeu individuelle
+              // (list-picker-sheet.tsx) reste l'autre point d'entrée, mais
+              // ne convient pas pour peupler une liste vide d'un coup.
+              onSeeAll={() => router.push({ pathname: '/profile/list/[id]', params: { id: list.id } })}
             />
           ))}
 
