@@ -14,6 +14,7 @@ import { FEATURE_REQUESTS_URL, REPORT_PROBLEM_URL, supportContactUrl } from '@/l
 export default function HelpScreen() {
   const community: SettingsItem[] = [
     {
+      kind: 'external',
       key: 'feature-requests',
       icon: 'bulb-outline',
       label: 'Demandes de fonctionnalités',
@@ -23,12 +24,14 @@ export default function HelpScreen() {
 
   const support: SettingsItem[] = [
     {
+      kind: 'external',
       key: 'report-problem',
       icon: 'bug-outline',
       label: 'Signaler un problème',
       href: REPORT_PROBLEM_URL,
     },
     {
+      kind: 'external',
       key: 'contact',
       icon: 'mail-outline',
       label: "Contacter l'assistance",
