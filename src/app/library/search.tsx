@@ -13,7 +13,13 @@ import { apiUrl } from '@/lib/api-url';
 import { useGameStore } from '@/lib/game-store';
 
 type SearchStatus = 'idle' | 'loading' | 'found' | 'not-found';
-type SearchResult = { id: string; title: string; platform: string; steamAppId?: number };
+type SearchResult = {
+  id: string;
+  title: string;
+  platform: string;
+  steamAppId?: number;
+  summary?: string;
+};
 
 // Recherche à la volée sur IGDB (réutilise /api/games?title=, déjà utilisé
 // par useGame) plutôt qu'un vrai moteur de recherche : suffisant pour
@@ -43,8 +49,12 @@ export default function SearchScreen() {
     setStatus('loading');
     try {
       const response = await fetch(apiUrl(`/api/games?title=${encodeURIComponent(trimmed)}`));
-      const data: { title: string | null; platform: string | null; steamAppId?: number | null } =
-        await response.json();
+      const data: {
+        title: string | null;
+        platform: string | null;
+        steamAppId?: number | null;
+        summary?: string | null;
+      } = await response.json();
       if (!data.title) {
         setResult(null);
         setStatus('not-found');
@@ -55,6 +65,7 @@ export default function SearchScreen() {
         title: data.title,
         platform: data.platform ?? 'Plateforme inconnue',
         steamAppId: data.steamAppId ?? undefined,
+        summary: data.summary ?? undefined,
       };
       store.registerCatalogGame(found);
       setResult(found);

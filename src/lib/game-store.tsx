@@ -30,6 +30,10 @@ export type StoredGame = {
   // titre ne suffit pas — deux appareils peuvent en produire deux différents
   // pour le même jeu. Absent tant qu'aucune résolution ne l'a fourni.
   igdbId?: number;
+  // Résumé IGDB (voir registerCatalogGame) : re-dérivable au même titre que
+  // title/platform/steamAppId/igdbId, jamais une donnée utilisateur. Absent
+  // tant qu'IGDB n'a pas répondu, ou si le jeu n'a pas de résumé.
+  summary?: string;
   // Absent = antérieur à l'horodatage. Jamais inventé rétroactivement.
   updatedAt?: number;
   inLibrary: boolean;
@@ -253,11 +257,16 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
             // sont déjà à jour) ; avec la valeur entrante brute, une
             // résolution sans id rouvrirait une écriture qui ne change
             // rien, et un updatedAt injustifié avec elle.
+            // Même raisonnement que igdbId/steamAppId ci-dessus : une
+            // réponse IGDB sans résumé (jeu qui n'en a pas, ou requête qui
+            // a échoué) ne doit pas effacer un résumé déjà connu.
+            const summary = game.summary ?? existing.summary;
             if (
               existing.title === game.title &&
               existing.platform === game.platform &&
               existing.steamAppId === steamAppId &&
-              existing.igdbId === igdbId
+              existing.igdbId === igdbId &&
+              existing.summary === summary
             ) {
               return prev;
             }
@@ -273,6 +282,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
               platform: game.platform,
               steamAppId,
               igdbId,
+              summary,
             };
             return { ...prev, games: { ...prev.games, [game.id]: refreshed } };
           }
@@ -282,6 +292,7 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
             platform: game.platform,
             steamAppId: game.steamAppId,
             igdbId: game.igdbId,
+            summary: game.summary,
             inLibrary: false,
             stopped: false,
             achievements: [],

@@ -62,13 +62,16 @@ export function isSteamAppIdKnown(games: Record<string, StoredGame>, appid: numb
 // un seul jeu — même philosophie que use-game-cover.ts/use-explore.ts.
 export async function fetchIgdbMatchForSteamAppId(
   appid: number
-): Promise<{ id: string; title: string; platform: string; igdbId?: number } | undefined> {
+): Promise<
+  { id: string; title: string; platform: string; igdbId?: number; summary?: string } | undefined
+> {
   try {
     const response = await fetch(apiUrl(`/api/games?steamAppId=${appid}`));
     const data: {
       title: string | null;
       platform: string | null;
       igdbId?: number | null;
+      summary?: string | null;
       ambiguous?: boolean;
     } = await response.json();
     if (!response.ok || !data.title || data.ambiguous) return undefined;
@@ -77,6 +80,7 @@ export async function fetchIgdbMatchForSteamAppId(
       title: data.title,
       platform: data.platform ?? 'Plateforme inconnue',
       igdbId: data.igdbId ?? undefined,
+      summary: data.summary ?? undefined,
     };
   } catch {
     return undefined;
@@ -229,6 +233,7 @@ export default function ProfileScreen() {
               platform: igdbMatch.platform,
               steamAppId: entry.appid,
               igdbId: igdbMatch.igdbId,
+              summary: igdbMatch.summary,
             });
             return { entry, gameId: igdbMatch.id };
           })

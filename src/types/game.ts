@@ -72,6 +72,9 @@ export type Game = {
   achievementsTotal: number;
   tracks: Track[];
   favoriteTrack?: Track;
+  // Résumé IGDB du jeu (voir ARCHITECTURE.md §6.1) — absent tant qu'IGDB n'a
+  // pas répondu ou n'a pas de résumé pour ce jeu.
+  summary?: string;
   // 0-20 (voir library/[id].tsx) : note personnelle, pas une moyenne
   // communautaire — pas besoin de décimales, contrairement à un agrégat.
   rating?: number;
@@ -94,4 +97,6 @@ export type CatalogGame = {
   // lui aussi les deux (voir ARCHITECTURE.md §9.4, colonnes igdb_id et
   // slug). Absent si la résolution IGDB n'a rien donné.
   igdbId?: number;
+  // Résumé IGDB du jeu. Absent si IGDB n'a pas de résumé pour ce jeu.
+  summary?: string;
 };
