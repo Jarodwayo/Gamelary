@@ -1408,8 +1408,9 @@ jaquette portrait, avec repli automatique sur la jaquette quand le bandeau
 n'existe pas ou ne charge pas (voir `game-title-header.tsx`), et
 **authentification** (voir §9.7) : formulaire "Se connecter" (Google
 OAuth en bouton plein, lien magique par e-mail en repli, ni téléphone ni
-mot de passe), e-mail affiché et "Se déconnecter" réellement câblé dans le
-menu "⋯" une fois connecté — à l'époque, sans qu'aucune donnée de jeu ne
+mot de passe), e-mail affiché sur le profil (retiré depuis — voir plus bas)
+et "Se déconnecter" réellement câblé dans le menu "⋯" une fois connecté —
+à l'époque, sans qu'aucune donnée de jeu ne
 soit encore synchronisée (`user_games`/`achievements`/`play_sessions`/
 `lists`/`list_games` le sont tous depuis, voir §9.5). Plus
 aucun stub dans le menu "⋯". **Connexion désormais obligatoire** (session

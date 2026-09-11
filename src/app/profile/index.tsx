@@ -364,19 +364,6 @@ export default function ProfileScreen() {
                 {profile.bio}
               </ThemedText>
             ) : null}
-            {/* 'unconfigured'/'loading' : rien à afficher ici — ni un bouton
-                de connexion qui ne mènerait nulle part sur une build sans
-                clés Supabase, ni un flash "Se connecter" pendant les quelques
-                millisecondes où le statut réel se résout (voir
-                lib/auth-store.tsx). */}
-            {auth.status === 'signedIn' && auth.session?.user.email ? (
-              <View style={styles.accountRow}>
-                <Ionicons name="checkmark-circle" size={14} color={theme.success} />
-                <ThemedText type="small" themeColor="textSecondary">
-                  {auth.session.user.email}
-                </ThemedText>
-              </View>
-            ) : null}
             {/* Système d'amis pas encore implémenté (voir ARCHITECTURE.md §9) :
                 figés à 0 plutôt que masqués, pour garder la même structure que
                 l'app de référence en attendant. */}
@@ -619,12 +606,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: Spacing.four,
     marginTop: Spacing.one,
-  },
-  accountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
-    marginTop: Spacing.two,
   },
   shareStatus: {
     flexDirection: 'row',
