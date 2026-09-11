@@ -1,16 +1,17 @@
+import { makePlaySessionClientKey } from '@/lib/play-session-key';
 import { slugify } from '@/lib/slug';
 // Types importés du store (import de TYPE uniquement : effacé à la
 // compilation, donc pas de cycle de modules à l'exécution) plutôt que
 // redéfinis ici — un seul point de vérité pour la forme du store.
 import type { StoredGame, StoredList, StoreShape } from '@/lib/game-store';
-import type { Achievement } from '@/types/game';
+import type { Achievement, PlaySession } from '@/types/game';
 
 // Version de FORME du store, stockée dans le blob lui-même — pas dans la clé
 // AsyncStorage (voir ARCHITECTURE.md §9.3). Historiquement, un changement de
 // forme changeait la clé (`gamelary/game-store/v5`), ce qui revenait à
 // effacer silencieusement la bibliothèque de l'utilisateur. La clé reste donc
 // figée : son suffixe `/v5` n'est plus qu'un nom, la vraie version est ici.
-export const STORE_VERSION = 6;
+export const STORE_VERSION = 7;
 
 // Un id de succès manuel contenait un timestamp (`${gameId}:${slug}-${Date
 // .now().toString(36)}`), donc deux appareils produisaient deux ids pour la
@@ -34,6 +35,20 @@ function normalizeAchievementIds(gameId: string, achievements: Achievement[]): A
     seen.set(base, occurrence + 1);
 
     return { ...achievement, id: occurrence === 0 ? base : `${base}-${occurrence + 1}` };
+  });
+}
+
+// `clientKey` (voir types/game.ts) n'existait pas avant l'introduction de la
+// synchro des sessions de jeu (ARCHITECTURE.md §9.5) : une session déjà
+// stockée localement n'en a pas. On en assigne une, une seule fois — une
+// session déjà migrée (clientKey déjà présent) n'est jamais réécrite, sans
+// quoi rejouer la migration produirait un résultat différent à chaque fois
+// et l'idempotence promise par ce fichier ne tiendrait plus.
+function migratePlaySessions(sessions: unknown[]): PlaySession[] {
+  return sessions.map((raw) => {
+    const session = raw as Partial<PlaySession> & { date: string; hours: number };
+    if (session.clientKey) return session as PlaySession;
+    return { ...session, clientKey: makePlaySessionClientKey() };
   });
 }
 
@@ -72,9 +87,7 @@ function migrateGame(id: string, raw: Record<string, unknown>): StoredGame {
     ...(raw as unknown as StoredGame),
     id: (raw.id as string) ?? id,
     achievements: normalizeAchievementIds(id, achievements),
-    playSessions: Array.isArray(raw.playSessions)
-      ? (raw.playSessions as { date: string; hours: number }[])
-      : [],
+    playSessions: Array.isArray(raw.playSessions) ? migratePlaySessions(raw.playSessions) : [],
   };
 }
 

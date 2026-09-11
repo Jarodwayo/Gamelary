@@ -825,11 +825,14 @@ tables portent `user_id` » et n'activait RLS que sur `user_games`) :
 
 Le SQL complet (tables, policies, et deux ajouts absents de la première
 rédaction — voir plus bas) vit maintenant dans
-[`supabase/migrations/20260910120000_initial_schema.sql`](supabase/migrations/20260910120000_initial_schema.sql)
-plutôt que dupliqué ici : un schéma et sa documentation qui divergent
-silencieusement est pire qu'une documentation absente — ce fichier est
-l'unique source de vérité, celle-ci n'en donne que le résumé et le
-raisonnement.
+[`supabase/migrations/20260910120000_initial_schema.sql`](supabase/migrations/20260910120000_initial_schema.sql),
+complété par
+[`supabase/migrations/20260911120000_lists_sync_columns.sql`](supabase/migrations/20260911120000_lists_sync_columns.sql)
+(`description`/`hidden`/`updated_at`/`client_key` sur `lists`, `removed_at`/
+`updated_at` sur `list_games` — voir §9.5), plutôt que dupliqué ici : un
+schéma et sa documentation qui divergent silencieusement est pire qu'une
+documentation absente — ces fichiers sont l'unique source de vérité, celle-ci
+n'en donne que le résumé et le raisonnement.
 
 Deux manques que la première rédaction de cette section n'avait pas comblés
 (elle citait l'indexation comme un « à faire », sans l'écrire ; l'autre
@@ -846,8 +849,10 @@ n'était même pas mentionné) :
   §9.5 systématiquement faux dès la première modification — un bug qu'aucune
   ligne de ce document ne signalait avant que le fichier de migration ne
   soit réellement écrit. Un trigger partagé (`set_updated_at`) couvre les
-  trois tables concernées (`profiles`, `user_games`, `achievements` —
-  `play_sessions`/`lists`/`list_games` n'ont pas cette colonne : append-only
+  trois tables concernées par la migration initiale (`profiles`,
+  `user_games`, `achievements`), puis `lists` et `list_games` par la
+  migration suivante (§9.5) — `play_sessions` reste la seule table sans
+  cette colonne : append-only
   ou fusion par union, rien à arbitrer par date).
 
 Un troisième ajout, qui ne comblait pas un manque documenté mais s'est
@@ -883,58 +888,113 @@ deux comptes qui existent pour de vrai, pas seulement simulés en local.
 Le risque n'est pas l'authentification : c'est de **corrompre ou perdre une
 bibliothèque déjà constituée**. Un dégât de ce type se voit tard et coûte
 bien plus cher à réparer qu'à prévenir. D'où la politique de fusion
-ci-dessous, conçue AVANT le code (session précédente), puis implémentée et
-mutation-testée dans celle-ci — restreinte à `user_games` + `achievements`,
-voir le détail du scope plus bas.
+ci-dessous, conçue AVANT le code, puis implémentée et mutation-testée en
+deux temps : `user_games`/`achievements` d'abord (session précédente),
+`play_sessions` et `lists`/`list_games` ensuite (celle-ci) — `steam_id64`
+et `profile`/`titleArtwork` restent hors scope, voir le détail plus bas.
 
 | Donnée | Politique de fusion | Pourquoi | Statut |
 |---|---|---|---|
 | `in_library`, `stopped` | **Union** | Ne jamais retirer ce que l'utilisateur a ajouté depuis un autre appareil | ✅ implémenté |
 | `achievements` | Union par `(source, external_key)`, `unlocked` = **OU logique** | Un succès débloqué ne doit jamais se re-verrouiller | ✅ implémenté |
 | `rating`, `review` | **Le plus récent gagne** (`updatedAt`), jamais arbitré si absent des deux côtés | Valeur unique : vrai conflit, arbitrage nécessaire | ✅ implémenté |
-| appartenance aux listes | **Union** | Même raisonnement que `in_library` | 🚧 hors scope (voir plus bas) |
-| `play_sessions` | **Union** par `client_key`, corrections comprises mais jamais rejouées | Journal append-only : fusion sans perte et sans double comptage | 🚧 hors scope (voir plus bas) |
+| `play_sessions` | **Union** par `clientKey`/`client_key`, corrections comprises mais jamais rejouées | Journal append-only : fusion sans perte et sans double comptage | ✅ implémenté |
+| nom/description/visibilité d'une liste | **Le plus récent gagne** (`updatedAt`), jamais arbitré si absent des deux côtés | Même principe que rating/review : valeur unique, vrai conflit | ✅ implémenté |
+| appartenance aux listes (`list_games`) | **Union**, sauf conflit actif/retiré : **le plus récent gagne** (`updatedAt` par appartenance, tombstone `removed_at`), jamais arbitré si absent côté local | Une union pure ne peut pas représenter un retrait — voir plus bas | ✅ implémenté |
 | `steam_id64` | **Le plus récent gagne** (`steamId64UpdatedAt`) | Valeur unique, même arbitrage que rating/review | 🚧 hors scope (voir plus bas) |
 
-**Implémenté cette session** (`user_games` + `achievements` uniquement) :
+**Implémenté cette session** (`play_sessions` + `lists`/`list_games`, en
+plus de `user_games`/`achievements` déjà en place) :
 
-- **`src/lib/sync/merge-policy.ts`** — fonctions PURES : `gameMatchKey`
-  (identité de correspondance, `igdb_id` sinon `slug` — mêmes deux index
-  uniques partiels que le schéma, §9.4), `mergeGameFields` (union
-  `inLibrary`/`stopped`, dernier-écrit-gagne `rating`/`review` gated sur
-  `updatedAt`), `mergeAchievements` (union par `(source, external_key)`, OU
-  logique sur `unlocked`). Mutation-testées : chaque règle a été
-  délibérément inversée (OU → ET, garde `updatedAt` retirée, etc.) pour
-  vérifier que la suite existante la détecte — voir
-  `__tests__/merge-policy.test.ts`.
-- **`src/lib/sync/sync-service.ts`** — orchestration IMPURE : lit
-  `user_games`/`achievements` du compte, résout la correspondance EN
-  MÉMOIRE (jamais via `ON CONFLICT`, voir la note ci-dessous), applique le
-  verdict de merge-policy.ts par un INSERT (jeu nouveau) ou un UPDATE ciblé
-  par id (jeu déjà apparié), jamais un upsert aveugle.
-- **`applySyncedGames`** (`src/lib/game-store.tsx`) — nouveau chemin
-  d'écriture DÉDIÉ au service de sync, séparé d'`updateGame` : celui-ci
-  horodate systématiquement à `Date.now()`, ce qui ferait gagner à tort
-  l'arbitrage à l'appareil qui vient de synchroniser, quel que soit le côté
-  réellement le plus récent. `applySyncedGames` écrit tel quel
-  l'`updatedAt` déjà tranché par la fusion (celui d'un des deux appareils,
-  ou absent).
-- **Déclenchement** : automatique à toute transition vers `'signedIn'`
-  (`src/hooks/use-sign-in-sync.ts`, monté via `SignInSyncGate` dans
-  `app/_layout.tsx`) — y compris la confirmation d'une session déjà
-  persistée au démarrage de l'app, pas seulement un `signIn` tapé à
-  l'instant (sans quoi rester connecté plusieurs semaines ne bénéficierait
-  jamais de la synchro automatique). Et manuel, bouton "Synchroniser
-  maintenant" dans Réglages (`src/app/profile/settings.tsx`), visible
-  seulement `status === 'signedIn'`.
-- **Portée** : seuls les jeux "trackés" (`inLibrary`, `stopped`, une note,
-  un avis, ou au moins un succès) montent vers le distant — un jeu
-  simplement aperçu dans Explorer (`registerCatalogGame` sans `updatedAt`)
-  ne crée jamais de ligne `user_games`.
+- **Schéma étendu** — nouvelle migration
+  `supabase/migrations/20260911120000_lists_sync_columns.sql` (la
+  précédente ne se modifie jamais après application, voir son en-tête) :
+  `lists` gagne `description`, `hidden`, `updated_at` (+ le trigger
+  `set_updated_at`) et `client_key` (identité de correspondance choisie par
+  le CLIENT pour une liste créée par l'utilisateur — `id` est généré côté
+  serveur, donc inutilisable pour apparier une ligne distante à une liste
+  locale déjà existante ; même raisonnement que `user_games.slug` à côté de
+  son `id`) ; `list_games` gagne `removed_at` (tombstone de retrait) et
+  `updated_at`. **Vérifié pour de vrai** sur un Postgres 16 local (même
+  protocole que la migration initiale, §9.4) : les deux triggers
+  `updated_at` avancent réellement après UPDATE, l'index unique partiel
+  `(user_id, client_key)` rejette bien un doublon, et RLS isole toujours un
+  second utilisateur sur les nouvelles colonnes.
+- **`PlaySession.clientKey`** (`src/types/game.ts`) — identité STABLE de la
+  session elle-même, jamais dérivée de `date`/`hours` : deux appareils qui
+  enregistrent chacun une correction vers le même total ne décrivent pas le
+  même évènement, contrairement à un succès identifiable par son nom (d'où
+  une génération non déterministe — horodatage + suffixe aléatoire, voir
+  `src/lib/play-session-key.ts` — plutôt que la dérivation par contenu de
+  `mergeAchievements`). Assignée une fois à la création (`setTotalHours`,
+  game-store.tsx) et par la migration de forme (`STORE_VERSION` 6 → 7) pour
+  les sessions déjà stockées qui n'en ont pas encore — jamais réattribuée à
+  une session déjà migrée.
+- **`StoredList.updatedAt`/`memberships`** (`src/lib/game-store.tsx`) —
+  `updatedAt` horodate nom/description/visibilité (stampé par `createList`,
+  même principe que rating/review) ; `memberships: Record<gameId,
+  {removed?, updatedAt?}>` consigne, à CHAQUE `toggleListMembership`, le
+  sens du dernier changement et sa date pour CE jeu précis — `gameIds`
+  reste la seule source de vérité pour « ce jeu est-il actuellement dans
+  cette liste », tout le reste de l'app le lit ainsi, inchangé ;
+  `memberships` ne sert qu'à l'arbitrage de synchro.
+- **`src/lib/sync/merge-policy.ts`** — fonctions PURES existantes
+  (`gameMatchKey`, `mergeGameFields`, `mergeAchievements`) plus trois
+  nouvelles : `mergePlaySessions` (union simple par `clientKey`/
+  `client_key` : un registre immuable n'a rien à arbitrer une fois la
+  correspondance trouvée, contrairement à `mergeAchievements`) ;
+  `mergeListMetadata` (dernier-écrit-gagne gated sur `updatedAt`,
+  nom/description/visibilité basculant ensemble — copie du principe de
+  `mergeGameFields` sur rating/review) ; `mergeListMembership` (union par
+  jeu, SAUF quand un côté dit "actif" et l'autre "retiré" — un vrai
+  conflit, arbitré par `updatedAt`, gated sur sa présence côté LOCAL comme
+  rating/review : jamais deviné). Mutation-testées : chaque garde/
+  comparaison a été délibérément inversée ou supprimée pour vérifier que
+  la suite existante la détecte — voir `__tests__/merge-policy.test.ts`.
+- **`src/lib/sync/sync-service.ts`** — `syncLibrary` étendu : lit aussi
+  `play_sessions` du compte (groupé par jeu, comme les succès), fusionne et
+  pousse/importe les sessions dans la MÊME boucle par jeu (insertion,
+  appariement, import de jeu distant) plutôt que dans un aller-retour
+  séparé. Nouvelle fonction `syncLists` : traduit `user_game_id` (uuid
+  distant) ↔ id local via `gameMatchKey` (même logique que pour les jeux —
+  deux appareils peuvent avoir des ids locaux différents pour le même
+  jeu), apparie chaque liste locale par `builtin_key` (Favoris/Wishlist) ou
+  `client_key` (listes créées par l'utilisateur), applique
+  `mergeListMetadata`/`mergeListMembership`, puis INSERT/UPDATE distant
+  ciblé — jamais d'upsert aveugle, même discipline que `syncLibrary`.
+- **Portée élargie par les listes** — un jeu de la Wishlist n'est, par
+  construction, JAMAIS "tracké" au sens `user_games` habituel (ni
+  `inLibrary`, ni noté, ni de succès) ; sans élargissement, sa ligne
+  `user_games` distante ne serait jamais créée et `list_games` (qui la
+  référence par clé étrangère) n'aurait rien à quoi s'accrocher. `isTracked`
+  est donc devenu `isSyncWorthy`, qui ajoute "référencé par une liste
+  locale" à la portée.
+- **`applySyncedLists`** (`src/lib/game-store.tsx`) — même chemin
+  d'écriture DÉDIÉ qu'`applySyncedGames`, jamais d'horodatage posé ici :
+  les listes fournies portent déjà le résultat complet de la fusion.
+  `play_sessions`, lui, n'a pas eu besoin d'un chemin dédié séparé : le
+  résultat de `mergePlaySessions` est simplement inclus dans le
+  `StoredGame` déjà passé à `applySyncedGames` (comme `achievements`
+  l'était déjà).
+- **Déclenchement** : `syncLists` appelé juste après `syncLibrary`, jamais
+  avant — `list_games` référence des lignes `user_games` que `syncLibrary`
+  vient éventuellement de créer (cas Wishlist ci-dessus). Mêmes deux points
+  d'entrée qu'avant (`src/hooks/use-sign-in-sync.ts`, et le bouton
+  "Synchroniser maintenant" de `src/app/profile/settings.tsx`), tous deux
+  étendus pour enchaîner les deux appels dans cet ordre.
+- **RLS et index déjà en place, vérifiés plutôt que réécrits** :
+  `play_sessions` et `list_games` utilisaient déjà le motif "via le jeu
+  parent"/"via les deux parents" (jamais un `user_id` direct sur la table
+  fille) depuis la migration initiale, et leurs index sur les colonnes de
+  rattachement (`user_game_id`) existaient déjà eux aussi — la demande de
+  vérification de cette session n'a donc rien trouvé à corriger sur ce
+  point précis, seulement les colonnes manquantes ci-dessus
+  (`description`/`hidden`/`updated_at` sur `lists`, `removed_at` sur
+  `list_games`).
 - **Mode hors-ligne préservé** : AsyncStorage reste l'unique source de
   lecture de l'app (`GameStoreProvider`) ; la sync est un aller-retour en
-  tâche de fond qui écrit dans ce même store via `applySyncedGames`, jamais
-  un chemin de lecture séparé.
+  tâche de fond qui écrit dans ce même store via `applySyncedGames`/
+  `applySyncedLists`, jamais un chemin de lecture séparé.
 
 **Une limite acceptée sciemment** : la correspondance jeu local ↔ ligne
 distante est résolue EN MÉMOIRE (tous les `user_games` de l'utilisateur
@@ -947,14 +1007,11 @@ qui créeraient la MÊME identité simultanément depuis zéro (aucun des deux
 n'a encore de ligne distante) se heurteraient donc à la contrainte
 d'unicité au lieu de fusionner — un vrai risque de concurrence à deux
 appareils, non traité ici, qui recoupe la "Réconciliation d'identité
-tardive" déjà listée en §9.6.
+tardive" déjà listée en §9.6. Même limite, même raisonnement, pour les
+listes créées par l'utilisateur (`client_key`).
 
-**Explicitement HORS SCOPE de cette session** (à reprendre séparément) :
+**Explicitement HORS SCOPE** (à reprendre séparément) :
 
-- **`play_sessions`** — union par `client_key`, corrections jamais
-  rejouées : demande sa propre logique de merge (append-only, pas un
-  simple OR/LWW) et ses propres tests.
-- **`lists`/`list_games`** — union de l'appartenance aux listes.
 - **`steam_id64`** (ligne `profiles`) — même politique dernier-écrit-gagne
   que rating/review, mais sur une entité distante différente
   (`profiles`, pas `user_games`).
@@ -972,8 +1029,11 @@ tardive" déjà listée en §9.6.
   ici : utile pour le tout premier envoi d'une bibliothèque déjà volumineuse
   sans jamais la laisser à moitié partie côté serveur, mais pas ce que
   demandait cette session. `sync-service.ts` fait aujourd'hui plusieurs
-  requêtes séquentielles (une par jeu divergent), acceptable pour le volume
-  d'une bibliothèque solo (§9.3) mais pas atomique bout en bout.
+  requêtes séquentielles (une par jeu/liste divergent(e)), acceptable pour
+  le volume d'une bibliothèque solo (§9.3) mais pas atomique bout en bout.
+- **Concurrence à deux appareils sur une MÊME liste créée simultanément** —
+  même limite que "Réconciliation d'identité tardive" (§9.6), transposée
+  aux listes via `client_key` : non traitée ici.
 
 ### 9.6 Points encore ouverts
 
@@ -1019,9 +1079,10 @@ Session distincte de la précédente (qui a écrit §9.3/§9.4) : client
 Supabase, écrans de connexion, session câblée sur l'affichage. **À
 l'écriture de cette section, la synchronisation (§9.5) n'était pas encore
 commencée** — se connecter établissait une identité, rien de plus. Depuis,
-`user_games`/`achievements` sont synchronisés (voir §9.5) ; `play_sessions`
-et `lists`/`list_games` restent hors scope. Ne pas confondre « connecté »
-et « entièrement synchronisé ».
+`user_games`/`achievements`/`play_sessions`/`lists`/`list_games` sont tous
+synchronisés (voir §9.5) ; seuls `steam_id64` et `profile`/`titleArtwork`
+restent hors scope. Ne pas confondre « connecté » et « entièrement
+synchronisé ».
 
 **Client** (`src/lib/supabase.ts`, `src/lib/supabase-config.ts`) —
 configuré via `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY`
@@ -1349,8 +1410,8 @@ n'existe pas ou ne charge pas (voir `game-title-header.tsx`), et
 OAuth en bouton plein, lien magique par e-mail en repli, ni téléphone ni
 mot de passe), e-mail affiché et "Se déconnecter" réellement câblé dans le
 menu "⋯" une fois connecté — à l'époque, sans qu'aucune donnée de jeu ne
-soit encore synchronisée (`user_games`/`achievements` le sont depuis, voir
-§9.5 ; `play_sessions` et `lists`/`list_games` restent à faire). Plus
+soit encore synchronisée (`user_games`/`achievements`/`play_sessions`/
+`lists`/`list_games` le sont tous depuis, voir §9.5). Plus
 aucun stub dans le menu "⋯". **Connexion désormais obligatoire** (session
 3, voir §9.7) : `AuthGate` bloque l'accès aux onglets tant que `signedIn`
 n'est pas atteint, ce qui a aussi retiré la bibliothèque de démonstration

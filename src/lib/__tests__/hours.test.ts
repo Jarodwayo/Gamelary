@@ -34,9 +34,9 @@ describe('formatHours', () => {
 
 describe('hoursInPeriod', () => {
   const sessions = [
-    { date: new Date(Date.now() - 2 * 24 * 3600_000).toISOString(), hours: 3 },
-    { date: new Date(Date.now() - 10 * 24 * 3600_000).toISOString(), hours: 5 },
-    { date: new Date(Date.now() - 200 * 24 * 3600_000).toISOString(), hours: 7 },
+    { date: new Date(Date.now() - 2 * 24 * 3600_000).toISOString(), hours: 3, clientKey: 'k0' },
+    { date: new Date(Date.now() - 10 * 24 * 3600_000).toISOString(), hours: 5, clientKey: 'k1' },
+    { date: new Date(Date.now() - 200 * 24 * 3600_000).toISOString(), hours: 7, clientKey: 'k2' },
   ];
 
   test('"tout" additionne sans filtrer', () => {

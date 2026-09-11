@@ -35,7 +35,11 @@ describe('isSteamAppIdKnown', () => {
 
   test('vrai même si le jeu connu a déjà des heures suivies (pas seulement les jeux non suivis)', () => {
     const games = {
-      a: makeGame({ id: 'a', steamAppId: 111, playSessions: [{ date: '2024-01-01T00:00:00.000Z', hours: 5 }] }),
+      a: makeGame({
+        id: 'a',
+        steamAppId: 111,
+        playSessions: [{ date: '2024-01-01T00:00:00.000Z', hours: 5, clientKey: 'k0' }],
+      }),
     };
     expect(isSteamAppIdKnown(games, 111)).toBe(true);
   });
