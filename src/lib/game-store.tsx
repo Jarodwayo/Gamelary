@@ -421,6 +421,12 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
         setState((prev) => {
           const list = prev.lists[listId];
           if (!list) return prev;
+          // Même garde que toute autre action "par id" du store (setRating,
+          // addAchievement, toggleStopped...) : no-op silencieux si l'entité
+          // référencée n'existe pas, plutôt que d'accepter un id orphelin
+          // dans gameIds/memberships qu'aucun écran n'aurait ensuite de
+          // raison de nettoyer.
+          if (!prev.games[gameId]) return prev;
           const wasMember = list.gameIds.includes(gameId);
           const gameIds = wasMember
             ? list.gameIds.filter((existingId) => existingId !== gameId)

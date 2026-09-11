@@ -38,6 +38,7 @@ export default function SettingsScreen() {
 
   const display: SettingsItem[] = [
     {
+      kind: 'internal',
       key: 'title-artwork',
       icon: 'images-outline',
       label: 'Affiche de la page titre',
@@ -47,7 +48,7 @@ export default function SettingsScreen() {
   ];
 
   const account: SettingsItem[] = [
-    { key: 'edit-profile', icon: 'person-outline', label: 'Modifier le profil', to: '/profile/edit' },
+    { kind: 'internal', key: 'edit-profile', icon: 'person-outline', label: 'Modifier le profil', to: '/profile/edit' },
   ];
 
   // Déclencheur MANUEL de la synchro §9.5, en plus de celui automatique à la
@@ -59,6 +60,7 @@ export default function SettingsScreen() {
   if (auth.status === 'signedIn') {
     const userId = auth.session?.user?.id;
     account.push({
+      kind: 'action',
       key: 'sync-now',
       icon: 'sync-outline',
       label: 'Synchroniser maintenant',
@@ -78,7 +80,7 @@ export default function SettingsScreen() {
     });
   }
 
-  account.push({ key: 'help', icon: 'bulb-outline', label: 'Aide et idées', to: '/profile/help' });
+  account.push({ kind: 'internal', key: 'help', icon: 'bulb-outline', label: 'Aide et idées', to: '/profile/help' });
 
   return (
     <ThemedView style={styles.container}>
