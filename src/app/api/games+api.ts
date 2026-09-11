@@ -40,7 +40,8 @@ const IGDB_BASE = 'https://api.igdb.com/v4';
 // (vérifié en direct : une requête dont le `fields` ne le mentionne pas le
 // renvoie quand même) — on en dépend désormais pour l'identité canonique
 // (voir ARCHITECTURE.md §9.2), autant que la dépendance soit déclarée.
-const GAME_FIELDS = 'id,name,platforms.name,external_games.uid,external_games.external_game_source';
+const GAME_FIELDS =
+  'id,name,summary,platforms.name,external_games.uid,external_games.external_game_source';
 
 type GameLookupResult = {
   title: string | null;
@@ -49,12 +50,16 @@ type GameLookupResult = {
   // Identité canonique IGDB (voir ARCHITECTURE.md §9.2) : null quand aucun
   // jeu n'a été trouvé, jamais fabriqué depuis le titre.
   igdbId: number | null;
+  // Résumé IGDB (voir CatalogGame.summary) : null quand aucun jeu n'a été
+  // trouvé, ou si IGDB n'a pas de résumé pour ce jeu.
+  summary: string | null;
 };
 type SteamAppIdLookupResult = GameLookupResult & { ambiguous: boolean };
 type IgdbExternalGame = { uid: string; external_game_source: number };
 type IgdbGame = {
   id: number;
   name: string;
+  summary?: string;
   platforms?: { name: string }[];
   external_games?: IgdbExternalGame[];
 };
@@ -178,6 +183,7 @@ async function fetchSectionFromIgdb(
     title: game.name,
     platform: game.platforms?.[0]?.name ?? 'Plateforme inconnue',
     steamAppId: extractSteamAppId(game) ?? undefined,
+    summary: game.summary,
   }));
 }
 
@@ -219,7 +225,8 @@ async function fetchGameFromIgdb(
   const normalizedTitle = title.trim().toLowerCase();
   const bestMatch =
     games.find((game) => game.name.trim().toLowerCase() === normalizedTitle) ?? games[0];
-  if (!bestMatch) return { title: null, platform: null, steamAppId: null, igdbId: null };
+  if (!bestMatch)
+    return { title: null, platform: null, steamAppId: null, igdbId: null, summary: null };
 
   return {
     title: bestMatch.name,
@@ -229,6 +236,7 @@ async function fetchGameFromIgdb(
     platform: bestMatch.platforms?.[0]?.name ?? null,
     steamAppId: extractSteamAppId(bestMatch),
     igdbId: bestMatch.id,
+    summary: bestMatch.summary ?? null,
   };
 }
 
@@ -254,14 +262,28 @@ async function fetchGameBySteamAppId(
   const distinctNames = new Set(games.map((game) => game.name.trim().toLowerCase()));
 
   if (distinctNames.size === 0) {
-    return { title: null, platform: null, steamAppId: null, igdbId: null, ambiguous: false };
+    return {
+      title: null,
+      platform: null,
+      steamAppId: null,
+      igdbId: null,
+      summary: null,
+      ambiguous: false,
+    };
   }
   if (distinctNames.size > 1) {
     // Deux jeux IGDB différents revendiquent le même app id Steam : plutôt
     // que de deviner lequel est le bon (et risquer de créer la mauvaise
     // entrée dans la bibliothèque de l'utilisateur), on ne retourne rien —
     // pas pire qu'une correspondance absente pour l'appelant.
-    return { title: null, platform: null, steamAppId: null, igdbId: null, ambiguous: true };
+    return {
+      title: null,
+      platform: null,
+      steamAppId: null,
+      igdbId: null,
+      summary: null,
+      ambiguous: true,
+    };
   }
 
   const bestMatch = games[0];
@@ -270,6 +292,7 @@ async function fetchGameBySteamAppId(
     platform: bestMatch.platforms?.[0]?.name ?? null,
     steamAppId: appid,
     igdbId: bestMatch.id,
+    summary: bestMatch.summary ?? null,
     ambiguous: false,
   };
 }

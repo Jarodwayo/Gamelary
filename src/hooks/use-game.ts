@@ -5,7 +5,13 @@ import { apiUrl } from '@/lib/api-url';
 import { useGameStore } from '@/lib/game-store';
 import type { Game, Track } from '@/types/game';
 
-type IgdbLookup = { title: string; platform: string; steamAppId?: number; igdbId?: number } | null;
+type IgdbLookup = {
+  title: string;
+  platform: string;
+  steamAppId?: number;
+  igdbId?: number;
+  summary?: string;
+} | null;
 
 // Cache mémoire côté client, même logique que useGameCover (voir ce fichier
 // pour le raisonnement) : plusieurs écrans peuvent redemander le même
@@ -21,6 +27,7 @@ async function fetchIgdbInfo(searchTitle: string): Promise<IgdbLookup> {
       platform: string | null;
       steamAppId?: number | null;
       igdbId?: number | null;
+      summary?: string | null;
     } = await res.json();
     const result: IgdbLookup = data.title
       ? {
@@ -28,6 +35,7 @@ async function fetchIgdbInfo(searchTitle: string): Promise<IgdbLookup> {
           platform: data.platform ?? 'Plateforme inconnue',
           steamAppId: data.steamAppId ?? undefined,
           igdbId: data.igdbId ?? undefined,
+          summary: data.summary ?? undefined,
         }
       : null;
     igdbLookupCache.set(searchTitle, result);
@@ -71,6 +79,7 @@ export function useGame(id: string): { game: Game | null; loading: boolean } {
         platform: info?.platform ?? 'Plateforme inconnue',
         steamAppId: info?.steamAppId,
         igdbId: info?.igdbId,
+        summary: info?.summary,
       });
       setLoading(false);
     });
@@ -116,6 +125,7 @@ export function useGame(id: string): { game: Game | null; loading: boolean } {
       achievementsTotal: achievements.length,
       tracks,
       favoriteTrack: tracks.find((track) => track.id === stored.favoriteTrackId),
+      summary: stored.summary,
       rating: stored.rating,
       review: stored.review,
       playSessions: stored.playSessions ?? [],

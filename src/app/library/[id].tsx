@@ -248,6 +248,13 @@ export default function GameDetailScreen() {
           </ThemedView>
         ) : null}
 
+        {game.summary && (
+          <ThemedView type="backgroundElement" style={styles.section}>
+            <ThemedText type="smallBold">Description</ThemedText>
+            <ThemedText themeColor="textSecondary">{game.summary}</ThemedText>
+          </ThemedView>
+        )}
+
         {!game.inLibrary && (
           <Pressable
             onPress={() => store.addToLibrary(id)}
