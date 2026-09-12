@@ -42,6 +42,7 @@ export function OverflowMenu({
   icon,
   iconColor,
   anchorTop = 54,
+  accessibilityLabel = "Plus d'options",
 }: {
   items: OverflowMenuItem[];
   icon?: keyof typeof Ionicons.glyphMap;
@@ -50,13 +51,20 @@ export function OverflowMenu({
   // couleur de texte du thème reste la bonne et cette prop est omise.
   iconColor?: string;
   anchorTop?: number;
+  // "Plus d'options" par défaut (comportement inchangé, ex. menu ⋯ du
+  // Profil/de la fiche jeu) — à surcharger quand DEUX instances peuvent
+  // coexister dans le même arbre au même moment (ex. le Profil reste monté
+  // sous l'écran d'une liste qu'il a poussé par-dessus lui, voir
+  // profile/list/[id].tsx) : sans un libellé distinct, un lecteur d'écran
+  // (et tout test qui cible par accessibilité) ne peut pas les distinguer.
+  accessibilityLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const theme = useTheme();
 
   return (
     <>
-      <Pressable onPress={() => setOpen(true)} hitSlop={8} accessibilityLabel="Plus d'options">
+      <Pressable onPress={() => setOpen(true)} hitSlop={8} accessibilityLabel={accessibilityLabel}>
         {icon ? (
           <Ionicons name={icon} size={24} color={iconColor ?? theme.text} />
         ) : (

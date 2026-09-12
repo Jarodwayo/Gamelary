@@ -238,14 +238,26 @@ export function mergePlaySessions(local: PlaySession[], remote: RemotePlaySessio
 // jamais modifiée depuis l'introduction du champ (créée avant cette
 // session, ou restaurée par une migration) n'a rien à arbitrer, deviner un
 // gagnant serait justement le "dernier arrivé écrase tout" que la
-// politique exclut. Les trois champs (nom, description, visibilité)
-// basculent ENSEMBLE, comme rating/review : ils décrivent un seul état de
-// metadata à un instant donné, pas trois valeurs indépendantes.
+// politique exclut. Les quatre champs (nom, description, visibilité,
+// suppression) basculent ENSEMBLE, comme rating/review : ils décrivent un
+// seul état de metadata à un instant donné, pas quatre valeurs
+// indépendantes — supprimer une liste n'est qu'une mutation de plus de ce
+// même état, jamais une entité ou un horodatage à part.
 
 export type RemoteListRow = {
   name: string;
   description: string | null;
   hidden: boolean;
+  // Tombstone de suppression (voir supabase/migrations/
+  // 20260912120000_list_deletion_tombstone.sql et ARCHITECTURE.md
+  // « Suppression et renommage d'une liste ») — même convention que
+  // list_games.removed_at : une date renseignée signifie "supprimée à cette
+  // date-là" plutôt qu'une ligne effacée, pour qu'un appareil pas encore
+  // synchronisé apprenne la suppression au lieu de la faire réapparaître.
+  // Bascule avec name/description/hidden sur le MÊME `updated_at` : ce n'est
+  // qu'un champ de plus du même état de métadonnées à un instant donné, pas
+  // un horodatage à part.
+  deleted_at: string | null;
   updated_at: string;
 };
 
@@ -253,6 +265,7 @@ type LocalListMetadata = {
   name: string;
   description: string | undefined;
   hidden: boolean | undefined;
+  deletedAt: number | undefined;
   updatedAt: number | undefined;
 };
 
@@ -260,12 +273,19 @@ export type MergedListMetadata = {
   name: string;
   description: string | undefined;
   hidden: boolean | undefined;
+  deletedAt: number | undefined;
   updatedAt: number | undefined;
 };
 
 export function mergeListMetadata(local: LocalListMetadata, remote: RemoteListRow): MergedListMetadata {
   if (local.updatedAt == null) {
-    return { name: local.name, description: local.description, hidden: local.hidden, updatedAt: local.updatedAt };
+    return {
+      name: local.name,
+      description: local.description,
+      hidden: local.hidden,
+      deletedAt: local.deletedAt,
+      updatedAt: local.updatedAt,
+    };
   }
 
   const remoteUpdatedAtMs = Date.parse(remote.updated_at);
@@ -274,10 +294,17 @@ export function mergeListMetadata(local: LocalListMetadata, remote: RemoteListRo
       name: remote.name,
       description: remote.description ?? undefined,
       hidden: remote.hidden,
+      deletedAt: remote.deleted_at != null ? Date.parse(remote.deleted_at) : undefined,
       updatedAt: remoteUpdatedAtMs,
     };
   }
-  return { name: local.name, description: local.description, hidden: local.hidden, updatedAt: local.updatedAt };
+  return {
+    name: local.name,
+    description: local.description,
+    hidden: local.hidden,
+    deletedAt: local.deletedAt,
+    updatedAt: local.updatedAt,
+  };
 }
 
 // --- listes : appartenance des jeux (§9.5) ------------------------------

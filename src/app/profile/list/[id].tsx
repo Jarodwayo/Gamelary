@@ -1,12 +1,15 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Link, Stack, useLocalSearchParams } from 'expo-router';
+import { Link, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { DeleteListSheet } from '@/components/delete-list-sheet';
 import { GameCoverGrid } from '@/components/game-cover';
 import { GamePickerSheet } from '@/components/game-picker-sheet';
 import { useGridItemWidth, type GridItem } from '@/components/game-grid';
+import { OverflowMenu, type OverflowMenuItem } from '@/components/overflow-menu';
+import { RenameListSheet } from '@/components/rename-list-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, ScreenTitleGap, Spacing } from '@/constants/theme';
@@ -75,21 +78,38 @@ export default function ListDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const store = useGameStore();
   const theme = useTheme();
+  const router = useRouter();
   const itemWidth = useGridItemWidth();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const list = store.lists[id];
 
-  // Id invalide (lien cassé) ou liste supprimée depuis un autre appareil
-  // entre la navigation et ce rendu : même traitement explicite que "Jeu
-  // introuvable" (library/[id].tsx), plutôt qu'un plantage sur `list.name`.
-  if (!list) {
+  // Id invalide (lien cassé), liste supprimée depuis un autre appareil entre
+  // la navigation et ce rendu (`deletedAt`, voir ARCHITECTURE.md
+  // « Suppression et renommage d'une liste »), ou supprimée ICI MÊME (le
+  // bouton de confirmation ci-dessous revient en arrière, mais un montage
+  // encore en vol pourrait re-render une dernière fois avant) : même
+  // traitement explicite que "Jeu introuvable" (library/[id].tsx), plutôt
+  // qu'un plantage sur `list.name`.
+  if (!list || list.deletedAt != null) {
     return (
       <ThemedView style={styles.container}>
         <ThemedText type="subtitle">Liste introuvable</ThemedText>
       </ThemedView>
     );
   }
+
+  // Réservé aux listes créées par l'utilisateur (voir le headerRight
+  // ci-dessous, qui ne rend ce menu que pour `!list.builtin`) — Favoris/
+  // Wishlist n'ont ni l'un ni l'autre. La confirmation elle-même vit dans
+  // DeleteListSheet (jamais Alert.alert — voir son commentaire, no-op sur
+  // le web).
+  const settingsMenuItems: OverflowMenuItem[] = [
+    { key: 'rename', label: 'Renommer', icon: 'pencil-outline', onPress: () => setRenameOpen(true) },
+    { key: 'delete', label: 'Supprimer la liste', icon: 'trash-outline', destructive: true, onPress: () => setDeleteOpen(true) },
+  ];
 
   const items: GridItem[] = list.gameIds
     .map((gameId) => store.games[gameId])
@@ -110,9 +130,19 @@ export default function ListDetailScreen() {
         options={{
           title: list.name,
           headerRight: () => (
-            <Pressable onPress={() => setPickerOpen(true)} hitSlop={8} accessibilityLabel="Ajouter un jeu">
-              <Ionicons name="add" size={26} color={theme.text} />
-            </Pressable>
+            <View style={styles.headerActions}>
+              {!list.builtin ? (
+                <OverflowMenu
+                  icon="settings-outline"
+                  items={settingsMenuItems}
+                  anchorTop={54}
+                  accessibilityLabel="Réglages de la liste"
+                />
+              ) : null}
+              <Pressable onPress={() => setPickerOpen(true)} hitSlop={8} accessibilityLabel="Ajouter un jeu">
+                <Ionicons name="add" size={26} color={theme.text} />
+              </Pressable>
+            </View>
           ),
         }}
       />
@@ -152,6 +182,13 @@ export default function ListDetailScreen() {
       </ThemedView>
 
       <GamePickerSheet visible={pickerOpen} listId={list.id} onClose={() => setPickerOpen(false)} />
+      <RenameListSheet visible={renameOpen} listId={list.id} onClose={() => setRenameOpen(false)} />
+      <DeleteListSheet
+        visible={deleteOpen}
+        listId={list.id}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => router.back()}
+      />
     </>
   );
 }
@@ -159,6 +196,11 @@ export default function ListDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
   },
   safeArea: {
     flex: 1,

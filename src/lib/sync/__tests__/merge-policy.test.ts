@@ -283,6 +283,7 @@ function remoteList(overrides: Partial<RemoteListRow> = {}): RemoteListRow {
     name: 'Favoris',
     description: null,
     hidden: false,
+    deleted_at: null,
     updated_at: '2026-01-01T00:00:00.000Z',
     ...overrides,
   };
@@ -292,13 +293,20 @@ describe('mergeListMetadata — dernier-écrit-gagne sur updatedAt, comme rating
   test('local plus récent -> nom/description/visibilité LOCAUX gagnent des deux côtés', () => {
     const localUpdatedAt = Date.parse('2026-02-01T00:00:00.000Z');
     const merged = mergeListMetadata(
-      { name: 'À finir (local)', description: 'Écrit après le distant', hidden: true, updatedAt: localUpdatedAt },
+      {
+        name: 'À finir (local)',
+        description: 'Écrit après le distant',
+        hidden: true,
+        deletedAt: undefined,
+        updatedAt: localUpdatedAt,
+      },
       remoteList({ name: 'À finir (distant)', description: 'Vieille description', hidden: false })
     );
     expect(merged).toEqual({
       name: 'À finir (local)',
       description: 'Écrit après le distant',
       hidden: true,
+      deletedAt: undefined,
       updatedAt: localUpdatedAt,
     });
   });
@@ -307,29 +315,42 @@ describe('mergeListMetadata — dernier-écrit-gagne sur updatedAt, comme rating
     const localUpdatedAt = Date.parse('2026-01-01T00:00:00.000Z');
     const remoteUpdatedAt = '2026-02-01T00:00:00.000Z';
     const merged = mergeListMetadata(
-      { name: 'Ancien nom', description: 'Ancienne description', hidden: false, updatedAt: localUpdatedAt },
+      {
+        name: 'Ancien nom',
+        description: 'Ancienne description',
+        hidden: false,
+        deletedAt: undefined,
+        updatedAt: localUpdatedAt,
+      },
       remoteList({ name: 'Nouveau nom', description: 'Nouvelle description', hidden: true, updated_at: remoteUpdatedAt })
     );
     expect(merged).toEqual({
       name: 'Nouveau nom',
       description: 'Nouvelle description',
       hidden: true,
+      deletedAt: undefined,
       updatedAt: Date.parse(remoteUpdatedAt),
     });
   });
 
   test('updatedAt local absent -> ni gagnant ni perdant, métadonnées locales inchangées', () => {
     const merged = mergeListMetadata(
-      { name: 'Favoris', description: undefined, hidden: false, updatedAt: undefined },
+      { name: 'Favoris', description: undefined, hidden: false, deletedAt: undefined, updatedAt: undefined },
       remoteList({ name: 'Nom distant plus récent', hidden: true, updated_at: '2026-02-01T00:00:00.000Z' })
     );
-    expect(merged).toEqual({ name: 'Favoris', description: undefined, hidden: false, updatedAt: undefined });
+    expect(merged).toEqual({
+      name: 'Favoris',
+      description: undefined,
+      hidden: false,
+      deletedAt: undefined,
+      updatedAt: undefined,
+    });
   });
 
   test('égalité stricte des horodatages -> le local est conservé (pas de bascule inutile)', () => {
     const sameInstant = '2026-01-01T00:00:00.000Z';
     const merged = mergeListMetadata(
-      { name: 'Nom local', description: undefined, hidden: false, updatedAt: Date.parse(sameInstant) },
+      { name: 'Nom local', description: undefined, hidden: false, deletedAt: undefined, updatedAt: Date.parse(sameInstant) },
       remoteList({ name: 'Nom distant', updated_at: sameInstant })
     );
     expect(merged.name).toBe('Nom local');
@@ -338,10 +359,42 @@ describe('mergeListMetadata — dernier-écrit-gagne sur updatedAt, comme rating
   test('description distante à null mais plus récente -> la description locale est bien effacée', () => {
     const localUpdatedAt = Date.parse('2026-01-01T00:00:00.000Z');
     const merged = mergeListMetadata(
-      { name: 'Nom', description: 'À effacer', hidden: false, updatedAt: localUpdatedAt },
+      { name: 'Nom', description: 'À effacer', hidden: false, deletedAt: undefined, updatedAt: localUpdatedAt },
       remoteList({ description: null, updated_at: '2026-02-01T00:00:00.000Z' })
     );
     expect(merged.description).toBeUndefined();
+  });
+
+  // Suppression d'une liste (§9.5, ARCHITECTURE.md « Suppression et
+  // renommage d'une liste ») : bascule avec les trois autres champs sur le
+  // MÊME updatedAt, jamais un horodatage à part — même arbitrage, mêmes
+  // gardes, un champ de plus du même état.
+  test('local supprime plus récemment -> deletedAt LOCAL gagne (le distant doit être corrigé)', () => {
+    const localUpdatedAt = Date.parse('2026-02-01T00:00:00.000Z');
+    const merged = mergeListMetadata(
+      { name: 'À finir', description: undefined, hidden: false, deletedAt: localUpdatedAt, updatedAt: localUpdatedAt },
+      remoteList({ name: 'À finir', deleted_at: null, updated_at: '2026-01-01T00:00:00.000Z' })
+    );
+    expect(merged.deletedAt).toBe(localUpdatedAt);
+  });
+
+  test('distant supprimé plus récemment -> deletedAt DISTANT adopté localement', () => {
+    const localUpdatedAt = Date.parse('2026-01-01T00:00:00.000Z');
+    const remoteDeletedAt = '2026-02-01T00:00:00.000Z';
+    const merged = mergeListMetadata(
+      { name: 'À finir', description: undefined, hidden: false, deletedAt: undefined, updatedAt: localUpdatedAt },
+      remoteList({ name: 'À finir', deleted_at: remoteDeletedAt, updated_at: remoteDeletedAt })
+    );
+    expect(merged.deletedAt).toBe(Date.parse(remoteDeletedAt));
+  });
+
+  test('local plus récent mais SANS suppression -> deletedAt distant (plus ancien) n’est pas adopté', () => {
+    const localUpdatedAt = Date.parse('2026-02-01T00:00:00.000Z');
+    const merged = mergeListMetadata(
+      { name: 'À finir (renommée après)', description: undefined, hidden: false, deletedAt: undefined, updatedAt: localUpdatedAt },
+      remoteList({ name: 'À finir', deleted_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' })
+    );
+    expect(merged.deletedAt).toBeUndefined();
   });
 });
 

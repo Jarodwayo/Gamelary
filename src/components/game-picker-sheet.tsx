@@ -101,10 +101,11 @@ export function GamePickerSheet({ visible, listId, onClose }: GamePickerSheetPro
   }
 
   // Ne devrait jamais arriver (l'écran appelant garde déjà contre une liste
-  // introuvable), mais le composant ne suppose pas la liste vivante pour
-  // autant — un id de liste supprimée entre-temps ne doit pas planter cette
-  // modale.
-  if (!list) return null;
+  // introuvable/supprimée), mais le composant ne suppose pas la liste
+  // vivante pour autant — une liste supprimée depuis un autre appareil
+  // pendant que cette modale reste montée ici ne doit pas planter, ni
+  // continuer à proposer d'y ajouter un jeu.
+  if (!list || list.deletedAt != null) return null;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
