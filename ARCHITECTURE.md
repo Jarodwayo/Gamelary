@@ -503,17 +503,53 @@ liste comme compatible avec le SDK alors utilisé par le projet.
   ajoute une session "correctrice" égale à l'écart avec le total actuel,
   ce qui garde l'historique daté exploitable même quand l'utilisateur
   corrige son total au lieu d'ajouter du temps au fil de l'eau.
+  `removeFromLibrary(id)` (bouton "Retirer de ma bibliothèque" de la fiche
+  jeu, affiché seulement quand `inLibrary` est déjà vrai — pendant
+  symétrique de "Ajouter à ma bibliothèque") ne touche QUE `inLibrary` :
+  jamais `stopped`/`rating`/`review`/`achievements`/`playSessions`, qui
+  restent tels quels. C'est précisément ce qui garde un jeu synchronisé
+  (`isSyncWorthy`, `src/lib/sync/sync-service.ts`, voir §9.5) après ce
+  retrait tant qu'il porte encore l'un de ces signaux — il ne redevient
+  "non traqué" que si plus aucun ne le qualifie.
 - **`lists`** : deux listes intégrées non supprimables (`favoris`,
-  `wishlist`) plus les listes créées par l'utilisateur
-  (`ListPickerSheet`, depuis le menu ⋯ de la fiche jeu). "Jeux préférés" sur
+  `wishlist`) plus les listes créées par l'utilisateur. "Jeux préférés" sur
   le Profil est simplement la liste `favoris` résolue en jeux ; la Wishlist
   est volontairement une liste à part, distincte de la bibliothèque suivie
   — un jeu peut y figurer sans jamais avoir été ajouté à la bibliothèque
-  (`inLibrary: false`, `achievements` vide). Bascule directe pour `favoris`
-  spécifiquement : icône cœur sur la fiche jeu (`toggleListMembership
-  ('favoris', id)`), en plus de l'entrée générique "Ajouter à une liste" du
-  menu ⋯ — sans ce bouton dédié, marquer un favori demandait de passer par
-  le sélecteur de listes complet pour une action très fréquente.
+  (`inLibrary: false`, `achievements` vide) : `toggleListMembership` ne
+  touche jamais `inLibrary`, les deux sont des actions indépendantes.
+  Bascule directe pour `favoris` spécifiquement : icône cœur sur la fiche
+  jeu (`toggleListMembership('favoris', id)`), en plus de l'entrée
+  générique "Ajouter à une liste" du menu ⋯ — sans ce bouton dédié, marquer
+  un favori demandait de passer par le sélecteur de listes complet pour une
+  action très fréquente.
+  - Deux sens, deux sélecteurs symétriques, tous deux réutilisant les mêmes
+    actions du store (`toggleListMembership`/`createList`, jamais
+    dupliquées) : **listes pour un jeu donné** (`ListPickerSheet`, menu ⋯ de
+    la fiche jeu — coche/décoche l'appartenance à chaque liste, "+ Créer une
+    liste" à la volée) et **jeux pour une liste donnée**
+    (`GamePickerSheet`, bouton "+" de l'écran dédié d'une liste,
+    `profile/list/[id].tsx` — jusqu'ici une liste créée n'était qu'une
+    rangée en LECTURE SEULE du Profil, aucun moyen d'y ajouter un jeu après
+    coup). `GamePickerSheet` filtre d'abord parmi les jeux déjà connus
+    localement (`store.games`, bibliothèque ou simplement déjà croisés via
+    Explorer/une fiche jeu — peu importe `inLibrary`), et ne retombe sur une
+    vraie recherche IGDB (même route que `library/search.tsx`) que pour un
+    titre jamais croisé du tout.
+  - Retrait d'un jeu directement depuis la grille de l'écran d'une liste
+    (bouton en overlay sur chaque carte, `ListGameCard`, `profile/list/
+    [id].tsx`) — jusqu'ici, seul moyen de retirer un jeu était de rouvrir
+    `GamePickerSheet` et de retaper sur le jeu déjà coché, pas assez
+    découvrable. Réutilise `toggleListMembership`, comme l'ajout.
+  - `OverflowMenu` (`src/components/overflow-menu.tsx`) retarde de 300ms
+    l'action d'un item après avoir fermé son propre menu, plutôt que de
+    l'appeler dans le même tick : présenter un second `<Modal>` RN (ex.
+    `ListPickerSheet` depuis "Ajouter à une liste") avant que celui du menu
+    ait fini de se fermer peut faire disparaître silencieusement sa
+    présentation sur natif — iOS ne présente qu'un view controller modal à
+    la fois. Jamais reproduit sur le web (react-native-web n'a pas de vraie
+    présentation native), ce qui avait caché ce bug jusqu'ici ; voir le test
+    unitaire de `overflow-menu.tsx` pour le mécanisme du correctif.
 - **`settings`** : réglages globaux, pas propres à un jeu — pour l'instant
   seulement `steamId64` (Profil, "Lier mon compte Steam"), utilisé pour
   appeler `gamelary-api` (voir §6.3). Pas une vraie authentification :
@@ -529,10 +565,49 @@ liste comme compatible avec le SDK alors utilisé par le projet.
   migrations pour une appli sans utilisateurs existants à préserver ; à
   reconsidérer si l'app a de vrais utilisateurs un jour.
 
+**Partager** (menu ⋯ de la fiche jeu, `src/lib/share-game.ts`) : titre du
+jeu, suivi du lien de sa fiche boutique Steam sur sa propre ligne quand
+`steamAppId` est connu (aucun lien de fiche Gamelary — la bibliothèque
+reste strictement locale, ci-dessus). Passé à `Share.share()` (React
+Native, pas un module Expo séparé) en `message` plutôt qu'en `url` : sur
+Android, `url` est ignoré et l'intent ne lit que `message`/`title` (voir
+`node_modules/react-native/Libraries/Share/Share.js`), le lien doit donc
+être dans le texte pour apparaître sur les deux plateformes. Repli
+presse-papiers (même motif que `copyProfileLink`, §6.6 profil ci-dessus)
+si `Share.share()` rejette ou n'existe pas sur la plateforme — cas
+courant sur le web desktop, où `navigator.share` est absent (voir
+`react-native-web`) : sans ce repli, le clic ne produisait auparavant
+aucun effet visible, d'où le bug remonté et `e2e/game-share.spec.ts`, qui
+le reproduit (Chromium headless n'a pas non plus `navigator.share`).
+
 `useGame` (`src/hooks/use-game.ts`) fait la jointure entre ce store et IGDB
 (titre/plateforme canoniques, §6.1) : le store est la seule source de
 vérité pour le rendu, IGDB ne fait qu'y écrire une fois résolu
 (`registerCatalogGame`), jamais lu directement par un écran.
+
+**Contexte du store : un seul objet, pas de sélecteurs (décision assumée)**
+— `GameStoreContextValue` (ce fichier, ~21 champs/méthodes) et
+`AuthContextValue` (`src/lib/auth-store.tsx`, §9.7, ~10 champs) exposent
+l'intégralité de leur état via `useGameStore()`/`useAuth()`, sans
+sélecteurs plus étroits. La `value` du Context est reconstruite à chaque
+changement de `state` (`useMemo` avec `state` en dépendance) — tout
+composant appelant l'un de ces hooks se re-rend donc à chaque mutation du
+store, même pour un champ qu'il ne lit jamais (ex. un composant qui ne lit
+que `settings.titleArtwork` se re-rend aussi sur `setRating`/
+`toggleAchievement`).
+
+C'est une violation ISP (voir AGENTS.md, « Ségrégation des interfaces »)
+identifiée lors d'un audit dédié (~19 fichiers consommateurs, la plupart
+n'utilisant que 2 à 4 champs sur 21). Le remède existe (sélecteurs, ou
+scinder en plusieurs contexts — ex. un `SettingsContext` séparé) mais n'a
+pas été appliqué : à la taille actuelle de la bibliothèque, le coût en
+re-renders est négligeable, alors que le remède toucherait la quasi-totalité
+des écrans pour un gain qui ne se mesure pas encore.
+
+Décision : reporté délibérément, pas oublié. À revisiter si un profiling
+réel montre un ralentissement perceptible (beaucoup plus d'écrans, ou
+bibliothèques utilisateur de plusieurs centaines de jeux) — pas avant, pour
+éviter l'optimisation prématurée.
 
 ### 6.7 Statistiques — dérivées des sessions de jeu ✅
 
@@ -1124,7 +1199,9 @@ l'identité Supabase est gérée et persistée par supabase-js lui-même, la
 mélanger au blob AsyncStorage de la bibliothèque créerait deux sources de
 vérité pour la même donnée. Quatre statuts : `unconfigured` (pas de clés —
 distinct de `signedOut`, pour ne jamais proposer un bouton qui ne mène
-nulle part), `loading`, `signedOut`, `signedIn`.
+nulle part), `loading`, `signedOut`, `signedIn`. `AuthContextValue`
+expose lui aussi tout son état sans sélecteurs, même décision assumée que
+`GameStoreContextValue` — voir §6.6.
 
 **Formulaire** (`src/components/sign-in-screen.tsx`) — Google OAuth en
 bouton plein (un tap, mis en avant). Sur natif, Google ouvre un navigateur
@@ -1411,8 +1488,9 @@ jaquette portrait, avec repli automatique sur la jaquette quand le bandeau
 n'existe pas ou ne charge pas (voir `game-title-header.tsx`), et
 **authentification** (voir §9.7) : formulaire "Se connecter" (Google
 OAuth en bouton plein, lien magique par e-mail en repli, ni téléphone ni
-mot de passe), e-mail affiché et "Se déconnecter" réellement câblé dans le
-menu "⋯" une fois connecté — à l'époque, sans qu'aucune donnée de jeu ne
+mot de passe), e-mail affiché sur le profil (retiré depuis — voir plus bas)
+et "Se déconnecter" réellement câblé dans le menu "⋯" une fois connecté —
+à l'époque, sans qu'aucune donnée de jeu ne
 soit encore synchronisée (`user_games`/`achievements`/`play_sessions`/
 `lists`/`list_games` le sont tous depuis, voir §9.5). Plus
 aucun stub dans le menu "⋯". **Connexion désormais obligatoire** (session

@@ -369,19 +369,6 @@ export default function ProfileScreen() {
                 {profile.bio}
               </ThemedText>
             ) : null}
-            {/* 'unconfigured'/'loading' : rien à afficher ici — ni un bouton
-                de connexion qui ne mènerait nulle part sur une build sans
-                clés Supabase, ni un flash "Se connecter" pendant les quelques
-                millisecondes où le statut réel se résout (voir
-                lib/auth-store.tsx). */}
-            {auth.status === 'signedIn' && auth.session?.user.email ? (
-              <View style={styles.accountRow}>
-                <Ionicons name="checkmark-circle" size={14} color={theme.success} />
-                <ThemedText type="small" themeColor="textSecondary">
-                  {auth.session.user.email}
-                </ThemedText>
-              </View>
-            ) : null}
             {/* Système d'amis pas encore implémenté (voir ARCHITECTURE.md §9) :
                 figés à 0 plutôt que masqués, pour garder la même structure que
                 l'app de référence en attendant. */}
@@ -474,6 +461,11 @@ export default function ProfileScreen() {
               items={list.gameIds.map((gameId) => store.games[gameId]).filter(Boolean)}
               size="large"
               emptyLabel="Aucun jeu dans cette liste pour le moment."
+              // Seul moyen d'ajouter un jeu à une liste APRÈS sa création
+              // (voir profile/list/[id].tsx) : la fiche jeu individuelle
+              // (list-picker-sheet.tsx) reste l'autre point d'entrée, mais
+              // ne convient pas pour peupler une liste vide d'un coup.
+              onSeeAll={() => router.push({ pathname: '/profile/list/[id]', params: { id: list.id } })}
             />
           ))}
 
@@ -624,12 +616,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: Spacing.four,
     marginTop: Spacing.one,
-  },
-  accountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
-    marginTop: Spacing.two,
   },
   shareStatus: {
     flexDirection: 'row',

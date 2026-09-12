@@ -22,6 +22,11 @@ export type OverflowMenuItem = {
   destructive?: boolean;
 };
 
+// Durée de l'animation "fade" du Modal ci-dessous (voir son commentaire) —
+// pas de constante exposée par React Native pour ça, 300ms est la valeur
+// usuelle documentée pour ce genre de transition modale.
+const ANIMATION_CLOSE_DELAY_MS = 300;
+
 // Bouton "⋯" + menu déroulant. Rendu dans un Modal transparent plutôt qu'un
 // simple View positionné en absolute : React Native n'a pas d'équivalent
 // direct du "clic en dehors pour fermer" du web sans écouteur global, un
@@ -71,7 +76,21 @@ export function OverflowMenu({
                       key={item.key}
                       onPress={() => {
                         setOpen(false);
-                        item.onPress();
+                        // Sur natif, présenter un second <Modal> (ex.
+                        // "Ajouter à une liste" -> list-picker-sheet.tsx)
+                        // avant que celui-ci ait fini de se fermer peut
+                        // faire disparaître silencieusement la présentation
+                        // du second : iOS ne présente qu'un view
+                        // controller modal à la fois, et fermer/ouvrir dans
+                        // le même tick queue les deux au même instant côté
+                        // UIKit. Jamais reproduit sur le web
+                        // (react-native-web n'a pas de vraie présentation
+                        // native) — c'est justement ce qui avait caché ce
+                        // bug jusqu'ici. ANIMATION_CLOSE_DELAY_MS laisse le
+                        // temps à l'animation de fermeture de ce menu de se
+                        // terminer avant que l'appelant n'ouvre quoi que ce
+                        // soit d'autre.
+                        setTimeout(() => item.onPress(), ANIMATION_CLOSE_DELAY_MS);
                       }}
                       style={[
                         styles.item,

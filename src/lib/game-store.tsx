@@ -179,6 +179,7 @@ type GameStoreContextValue = {
   settings: Settings;
   registerCatalogGame: (game: CatalogGame) => void;
   addToLibrary: (id: string) => void;
+  removeFromLibrary: (id: string) => void;
   toggleStopped: (id: string) => void;
   setTotalHours: (id: string, totalHours: number) => void;
   setRating: (id: string, rating: number) => void;
@@ -311,6 +312,20 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           return updateGame(prev, id, { inLibrary: true });
         });
       },
+      // Symétrique d'addToLibrary : ne touche que `inLibrary`, jamais
+      // `stopped`/`rating`/`review`/`achievements`/`playSessions` — un
+      // retrait de bibliothèque n'efface aucune de ces autres données
+      // utilisateur. C'est précisément ce qui permet à isSyncWorthy
+      // (sync-service.ts) de garder le jeu synchronisé après ce retrait
+      // s'il porte encore l'un de ces signaux (ex. un avis déjà écrit) —
+      // il ne redevient "non traqué" que si plus aucun ne le qualifie.
+      removeFromLibrary: (id: string) => {
+        setState((prev) => {
+          const existing = prev.games[id];
+          if (!existing || !existing.inLibrary) return prev;
+          return updateGame(prev, id, { inLibrary: false });
+        });
+      },
       toggleStopped: (id: string) => {
         setState((prev) => {
           const existing = prev.games[id];
@@ -406,6 +421,12 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
         setState((prev) => {
           const list = prev.lists[listId];
           if (!list) return prev;
+          // Même garde que toute autre action "par id" du store (setRating,
+          // addAchievement, toggleStopped...) : no-op silencieux si l'entité
+          // référencée n'existe pas, plutôt que d'accepter un id orphelin
+          // dans gameIds/memberships qu'aucun écran n'aurait ensuite de
+          // raison de nettoyer.
+          if (!prev.games[gameId]) return prev;
           const wasMember = list.gameIds.includes(gameId);
           const gameIds = wasMember
             ? list.gameIds.filter((existingId) => existingId !== gameId)

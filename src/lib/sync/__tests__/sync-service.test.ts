@@ -559,6 +559,41 @@ describe('syncLibrary — portée élargie par les listes (cas Wishlist)', () =>
   });
 });
 
+describe('syncLibrary — retrait de la bibliothèque (removeFromLibrary, game-store.tsx)', () => {
+  test('un jeu retiré de la bibliothèque mais qui garde une autre donnée utilisateur (ex. une note) reste synchronisé', async () => {
+    // Simule l'état après removeFromLibrary() sur un jeu déjà noté :
+    // inLibrary repasse à false, mais rating (et stopped/review/achievements,
+    // voir le commentaire de removeFromLibrary) restent intacts — c'est
+    // justement ce qui garde ce jeu "sync-worthy" malgré le retrait.
+    const { client, calls } = makeFakeClient({ userGames: ok([]) });
+    mockGetSupabaseClient.mockReturnValue(client);
+    const applySyncedGames = jest.fn();
+
+    const removedButRated = localGame({ id: 'retire-mais-note', inLibrary: false, rating: 14 });
+
+    const result = await syncLibrary('user-1', { 'retire-mais-note': removedButRated }, {}, applySyncedGames);
+
+    expect(result.error).toBeNull();
+    expect(calls.inserts).toHaveLength(1);
+    expect(calls.inserts[0]).toEqual(
+      expect.objectContaining({ slug: 'retire-mais-note', in_library: false, rating: 14 })
+    );
+  });
+
+  test('un jeu retiré de la bibliothèque sans plus aucun autre signal (ni note, ni avis, ni succès, ni liste) devient non traqué', async () => {
+    const { client, calls } = makeFakeClient({ userGames: ok([]) });
+    mockGetSupabaseClient.mockReturnValue(client);
+    const applySyncedGames = jest.fn();
+
+    const removedAndBare = localGame({ id: 'retire-sans-rien', inLibrary: false });
+
+    const result = await syncLibrary('user-1', { 'retire-sans-rien': removedAndBare }, {}, applySyncedGames);
+
+    expect(result.error).toBeNull();
+    expect(calls.inserts).toEqual([]);
+  });
+});
+
 describe('syncLists — lists/list_games', () => {
   test("sans client configuré : erreur explicite, aucun appel réseau", async () => {
     mockGetSupabaseClient.mockReturnValue(null);
