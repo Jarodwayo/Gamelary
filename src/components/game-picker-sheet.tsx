@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { GameCover } from '@/components/game-cover';
 import { ThemedText } from '@/components/themed-text';
@@ -99,112 +109,129 @@ export function GamePickerSheet({ visible, listId, onClose }: GamePickerSheetPro
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <Pressable style={styles.backdrop} onPress={handleClose} accessibilityLabel="Fermer">
-        <Pressable onPress={(event) => event.stopPropagation()}>
-          <ThemedView type="backgroundElement" style={styles.sheet}>
-            <ThemedText type="smallBold" style={styles.title}>
-              Ajouter un jeu à {list.name}
-            </ThemedText>
-
-            <TextInput
-              value={query}
-              onChangeText={(text) => {
-                setQuery(text);
-                setStatus('idle');
-              }}
-              onSubmitEditing={searchIgdb}
-              returnKeyType="search"
-              placeholder="Titre d'un jeu"
-              placeholderTextColor={theme.textSecondary}
-              autoFocus
-              style={[styles.input, { color: theme.text, borderColor: theme.textSecondary }]}
-            />
-
-            {trimmed ? (
-              <>
-                {/* ScrollView monté seulement s'il y a quelque chose à
-                    défiler : un ScrollView RN Web dont le SEUL enfant
-                    apparaît après coup (ex. un unique bouton "Chercher sur
-                    IGDB" ajouté suite à une frappe, sans être passé par
-                    .map()) peut voir son conteneur de défilement rester
-                    mesuré à 0px — jamais reproduit quand matches.length > 0
-                    dès le premier rendu (voir le test e2e de ce fichier,
-                    qui a servi à isoler précisément ce cas). Le repli IGDB
-                    et les messages de statut vivent donc TOUJOURS en dehors
-                    du ScrollView, jamais soumis à ce risque. */}
-                {matches.length > 0 && (
-                  <ScrollView style={styles.results} keyboardShouldPersistTaps="handled">
-                    {matches.map((game) => {
-                      const checked = list.gameIds.includes(game.id);
-                      return (
-                        <Pressable
-                          key={game.id}
-                          onPress={() => store.toggleListMembership(listId, game.id)}
-                          style={styles.row}>
-                          <GameCover title={game.title} steamAppId={game.steamAppId} />
-                          <View style={styles.rowText}>
-                            <ThemedText numberOfLines={1}>{game.title}</ThemedText>
-                            <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                              {game.platform}
-                            </ThemedText>
-                          </View>
-                          <View
-                            style={[
-                              styles.checkbox,
-                              { borderColor: theme.textSecondary },
-                              checked && { backgroundColor: theme.accent, borderColor: theme.accent },
-                            ]}
-                          />
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-
-                {status === 'loading' ? (
-                  <ActivityIndicator style={styles.spinner} color={theme.accent} />
-                ) : status === 'not-found' ? (
-                  <ThemedText themeColor="textSecondary" style={styles.message}>
-                    Aucun jeu trouvé pour « {trimmed} ».
-                  </ThemedText>
-                ) : status === 'error' ? (
-                  <ThemedText themeColor="danger" style={styles.message}>
-                    Erreur de recherche, réessaie.
-                  </ThemedText>
-                ) : (
-                  // Toujours proposée quand la frappe ne matche rien de déjà
-                  // connu, même si un jeu identique existe peut-être déjà
-                  // sur IGDB sous une orthographe légèrement différente :
-                  // mieux vaut laisser l'utilisateur retenter une recherche
-                  // exacte que deviner à sa place.
-                  matches.length === 0 && (
-                    <Pressable onPress={searchIgdb} style={styles.row}>
-                      <ThemedText themeColor="accent">Chercher « {trimmed} » sur IGDB</ThemedText>
-                    </Pressable>
-                  )
-                )}
-              </>
-            ) : (
-              <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
-                Tape le nom d’un jeu déjà croisé (bibliothèque ou Explorer), ou d’un nouveau à chercher
-                sur IGDB.
+      {/* Même classe de bug que le champ SteamID64 (profile/index.tsx) : le
+          clavier recouvre une partie du contenu affiché sous le champ actif.
+          Là-bas, un simple ScrollView plein écran suffisait
+          (automaticallyAdjustKeyboardInsets délègue tout à RN). Ici, la
+          feuille est une Modal positionnée en bas de l'écran et sa
+          ScrollView interne des résultats a une hauteur fixe (voir
+          styles.results) — elle ne couvre pas le reste de la feuille (champ,
+          statut, bouton Terminé), donc rien à qui déléguer un ajustement
+          automatique. D'où le remède "manuel" que ce prop évitait déjà
+          là-bas : KeyboardAvoidingView. 'padding' sur iOS, 'height' sur
+          Android — 'padding' y est peu fiable (retours connus de
+          l'écosystème RN), 'height' y donne un résultat plus stable. */}
+      <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <Pressable style={styles.backdropPress} onPress={handleClose} accessibilityLabel="Fermer">
+          <Pressable onPress={(event) => event.stopPropagation()}>
+            <ThemedView type="backgroundElement" style={styles.sheet}>
+              <ThemedText type="smallBold" style={styles.title}>
+                Ajouter un jeu à {list.name}
               </ThemedText>
-            )}
 
-            <Pressable
-              onPress={handleClose}
-              style={[styles.doneButton, { backgroundColor: theme.accent }]}>
-              <ThemedText style={{ color: theme.accentInk }}>Terminé</ThemedText>
-            </Pressable>
-          </ThemedView>
+              <TextInput
+                value={query}
+                onChangeText={(text) => {
+                  setQuery(text);
+                  setStatus('idle');
+                }}
+                onSubmitEditing={searchIgdb}
+                returnKeyType="search"
+                placeholder="Titre d'un jeu"
+                placeholderTextColor={theme.textSecondary}
+                autoFocus
+                style={[styles.input, { color: theme.text, borderColor: theme.textSecondary }]}
+              />
+
+              {trimmed ? (
+                <>
+                  {/* ScrollView monté seulement s'il y a quelque chose à
+                      défiler : un ScrollView RN Web dont le SEUL enfant
+                      apparaît après coup (ex. un unique bouton "Chercher sur
+                      IGDB" ajouté suite à une frappe, sans être passé par
+                      .map()) peut voir son conteneur de défilement rester
+                      mesuré à 0px — jamais reproduit quand matches.length > 0
+                      dès le premier rendu (voir le test e2e de ce fichier,
+                      qui a servi à isoler précisément ce cas). Le repli IGDB
+                      et les messages de statut vivent donc TOUJOURS en dehors
+                      du ScrollView, jamais soumis à ce risque. */}
+                  {matches.length > 0 && (
+                    <ScrollView style={styles.results} keyboardShouldPersistTaps="handled">
+                      {matches.map((game) => {
+                        const checked = list.gameIds.includes(game.id);
+                        return (
+                          <Pressable
+                            key={game.id}
+                            onPress={() => store.toggleListMembership(listId, game.id)}
+                            style={styles.row}>
+                            <GameCover title={game.title} steamAppId={game.steamAppId} />
+                            <View style={styles.rowText}>
+                              <ThemedText numberOfLines={1}>{game.title}</ThemedText>
+                              <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                                {game.platform}
+                              </ThemedText>
+                            </View>
+                            <View
+                              style={[
+                                styles.checkbox,
+                                { borderColor: theme.textSecondary },
+                                checked && { backgroundColor: theme.accent, borderColor: theme.accent },
+                              ]}
+                            />
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
+
+                  {status === 'loading' ? (
+                    <ActivityIndicator style={styles.spinner} color={theme.accent} />
+                  ) : status === 'not-found' ? (
+                    <ThemedText themeColor="textSecondary" style={styles.message}>
+                      Aucun jeu trouvé pour « {trimmed} ».
+                    </ThemedText>
+                  ) : status === 'error' ? (
+                    <ThemedText themeColor="danger" style={styles.message}>
+                      Erreur de recherche, réessaie.
+                    </ThemedText>
+                  ) : (
+                    // Toujours proposée quand la frappe ne matche rien de déjà
+                    // connu, même si un jeu identique existe peut-être déjà
+                    // sur IGDB sous une orthographe légèrement différente :
+                    // mieux vaut laisser l'utilisateur retenter une recherche
+                    // exacte que deviner à sa place.
+                    matches.length === 0 && (
+                      <Pressable onPress={searchIgdb} style={styles.row}>
+                        <ThemedText themeColor="accent">Chercher « {trimmed} » sur IGDB</ThemedText>
+                      </Pressable>
+                    )
+                  )}
+                </>
+              ) : (
+                <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
+                  Tape le nom d’un jeu déjà croisé (bibliothèque ou Explorer), ou d’un nouveau à chercher
+                  sur IGDB.
+                </ThemedText>
+              )}
+
+              <Pressable
+                onPress={handleClose}
+                style={[styles.doneButton, { backgroundColor: theme.accent }]}>
+                <ThemedText style={{ color: theme.accentInk }}>Terminé</ThemedText>
+              </Pressable>
+            </ThemedView>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   backdrop: {
+    flex: 1,
+  },
+  backdropPress: {
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(0,0,0,0.5)',
