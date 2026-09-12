@@ -1,6 +1,6 @@
 # Gamelary
 
-🔗 **Démo en ligne** : [<URL_DEMO>](<URL_DEMO>)
+🔗 **Démo en ligne** : [Essayer la démo](https://gamelary.expo.app)
 
 J'ai construit Gamelary pendant ma reconversion vers le métier de développeur
 full stack (formation OpenClassrooms, complétée par des certifications
