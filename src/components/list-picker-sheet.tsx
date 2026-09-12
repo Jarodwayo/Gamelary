@@ -42,24 +42,26 @@ export function ListPickerSheet({ visible, gameId, onClose }: ListPickerSheetPro
               Ajouter à une liste
             </ThemedText>
 
-            {Object.values(store.lists).map((list) => {
-              const checked = list.gameIds.includes(gameId);
-              return (
-                <Pressable
-                  key={list.id}
-                  onPress={() => store.toggleListMembership(list.id, gameId)}
-                  style={styles.row}>
-                  <ThemedText>{list.name}</ThemedText>
-                  <View
-                    style={[
-                      styles.checkbox,
-                      { borderColor: theme.textSecondary },
-                      checked && { backgroundColor: theme.accent, borderColor: theme.accent },
-                    ]}
-                  />
-                </Pressable>
-              );
-            })}
+            {Object.values(store.lists)
+              .filter((list) => list.deletedAt == null)
+              .map((list) => {
+                const checked = list.gameIds.includes(gameId);
+                return (
+                  <Pressable
+                    key={list.id}
+                    onPress={() => store.toggleListMembership(list.id, gameId)}
+                    style={styles.row}>
+                    <ThemedText>{list.name}</ThemedText>
+                    <View
+                      style={[
+                        styles.checkbox,
+                        { borderColor: theme.textSecondary },
+                        checked && { backgroundColor: theme.accent, borderColor: theme.accent },
+                      ]}
+                    />
+                  </Pressable>
+                );
+              })}
 
             {creating ? (
               <View style={styles.createRow}>

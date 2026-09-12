@@ -974,8 +974,8 @@ et `profile`/`titleArtwork` restent hors scope, voir le détail plus bas.
 | `achievements` | Union par `(source, external_key)`, `unlocked` = **OU logique** | Un succès débloqué ne doit jamais se re-verrouiller | ✅ implémenté |
 | `rating`, `review` | **Le plus récent gagne** (`updatedAt`), jamais arbitré si absent des deux côtés | Valeur unique : vrai conflit, arbitrage nécessaire | ✅ implémenté |
 | `play_sessions` | **Union** par `clientKey`/`client_key`, corrections comprises mais jamais rejouées | Journal append-only : fusion sans perte et sans double comptage | ✅ implémenté |
-| nom/description/visibilité d'une liste | **Le plus récent gagne** (`updatedAt`), jamais arbitré si absent des deux côtés | Même principe que rating/review : valeur unique, vrai conflit | ✅ implémenté |
-| appartenance aux listes (`list_games`) | **Union**, sauf conflit actif/retiré : **le plus récent gagne** (`updatedAt` par appartenance, tombstone `removed_at`), jamais arbitré si absent côté local | Une union pure ne peut pas représenter un retrait — voir plus bas | ✅ implémenté |
+| nom/description/visibilité/suppression d'une liste | **Le plus récent gagne** (`updatedAt`), jamais arbitré si absent des deux côtés | Même principe que rating/review : valeur unique, vrai conflit — supprimer bascule avec les autres champs, pas un évènement à part (voir plus bas) | ✅ implémenté |
+| appartenance aux listes (`list_games`) | **Union**, sauf conflit actif/retiré : **le plus récent gagne** (`updatedAt` par appartenance, tombstone `removed_at`), jamais arbitré si absent côté local — court-circuitée si la liste elle-même est jugée supprimée | Une union pure ne peut pas représenter un retrait — voir plus bas | ✅ implémenté |
 | `steam_id64` | **Le plus récent gagne** (`steamId64UpdatedAt`) | Valeur unique, même arbitrage que rating/review | 🚧 hors scope (voir plus bas) |
 
 **Implémenté cette session** (`play_sessions` + `lists`/`list_games`, en
@@ -1109,6 +1109,94 @@ listes créées par l'utilisateur (`client_key`).
 - **Concurrence à deux appareils sur une MÊME liste créée simultanément** —
   même limite que "Réconciliation d'identité tardive" (§9.6), transposée
   aux listes via `client_key` : non traitée ici.
+
+**Suppression et renommage d'une liste ✅** — jusqu'ici, une liste créée
+(`profile/create-list.tsx`) ne pouvait ni être renommée ni supprimée : le
+bouton réglages de son écran dédié (`profile/list/[id].tsx`) n'existait même
+pas encore (seul `+` pour ajouter un jeu était présent). Réservé aux listes
+créées par l'utilisateur — Favoris/Wishlist restent non supprimables/non
+renommables, comme avant, l'écran ne propose même pas le menu réglages pour
+`list.builtin`.
+
+- **Renommer** (`renameList`, `game-store.tsx`) — modifie uniquement `name`
+  et avance `updatedAt`, exactement comme la création horodate déjà nom/
+  description/visibilité : un renommage EST une vraie donnée utilisateur, au
+  même titre qu'une note ou un avis (voir §9.5). Même garde "rien n'a
+  changé"/"liste inexistante ou intégrée" que les autres actions du store.
+- **Supprimer** (`deleteList`, `game-store.tsx`) — la question posée par
+  cette tâche était l'impact sur `list_games` : effacer les lignes
+  associées, ou réutiliser un mécanisme de tombstone côté sync (comme
+  `list_games.removed_at`) ?
+
+  **Décision : tombstone sur la liste elle-même (`StoredList.deletedAt` /
+  `lists.deleted_at`, nouvelle migration
+  [`20260912120000_list_deletion_tombstone.sql`](supabase/migrations/20260912120000_list_deletion_tombstone.sql)),
+  PAS une suppression immédiate de la ligne distante.** Une suppression
+  distante immédiate (`DELETE`, avec `on delete cascade` sur `list_games`)
+  se heurterait exactement au problème que `removed_at` a déjà résolu une
+  fois pour l'appartenance (§9.5) : un second appareil pas encore
+  synchronisé au moment de la suppression n'apprendrait jamais qu'elle a eu
+  lieu, et repousserait la liste telle quelle (nom, description,
+  appartenances) dès sa prochaine synchro — résurrection silencieuse d'une
+  liste que l'utilisateur avait pourtant supprimée. `deleted_at` bascule
+  avec `name`/`description`/`hidden` sur le MÊME `updated_at`
+  (`mergeListMetadata` étendu à quatre champs plutôt que trois, voir
+  `merge-policy.ts`) : supprimer une liste est une mutation de métadonnées
+  de plus, pas une entité ou un horodatage à part.
+
+  Une fois le verdict de fusion "supprimée" atteint (par l'un OU l'autre
+  côté), `syncLists` (`sync-service.ts`) court-circuite complètement
+  `mergeListMembership` pour cette liste — sans ce garde-fou, un `list_games`
+  distant pas encore nettoyé aurait réimporté ses `gameIds` dans une liste
+  que le local vient pourtant de vider (`deleteList` vide `gameIds`/
+  `memberships` immédiatement, voir plus bas). C'est PRÉCISÉMENT quand cette
+  suppression est constatée côté distant pour la première fois (`deleted_at`
+  qui passe de `null` à renseigné à ce round précis) que les lignes
+  `list_games` de cette liste sont réellement effacées (`delete from
+  list_games where list_id = ...`) — jamais avant, jamais en boucle à chaque
+  synchro suivante. Contrairement à `removed_at` (une appartenance retirée
+  peut légitimement se réactiver), le verdict "liste supprimée" ne revient
+  jamais en arrière : aucun appareil n'a donc plus besoin de connaître son
+  contenu passé une fois ce nettoyage fait, d'où une vraie suppression plutôt
+  qu'un second tombstone. Une liste distante déjà supprimée mais que CET
+  appareil n'a jamais connue (créée et supprimée entièrement sur un autre
+  appareil) n'est même pas importée : rien à afficher, rien à nettoyer ici.
+
+  Côté local, `deleteList` vide `gameIds`/`memberships` immédiatement (pas
+  seulement `deletedAt` posé) : une liste supprimée n'a plus besoin de
+  savoir ce qu'elle contenait, aucun écran ne la réaffiche pour le lire.
+  `deletedAt` renseigné cache la liste de tous les écrans qui l'énuméraient
+  — `profile/index.tsx` (rangée "Mes listes"), `list-picker-sheet.tsx`
+  ("Ajouter à une liste" depuis une fiche jeu), `game-picker-sheet.tsx`
+  (garde défensive si la liste est supprimée pendant que sa modale reste
+  montée) — la ligne elle-même reste en mémoire (jamais retirée de
+  `store.lists`), exactement le même principe que `ListMembership`/
+  `removed_at` : le tombstone doit survivre pour que la synchro ait quelque
+  chose à pousser/arbitrer.
+
+  `profile/list/[id].tsx` traite `list.deletedAt` comme "liste introuvable"
+  (même repli que l'id invalide) — atteignable si une autre appareil supprime
+  la liste pendant que cet écran reste ouvert ici, entre deux synchros.
+
+- **Confirmation avant suppression : une `<Modal>` custom
+  (`DeleteListSheet`), PAS `Alert.alert`.** `Alert.alert` est déjà utilisé
+  ailleurs dans l'app pour ce type de confirmation ("Remplacer les succès
+  existants ?", `library/[id].tsx`) — mais c'est un **NO-OP sur
+  react-native-web** (`node_modules/react-native-web/.../exports/Alert` :
+  `static alert() {}`, vérifié directement dans le module avant d'écrire ce
+  paragraphe, pas supposé). Sur le web, l'appeler ne montre RIEN et
+  n'exécute aucun des callbacks de bouton — le flux Steam existant est donc
+  déjà silencieusement cassé sur cette plateforme (relevé ici, pas corrigé :
+  hors scope de cette tâche, mais à garder en tête). Pour une suppression de
+  liste — une action destructive dans une app qui compte le web comme cible
+  à part entière (§1) — reproduire ce même motif aurait rendu le bouton
+  "Supprimer" inerte sur le web, sans aucun signal d'erreur. D'où une
+  feuille modale maison à la place, cohérente avec le reste de l'écran
+  (`RenameListSheet`, `GamePickerSheet`) et fonctionnant identiquement sur
+  les trois plateformes — et donc réellement testable en e2e (voir
+  `e2e/list-rename-delete.spec.ts`), contrairement à un `Alert.alert` que
+  Playwright ne peut pas piloter sur le web puisqu'il n'y affiche jamais
+  rien.
 
 ### 9.6 Points encore ouverts
 

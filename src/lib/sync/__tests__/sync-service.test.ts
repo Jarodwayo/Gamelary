@@ -38,6 +38,7 @@ function makeFakeClient(config: {
   insertList?: QueryResult<{ id: string }>;
   updateList?: QueryResult<null>;
   upsertListGames?: QueryResult<null>;
+  deleteListGames?: QueryResult<null>;
 }) {
   const calls: {
     userGamesSelectUserId?: string;
@@ -52,6 +53,7 @@ function makeFakeClient(config: {
     listInserts: Record<string, unknown>[];
     listUpdates: { id: string; patch: Record<string, unknown> }[];
     listGameUpserts: Record<string, unknown>[][];
+    listGameDeletesByListId: string[];
   } = {
     inserts: [],
     updates: [],
@@ -60,6 +62,7 @@ function makeFakeClient(config: {
     listInserts: [],
     listUpdates: [],
     listGameUpserts: [],
+    listGameDeletesByListId: [],
   };
 
   let insertCounter = 0;
@@ -150,6 +153,12 @@ function makeFakeClient(config: {
       calls.listGameUpserts.push(rows);
       return Promise.resolve(config.upsertListGames ?? ok(null));
     },
+    delete: () => ({
+      eq: (_col: string, listId: string) => {
+        calls.listGameDeletesByListId.push(listId);
+        return Promise.resolve(config.deleteListGames ?? ok(null));
+      },
+    }),
   };
 
   const client = {
@@ -619,7 +628,15 @@ describe('syncLists — lists/list_games', () => {
 
     expect(result.error).toBeNull();
     expect(calls.listInserts).toEqual([
-      { user_id: 'user-1', builtin_key: 'favoris', client_key: null, name: 'Favoris', description: null, hidden: false },
+      {
+        user_id: 'user-1',
+        builtin_key: 'favoris',
+        client_key: null,
+        name: 'Favoris',
+        description: null,
+        hidden: false,
+        deleted_at: null,
+      },
     ]);
     expect(calls.listGameUpserts).toEqual([
       [{ list_id: 'nouvelle-liste-1', user_game_id: 'remote-game-1', removed_at: null }],
@@ -639,7 +656,15 @@ describe('syncLists — lists/list_games', () => {
 
     expect(result.error).toBeNull();
     expect(calls.listInserts).toEqual([
-      { user_id: 'user-1', builtin_key: null, client_key: 'a-finir-abc', name: 'À finir', description: 'ma liste', hidden: true },
+      {
+        user_id: 'user-1',
+        builtin_key: null,
+        client_key: 'a-finir-abc',
+        name: 'À finir',
+        description: 'ma liste',
+        hidden: true,
+        deleted_at: null,
+      },
     ]);
   });
 
@@ -808,7 +833,10 @@ describe('syncLists — lists/list_games', () => {
 
     expect(result.error).toBeNull();
     expect(calls.listUpdates).toEqual([
-      { id: 'remote-list-1', patch: { name: 'Favoris (renommé ici)', description: 'Ajoutée localement', hidden: true } },
+      {
+        id: 'remote-list-1',
+        patch: { name: 'Favoris (renommé ici)', description: 'Ajoutée localement', hidden: true, deleted_at: null },
+      },
     ]);
   });
 
@@ -837,5 +865,212 @@ describe('syncLists — lists/list_games', () => {
     expect(calls.listGameUpserts).toEqual([
       [{ list_id: 'nouvelle-liste-1', user_game_id: 'remote-game-1', removed_at: null }],
     ]);
+  });
+
+  // Suppression d'une liste (§9.5, ARCHITECTURE.md « Suppression et
+  // renommage d'une liste ») : tombstone `deleted_at`, jamais un DELETE
+  // immédiat de la ligne `lists` — voir la migration
+  // 20260912120000_list_deletion_tombstone.sql et son raisonnement.
+  describe('suppression d’une liste (tombstone deletedAt/deleted_at)', () => {
+    test('supprimée localement, pas encore connue du distant : pousse deleted_at et nettoie list_games, sans upsert d’appartenance', async () => {
+      const { client, calls } = makeFakeClient({
+        userGames: ok([{ id: 'remote-game-1', igdb_id: null, slug: 'hollow-knight' }]),
+        lists: ok([
+          {
+            id: 'remote-list-1',
+            builtin_key: null,
+            client_key: 'a-finir-abc',
+            name: 'À finir',
+            description: null,
+            hidden: false,
+            deleted_at: null,
+            updated_at: '2026-01-01T00:00:00.000Z',
+          },
+        ]),
+        // Encore présentes côté distant au moment de la suppression locale :
+        // la fusion d'appartenance doit être court-circuitée plutôt que de
+        // les réimporter dans gameIds (déjà vidé localement par deleteList).
+        listGames: ok([
+          { list_id: 'remote-list-1', user_game_id: 'remote-game-1', removed_at: null, updated_at: '2026-01-01T00:00:00.000Z' },
+        ]),
+      });
+      mockGetSupabaseClient.mockReturnValue(client);
+      const applySyncedLists = jest.fn();
+
+      const deletedAt = Date.parse('2026-02-01T00:00:00.000Z');
+      const lists = {
+        'a-finir-abc': localList({
+          id: 'a-finir-abc',
+          name: 'À finir',
+          builtin: false,
+          updatedAt: deletedAt,
+          deletedAt,
+          gameIds: [], // deleteList vide gameIds immédiatement (voir game-store.tsx)
+        }),
+      };
+
+      const result = await syncLists('user-1', {}, lists, applySyncedLists);
+
+      expect(result.error).toBeNull();
+      expect(calls.listUpdates).toEqual([
+        {
+          id: 'remote-list-1',
+          patch: {
+            name: 'À finir',
+            description: null,
+            hidden: false,
+            deleted_at: new Date(deletedAt).toISOString(),
+          },
+        },
+      ]);
+      // Nettoyage immédiat des lignes list_games devenues inutiles — jamais
+      // d'upsert d'appartenance pour une liste jugée supprimée.
+      expect(calls.listGameDeletesByListId).toEqual(['remote-list-1']);
+      expect(calls.listGameUpserts).toEqual([]);
+      // Rien de nouveau à écrire localement : le local est déjà à l'état
+      // final (gameIds vide, deletedAt posé) qui a gagné l'arbitrage.
+      expect(applySyncedLists).not.toHaveBeenCalled();
+    });
+
+    test('déjà supprimée côté distant lors d’un round précédent : ne relance pas le nettoyage list_games', async () => {
+      const { client, calls } = makeFakeClient({
+        userGames: ok([]),
+        lists: ok([
+          {
+            id: 'remote-list-1',
+            builtin_key: null,
+            client_key: 'a-finir-abc',
+            name: 'À finir',
+            description: null,
+            hidden: false,
+            deleted_at: '2026-02-01T00:00:00.000Z',
+            updated_at: '2026-02-01T00:00:00.000Z',
+          },
+        ]),
+        listGames: ok([]),
+      });
+      mockGetSupabaseClient.mockReturnValue(client);
+      const applySyncedLists = jest.fn();
+
+      const deletedAt = Date.parse('2026-02-01T00:00:00.000Z');
+      const lists = {
+        'a-finir-abc': localList({ id: 'a-finir-abc', name: 'À finir', builtin: false, updatedAt: deletedAt, deletedAt, gameIds: [] }),
+      };
+
+      const result = await syncLists('user-1', {}, lists, applySyncedLists);
+
+      expect(result.error).toBeNull();
+      expect(calls.listGameDeletesByListId).toEqual([]);
+      expect(calls.listUpdates).toEqual([]);
+    });
+
+    test('supprimée sur un AUTRE appareil, pas encore connue ici : le local apprend la suppression et vide gameIds', async () => {
+      const { client, calls } = makeFakeClient({
+        userGames: ok([{ id: 'remote-game-1', igdb_id: null, slug: 'hollow-knight' }]),
+        lists: ok([
+          {
+            id: 'remote-list-1',
+            builtin_key: null,
+            client_key: 'a-finir-abc',
+            name: 'À finir',
+            description: null,
+            hidden: false,
+            deleted_at: '2026-02-01T00:00:00.000Z',
+            updated_at: '2026-02-01T00:00:00.000Z',
+          },
+        ]),
+        listGames: ok([]),
+      });
+      mockGetSupabaseClient.mockReturnValue(client);
+      const applySyncedLists = jest.fn();
+
+      // Cet appareil ne sait pas encore que la liste a été supprimée : il la
+      // croit toujours active, avec un jeu dedans et un updatedAt plus
+      // ancien que la suppression distante.
+      const lists = {
+        'a-finir-abc': localList({
+          id: 'a-finir-abc',
+          name: 'À finir',
+          builtin: false,
+          updatedAt: Date.parse('2026-01-01T00:00:00.000Z'),
+          gameIds: ['hollow-knight'],
+        }),
+      };
+
+      const result = await syncLists('user-1', {}, lists, applySyncedLists);
+
+      expect(result.error).toBeNull();
+      expect(applySyncedLists).toHaveBeenCalledTimes(1);
+      const [[updatedLists]] = applySyncedLists.mock.calls;
+      expect(updatedLists).toEqual([
+        expect.objectContaining({
+          deletedAt: Date.parse('2026-02-01T00:00:00.000Z'),
+          gameIds: [],
+        }),
+      ]);
+      // Le distant a déjà été nettoyé par l'appareil qui a supprimé la
+      // liste : rien à refaire ici.
+      expect(calls.listGameDeletesByListId).toEqual([]);
+      expect(calls.listUpdates).toEqual([]);
+    });
+
+    test('liste distante déjà supprimée, jamais connue de CET appareil : pas importée', async () => {
+      const { client } = makeFakeClient({
+        userGames: ok([]),
+        lists: ok([
+          {
+            id: 'remote-list-1',
+            builtin_key: null,
+            client_key: 'creee-et-supprimee-ailleurs',
+            name: 'Éphémère',
+            description: null,
+            hidden: false,
+            deleted_at: '2026-02-01T00:00:00.000Z',
+            updated_at: '2026-02-01T00:00:00.000Z',
+          },
+        ]),
+      });
+      mockGetSupabaseClient.mockReturnValue(client);
+      const applySyncedLists = jest.fn();
+
+      const result = await syncLists('user-1', {}, {}, applySyncedLists);
+
+      expect(result.error).toBeNull();
+      expect(applySyncedLists).not.toHaveBeenCalled();
+    });
+
+    test('créée puis supprimée hors-ligne, jamais encore synchronisée : envoi direct déjà tombstoné, aucun membre à envoyer', async () => {
+      const { client, calls } = makeFakeClient({ userGames: ok([]), lists: ok([]) });
+      mockGetSupabaseClient.mockReturnValue(client);
+      const applySyncedLists = jest.fn();
+
+      const deletedAt = Date.parse('2026-01-01T00:00:00.000Z');
+      const lists = {
+        'ephemere-abc': localList({
+          id: 'ephemere-abc',
+          name: 'Éphémère',
+          builtin: false,
+          updatedAt: deletedAt,
+          deletedAt,
+          gameIds: [],
+        }),
+      };
+
+      const result = await syncLists('user-1', {}, lists, applySyncedLists);
+
+      expect(result.error).toBeNull();
+      expect(calls.listInserts).toEqual([
+        {
+          user_id: 'user-1',
+          builtin_key: null,
+          client_key: 'ephemere-abc',
+          name: 'Éphémère',
+          description: null,
+          hidden: false,
+          deleted_at: new Date(deletedAt).toISOString(),
+        },
+      ]);
+      expect(calls.listGameUpserts).toEqual([]);
+    });
   });
 });

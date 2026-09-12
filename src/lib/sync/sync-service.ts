@@ -48,7 +48,7 @@ const GAME_COLUMNS =
 const MIN_GAME_COLUMNS = 'id, igdb_id, slug';
 const ACHIEVEMENT_COLUMNS = 'user_game_id, source, external_key, name, unlocked';
 const PLAY_SESSION_COLUMNS = 'user_game_id, client_key, played_at, hours';
-const LIST_COLUMNS = 'id, builtin_key, client_key, name, description, hidden, updated_at';
+const LIST_COLUMNS = 'id, builtin_key, client_key, name, description, hidden, deleted_at, updated_at';
 const LIST_MEMBERSHIP_COLUMNS = 'list_id, user_game_id, removed_at, updated_at';
 
 // Portée de la synchro : seuls les jeux porteurs d'une vraie donnée
@@ -411,11 +411,16 @@ export async function syncLists(
           name: list.name,
           description: list.description ?? null,
           hidden: list.hidden ?? false,
+          deleted_at: list.deletedAt != null ? new Date(list.deletedAt).toISOString() : null,
         })
         .select('id')
         .single();
       if (error) return { error: error.message };
 
+      // Une liste supprimée avant sa toute première synchro (créée puis
+      // supprimée hors-ligne) a déjà `gameIds` vide (voir deleteList,
+      // game-store.tsx) : cette boucle ne produit alors naturellement rien à
+      // upserter, sans branche séparée à écrire pour ce cas.
       const rows = list.gameIds
         .map((gameId) => remoteGameIdByGameId.get(gameId))
         .filter((remoteGameId): remoteGameId is string => remoteGameId != null)
@@ -431,15 +436,35 @@ export async function syncLists(
 
     matchedRemoteListIds.add(remoteRow.id);
     const metadataMerge = mergeListMetadata(
-      { name: list.name, description: list.description, hidden: list.hidden, updatedAt: list.updatedAt },
+      {
+        name: list.name,
+        description: list.description,
+        hidden: list.hidden,
+        deletedAt: list.deletedAt,
+        updatedAt: list.updatedAt,
+      },
       remoteRow
     );
-    const membershipMerge = mergeListMembership(list.gameIds, list.memberships ?? {}, remoteMembershipRowsFor(remoteRow.id));
+    // Verdict "supprimée" (par l'un OU l'autre côté) : plus rien à arbitrer
+    // côté appartenance, aucun appareil n'a plus besoin de savoir quels jeux
+    // s'y trouvaient. Court-circuite mergeListMembership plutôt que de la
+    // laisser importer depuis un distant pas encore nettoyé (voir plus bas)
+    // et ainsi repeupler `gameIds` d'une liste qu'on vient pourtant de vider.
+    const isDeleted = metadataMerge.deletedAt != null;
+    const membershipMerge = isDeleted
+      ? {
+          gameIds: [] as string[],
+          memberships: {} as Record<string, { removed?: boolean; updatedAt?: number }>,
+          changed: list.gameIds.length > 0 || Object.keys(list.memberships ?? {}).length > 0,
+          remoteUpserts: [] as { gameId: string; removed: boolean }[],
+        }
+      : mergeListMembership(list.gameIds, list.memberships ?? {}, remoteMembershipRowsFor(remoteRow.id));
 
     const metadataChanged =
       metadataMerge.name !== list.name ||
       metadataMerge.description !== list.description ||
-      metadataMerge.hidden !== list.hidden;
+      metadataMerge.hidden !== list.hidden ||
+      metadataMerge.deletedAt !== list.deletedAt;
     const localChanged = metadataChanged || membershipMerge.changed;
     if (localChanged) {
       localUpdates.push({
@@ -447,6 +472,7 @@ export async function syncLists(
         name: metadataMerge.name,
         description: metadataMerge.description,
         hidden: metadataMerge.hidden,
+        deletedAt: metadataMerge.deletedAt,
         updatedAt: metadataMerge.updatedAt,
         gameIds: membershipMerge.gameIds,
         memberships: membershipMerge.memberships,
@@ -458,10 +484,12 @@ export async function syncLists(
     // null`) : comparer sans harmoniser ferait lire une simple absence
     // locale comme un vrai changement et pousserait une écriture distante
     // qui ne change rien en pratique.
+    const remoteDeletedAt = remoteRow.deleted_at != null ? Date.parse(remoteRow.deleted_at) : undefined;
     const remoteMetadataChanged =
       metadataMerge.name !== remoteRow.name ||
       (metadataMerge.description ?? undefined) !== (remoteRow.description ?? undefined) ||
-      (metadataMerge.hidden ?? false) !== remoteRow.hidden;
+      (metadataMerge.hidden ?? false) !== remoteRow.hidden ||
+      metadataMerge.deletedAt !== remoteDeletedAt;
     if (remoteMetadataChanged) {
       const { error } = await client
         .from('lists')
@@ -469,8 +497,20 @@ export async function syncLists(
           name: metadataMerge.name,
           description: metadataMerge.description ?? null,
           hidden: metadataMerge.hidden ?? false,
+          deleted_at: metadataMerge.deletedAt != null ? new Date(metadataMerge.deletedAt).toISOString() : null,
         })
         .eq('id', remoteRow.id);
+      if (error) return { error: error.message };
+    }
+
+    // La suppression vient d'être constatée côté distant PAR CE ROUND (elle
+    // ne l'était pas encore, `remoteDeletedAt` absent) : ses lignes
+    // list_games n'ont plus aucune utilité pour aucun appareil — une liste
+    // supprimée ne se restaure pas, contrairement à une simple appartenance
+    // retirée (`removed_at`). Nettoyage immédiat plutôt que des lignes mortes
+    // qui traîneraient indéfiniment sans jamais plus être lues.
+    if (isDeleted && remoteDeletedAt == null) {
+      const { error } = await client.from('list_games').delete().eq('list_id', remoteRow.id);
       if (error) return { error: error.message };
     }
 
@@ -498,6 +538,12 @@ export async function syncLists(
   // dans syncLibrary).
   for (const remoteRow of remoteListRows) {
     if (matchedRemoteListIds.has(remoteRow.id)) continue;
+    // Une liste jamais vue par CET appareil et déjà supprimée ailleurs
+    // n'apporte rien à importer : elle serait de toute façon immédiatement
+    // cachée de tous les écrans qui énumèrent les listes (voir
+    // ARCHITECTURE.md « Suppression et renommage d'une liste »), sans même
+    // avoir besoin de traduire ses appartenances passées vers cet appareil.
+    if (remoteRow.deleted_at != null) continue;
     const memberships: Record<string, { removed?: boolean; updatedAt?: number }> = {};
     const gameIds: string[] = [];
     for (const row of remoteMembershipRowsFor(remoteRow.id)) {

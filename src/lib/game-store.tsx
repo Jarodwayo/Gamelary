@@ -74,11 +74,22 @@ export type StoredList = {
   // simplement pas dans les rangées du Profil (voir profile/index.tsx).
   // Absent = visible, pour ne pas avoir à migrer les listes déjà stockées.
   hidden?: boolean;
-  // Horodatage des métadonnées (nom/description/hidden) pour l'arbitrage
-  // "le plus récent gagne" de la synchro (§9.5) — même principe que
-  // StoredGame.updatedAt : absent = jamais modifié depuis l'introduction du
-  // champ, rien à arbitrer plutôt que de deviner un gagnant.
+  // Horodatage des métadonnées (nom/description/hidden/deletedAt) pour
+  // l'arbitrage "le plus récent gagne" de la synchro (§9.5) — même principe
+  // que StoredGame.updatedAt : absent = jamais modifié depuis l'introduction
+  // du champ, rien à arbitrer plutôt que de deviner un gagnant.
   updatedAt?: number;
+  // Tombstone de suppression (§9.5, ARCHITECTURE.md « Suppression et
+  // renommage d'une liste ») — jamais posé sur une liste intégrée
+  // (favoris/wishlist, non supprimables). Bascule avec name/description/
+  // hidden sur le MÊME updatedAt plutôt qu'un horodatage séparé : supprimer
+  // une liste est une mutation de métadonnées comme les autres, pas une
+  // entité à part. Une fois renseigné, la liste disparaît de tous les
+  // écrans qui en énuméraient (Profil, sélecteurs de listes) mais reste en
+  // mémoire — nécessaire pour que la synchro propage la suppression aux
+  // autres appareils plutôt que de la voir réapparaître dès qu'un appareil
+  // pas encore informé repousserait son propre état. Absent = liste vivante.
+  deletedAt?: number;
   gameIds: string[];
   memberships?: Record<string, ListMembership>;
 };
@@ -193,6 +204,8 @@ type GameStoreContextValue = {
   setFavoriteTrack: (id: string, favoriteTrackId: string | undefined) => void;
   toggleListMembership: (listId: string, gameId: string) => void;
   createList: (name: string, options?: { description?: string; hidden?: boolean }) => string;
+  renameList: (listId: string, name: string) => void;
+  deleteList: (listId: string) => void;
   applySyncedGames: (games: StoredGame[]) => void;
   applySyncedLists: (lists: StoredList[]) => void;
 };
@@ -420,12 +433,15 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
       toggleListMembership: (listId: string, gameId: string) => {
         setState((prev) => {
           const list = prev.lists[listId];
-          if (!list) return prev;
           // Même garde que toute autre action "par id" du store (setRating,
           // addAchievement, toggleStopped...) : no-op silencieux si l'entité
           // référencée n'existe pas, plutôt que d'accepter un id orphelin
           // dans gameIds/memberships qu'aucun écran n'aurait ensuite de
-          // raison de nettoyer.
+          // raison de nettoyer. Une liste supprimée (deletedAt) compte comme
+          // inexistante ici : ses gameIds/memberships ont déjà été vidés par
+          // deleteList, rouvrir une modale restée montée pendant la
+          // suppression ne doit pas les repeupler.
+          if (!list || list.deletedAt != null) return prev;
           if (!prev.games[gameId]) return prev;
           const wasMember = list.gameIds.includes(gameId);
           const gameIds = wasMember
@@ -464,6 +480,50 @@ export function GameStoreProvider({ children }: { children: ReactNode }) {
           },
         }));
         return id;
+      },
+      // Réservé aux listes créées par l'utilisateur (voir profile/list/
+      // [id].tsx, seul appelant — le menu réglages n'y est proposé que pour
+      // `!list.builtin`) : renommer Favoris/Wishlist romprait les écrans qui
+      // en dépendent par leur id fixe, pas seulement leur nom affiché. Même
+      // garde "rien n'a changé" que partout ailleurs (voir updateGame) :
+      // resoumettre le nom déjà affiché ne doit pas avancer `updatedAt`, ce
+      // qui ferait gagner à tort l'arbitrage §9.5 à un appareil qui n'a rien
+      // modifié.
+      renameList: (listId: string, name: string) => {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        setState((prev) => {
+          const list = prev.lists[listId];
+          if (!list || list.builtin || list.deletedAt != null) return prev;
+          if (list.name === trimmed) return prev;
+          return {
+            ...prev,
+            lists: { ...prev.lists, [listId]: { ...list, name: trimmed, updatedAt: Date.now() } },
+          };
+        });
+      },
+      // Tombstone plutôt qu'un retrait de `prev.lists` (voir le commentaire
+      // de `StoredList.deletedAt`) : la ligne doit survivre localement pour
+      // que la synchro §9.5 ait quelque chose à pousser/arbitrer. `gameIds`/
+      // `memberships` sont vidés immédiatement — une liste supprimée n'a
+      // plus besoin de savoir ce qu'elle contenait, aucun écran ne la
+      // réaffichera pour le lire (voir list/[id].tsx, profile/index.tsx,
+      // list-picker-sheet.tsx, game-picker-sheet.tsx, tous filtrés sur
+      // `!deletedAt`). Réservée aux listes créées par l'utilisateur, même
+      // garde que renameList — Favoris/Wishlist ne se suppriment jamais.
+      deleteList: (listId: string) => {
+        setState((prev) => {
+          const list = prev.lists[listId];
+          if (!list || list.builtin || list.deletedAt != null) return prev;
+          const deletedAt = Date.now();
+          return {
+            ...prev,
+            lists: {
+              ...prev.lists,
+              [listId]: { ...list, deletedAt, updatedAt: deletedAt, gameIds: [], memberships: undefined },
+            },
+          };
+        });
       },
       // Pas de vraie authentification (voir ARCHITECTURE.md §9) : l'utilisateur
       // colle lui-même son SteamID64 (Profil, "Lier mon compte Steam"), utilisé

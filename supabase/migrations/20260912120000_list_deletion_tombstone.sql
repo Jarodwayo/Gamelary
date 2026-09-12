@@ -1,0 +1,34 @@
+-- Tombstone de suppression pour les listes créées par l'utilisateur (voir
+-- ARCHITECTURE.md §9.5, « Suppression et renommage d'une liste ») — portée
+-- laissée hors scope par les deux migrations précédentes, qui ne couvraient
+-- que la création (20260910120000) puis la description/visibilité/le
+-- renommage (20260911120000). Ne modifie jamais ce fichier après application
+-- sur un projet réel : une nouvelle migration pour tout changement ultérieur,
+-- comme pour n'importe quel schéma versionné.
+
+-- Une suppression distante immédiate (DELETE la ligne `lists`, avec
+-- cascade sur `list_games`) reviendrait exactement au problème que
+-- `list_games.removed_at` a déjà résolu une fois (voir
+-- 20260911120000_lists_sync_columns.sql) : un second appareil pas encore
+-- synchronisé au moment de la suppression n'apprendrait jamais qu'elle a eu
+-- lieu, et la repousserait telle quelle (nom, description, appartenances)
+-- dès sa prochaine synchro — résurrection silencieuse d'une liste que
+-- l'utilisateur avait pourtant supprimée. `deleted_at` renseigné signifie
+-- donc "supprimée à cette date-là" plutôt qu'une ligne effacée.
+--
+-- Bascule avec `name`/`description`/`hidden` sur le MÊME `updated_at`
+-- (trigger déjà posé par la migration précédente, inchangé ici) plutôt qu'un
+-- horodatage séparé : supprimer une liste est une mutation de plus de ce
+-- même état de métadonnées, jamais une entité ou un évènement à part — voir
+-- mergeListMetadata (src/lib/sync/merge-policy.ts), qui applique le même
+-- arbitrage dernier-écrit-gagne aux quatre champs ensemble.
+alter table lists add column deleted_at timestamptz;
+
+-- list_games n'a PAS besoin d'un tombstone symétrique : une fois qu'une
+-- liste est jugée supprimée par l'arbitrage ci-dessus (verdict qui ne
+-- revient jamais en arrière, contrairement à `removed_at` sur une
+-- appartenance qui peut légitimement se réactiver), aucun appareil n'a plus
+-- besoin de connaître son contenu passé. `sync-service.ts` (syncLists)
+-- supprime alors pour de vrai les lignes `list_games` de cette liste dès que
+-- la suppression est constatée côté distant pour la première fois, plutôt
+-- que de les laisser traîner indéfiniment sans jamais plus être lues.

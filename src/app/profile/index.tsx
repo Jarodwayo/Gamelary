@@ -129,7 +129,9 @@ export default function ProfileScreen() {
 
   const totalHours = libraryGames.reduce((sum, game) => sum + hoursInPeriod(game.playSessions, 'all'), 0);
 
-  const visibleCustomLists = Object.values(store.lists).filter((list) => !list.builtin && !list.hidden);
+  const visibleCustomLists = Object.values(store.lists).filter(
+    (list) => !list.builtin && !list.hidden && list.deletedAt == null
+  );
 
   const [editingSteamId, setEditingSteamId] = useState(false);
   const [steamIdInput, setSteamIdInput] = useState('');
