@@ -25,7 +25,7 @@ succès et le temps de jeu réel).
 
 **Connexion :**
 
-[▶️ Voir la vidéo de connexion (~15 sec)]([https://youtu.be/2hxKEDNqP3M])
+[▶️ Voir la vidéo de connexion (~15 sec)](https://youtu.be/2hxKEDNqP3M)
 
 **Parcours complet (Bibliothèque → Explorer → Profil) :**
 
