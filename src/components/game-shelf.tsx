@@ -49,7 +49,7 @@ function ShelfCard({ item }: { item: ShelfItem }) {
   );
 }
 
-// Carte large : mêmes proportions que GameGrid (Bibliothèque/Explorer,
+// Carte large : mêmes proportions que GameGrid (Bibliothèque,
 // largeur calculée via useGridItemWidth — un seul point de vérité pour
 // cette taille, pas une valeur choisie à part ici) mais toujours dans un
 // scroll horizontal, pas une grille qui retourne à la ligne — le Profil
@@ -94,7 +94,7 @@ type GameShelfProps = {
 // Rangée horizontale du Profil (Jeux joués/Jeux préférés) — motif "titre en
 // gras + chevron + scroll horizontal" décidé dans le style guide (voir
 // ARCHITECTURE.md §2), distinct de la grille murale (GameGrid) de
-// Bibliothèque/Explorer qui elle retourne à la ligne.
+// Bibliothèque qui elle retourne à la ligne.
 export function GameShelf({
   title,
   subtitle,
@@ -197,12 +197,12 @@ type FeaturedShelfProps = {
   emptyLabel?: string;
 };
 
-// Mise en avant d'Explorer ("Recommandé pour toi" — voir explorer.tsx),
-// volontairement distincte de la grille murale (GameGrid) des 4 autres
-// rangées : cartes plus grandes (GameCoverFeatured), défilement horizontal
-// conservé, et un badge ("Recommandé"/"Tendance") superposé sur la
-// jaquette — jamais de plateforme affichée ici (retirée d'Explorer, voir
-// GameGrid), contrairement à GameShelf qui la garde pour le Profil.
+// Toutes les rangées d'Explorer (voir explorer.tsx) : cartes plus grandes
+// (GameCoverFeatured), défilement horizontal, et un badge
+// ("Recommandé"/"Tendance"/"Nouveau"/"Populaire"/"Attendu") superposé sur
+// la jaquette pour identifier la section même une fois scrollée hors de vue
+// de son titre — jamais de plateforme affichée ici, contrairement à
+// GameShelf qui la garde pour le Profil.
 export function FeaturedShelf({ title, badge, items, emptyLabel }: FeaturedShelfProps) {
   return (
     <ThemedView style={styles.shelf}>
