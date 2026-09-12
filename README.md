@@ -1,6 +1,6 @@
 # Gamelary
 
-🔗 **Démo en ligne** : [Essayer la démo](https://gamelary.expo.app)
+🔗 **Démo en ligne** : [Essayer la démo](https://gamelary.expo.app) — *la version web est fournie à titre indicatif ; l'app est pensée mobile-first (iOS/Android) et l'expérience y est nettement meilleure.*
 
 J'ai construit Gamelary pendant ma reconversion vers le métier de développeur
 full stack (formation OpenClassrooms, complétée par des certifications
@@ -20,6 +20,16 @@ nouveaux titres.
 Projet personnel, développé en solo — Expo (React Native) + TypeScript, avec
 deux sources de données externes (IGDB pour le catalogue, Steam pour les
 succès et le temps de jeu réel).
+
+## Démo vidéo
+
+**Connexion :**
+
+[▶️ Voir la vidéo de connexion (~15 sec)](https://github.com/user-attachments/assets/7f4f743c-6265-452d-9f44-256b7fc25f3e)
+
+**Parcours complet (Bibliothèque → Explorer → Profil) :**
+
+ [▶️ Voir la démo (~2 min)](https://youtu.be/1pkv3xvESzE)
 
 ## Captures d'écran
 
