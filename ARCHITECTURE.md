@@ -58,9 +58,9 @@ avant de coder Explorer/Profil/Statistiques pour éviter de styliser chaque
     murale (`GameGrid`, voir plus bas) : pas de largeur fixe en pixels,
     c'est la grille (3 colonnes fixes partout où elle est utilisée) qui la
     détermine, jamais un appelant au cas par cas.
-  - **`GameCoverFeatured`** (140×210, coins 12px) — rangée "Recommandé pour
-    toi" d'Explorer (`FeaturedShelf`, voir plus bas), seule mise en avant
-    plus grande que le reste.
+  - **`GameCoverFeatured`** (140×210, coins 12px) — les 5 rangées d'Explorer
+    (`FeaturedShelf`, voir plus bas) : plus grande que partout ailleurs dans
+    l'app (Bibliothèque, Profil).
 - **Titres longs** (`formatGameTitle`, `src/lib/game-title.ts`) : beaucoup
   de titres suivent "Titre : Sous-titre" (éditions/remasters/AAA récents) ;
   le retour à la ligne naturel d'un `Text` (au premier espace qui déborde)
@@ -71,20 +71,22 @@ avant de coder Explorer/Profil/Statistiques pour éviter de styliser chaque
   sous-titre long en plein mot dès qu'il dépassait la limite), un titre
   long doit toujours se lire en entier.
 - **Grille murale** (`GameGrid`, `src/components/game-grid.tsx`) —
-  Bibliothèque (tous les onglets) et Explorer (sauf "Recommandé pour toi") :
-  3 colonnes, largeur de carte calculée en JS (`useWindowDimensions`,
-  pas en `%`) plutôt qu'un `FlatList numColumns` — évite le piège classique
-  d'une dernière ligne incomplète qui étire ses 1-2 cartes restantes plus
-  large que les autres ; chaque carte garde toujours exactement la même
-  largeur, complète ou non. Un simple `View` en `flexWrap` plutôt qu'un
-  `FlatList` virtualisé : une bibliothèque perso reste de taille modeste
+  Bibliothèque (tous les onglets) uniquement : Explorer est passé
+  entièrement en rangées `FeaturedShelf` (voir plus bas et §6.5), plus
+  aucune de ses 5 rangées n'utilise `GameGrid`. 3 colonnes, largeur de
+  carte calculée en JS (`useWindowDimensions`, pas en `%`) plutôt qu'un
+  `FlatList numColumns` — évite le piège classique d'une dernière ligne
+  incomplète qui étire ses 1-2 cartes restantes plus large que les
+  autres ; chaque carte garde toujours exactement la même largeur, complète
+  ou non. Un simple `View` en `flexWrap` plutôt qu'un `FlatList`
+  virtualisé : une bibliothèque perso reste de taille modeste
   (quelques dizaines de jeux), pas besoin de virtualisation, et ça évite
-  d'imbriquer un `FlatList` dans le `ScrollView` d'Explorer (avertissement
-  React Native classique sur les listes virtualisées imbriquées de même
-  orientation). Ni plateforme ni heures affichées sur les cartes Explorer
-  (seulement le titre) — Bibliothèque garde les heures jouées quand elles
-  sont non nulles, mais plus la plateforme non plus (retirée des deux
-  écrans, contrairement à Profil qui la garde, voir plus bas).
+  d'imbriquer un `FlatList` dans le `ScrollView` vertical de Bibliothèque
+  (avertissement React Native classique sur les listes virtualisées
+  imbriquées de même orientation — sans objet ici puisque `GameGrid` n'est
+  jamais une `FlatList`). Pas de plateforme sur les cartes (retirée,
+  contrairement à Profil qui la garde, voir plus bas) ; les heures jouées
+  restent affichées quand elles sont non nulles.
 - **Rangée horizontale** (`GameShelf`, `src/components/game-shelf.tsx`) —
   Profil ("Jeux joués"/"Jeux préférés") uniquement désormais : titre de
   section en gras, compteur de jeux **sous** le titre (petit texte
@@ -109,18 +111,18 @@ avant de coder Explorer/Profil/Statistiques pour éviter de styliser chaque
   Explorer sous le message d'état vide — un nouvel utilisateur sans jeu
   joué/favori voit un vrai point de départ plutôt qu'un texte explicatif
   suivi de rien à faire. `FeaturedShelf` (même fichier, toujours une
-  `FlatList` — Explorer, pas concerné par ce changement) est la
-  variante utilisée par "Recommandé pour toi" sur Explorer : cartes
-  `GameCoverFeatured` (plus grandes) avec un badge ("Recommandé") superposé
-  sur la jaquette, jamais de plateforme — délibérément distincte de la
-  grille des 4 autres rangées Explorer plutôt qu'une carte de plus parmi
-  d'autres. Titres de section en accent (`FeaturedShelf`, et les 4 rangées
-  génériques d'Explorer) plutôt que la couleur de texte par défaut :
-  manquaient de contraste en sombre (blanc/gris clair sur fond quasi noir),
-  et l'accent est déjà la couleur du badge "Recommandé"/du cœur favori —
+  `FlatList` — Explorer, pas concerné par ce changement) est la variante
+  utilisée par les 5 rangées d'Explorer (voir §6.5) : cartes
+  `GameCoverFeatured` (plus grandes) avec un badge par rangée
+  ("Recommandé"/"Tendance"/"Nouveau"/"Populaire"/"Attendu") superposé sur
+  la jaquette — l'identifie même une fois scrollée hors de vue de son
+  titre —, jamais de plateforme. Titres de section en accent
+  (`FeaturedShelf`) plutôt que la couleur de texte par défaut : manquaient
+  de contraste en sombre (blanc/gris clair sur fond quasi noir), et
+  l'accent est déjà la couleur du badge "Recommandé"/du cœur favori —
   cohérence en plus de la lisibilité. Les titres de Profil ("Jeux joués"/
-  "Jeux préférés") gardent la couleur par défaut, non concernés par ce
-  changement.
+  "Jeux préférés", `GameShelf`) gardent la couleur par défaut, non
+  concernés par ce changement.
 
 **`<Link asChild>` et styles dynamiques — piège React Native/expo-router
 récurrent** : `Link asChild` clone son enfant direct via `Slot`, qui ne
@@ -451,9 +453,11 @@ résultats de deux utilisateurs aux bibliothèques différentes.
 "Jeux joués par tes amis" volontairement absent de cette liste : ça suppose
 un système de comptes/amis qui n'existe pas encore.
 
-Affichage : "Recommandé pour toi" seule à rester une rangée horizontale
-mise en avant (`FeaturedShelf`), les 4 autres rejoignent une grille murale
-(`GameGrid`) — voir §2 pour le détail des deux composants.
+Affichage : les 5 rangées défilent horizontalement via `FeaturedShelf`,
+chacune avec son propre badge par carte ("Recommandé"/"Tendance"/
+"Nouveau"/"Populaire"/"Attendu") — voir §2 pour le détail du composant.
+Plus de grille murale (`GameGrid`) sur cet écran, désormais réservée à
+Bibliothèque.
 
 Chaque rangée (`useExploreSection`, `src/hooks/use-explore.ts`) enregistre
 au passage les jeux reçus dans le store (`registerCatalogGame`) : un jeu vu
@@ -1419,11 +1423,10 @@ piles imbriquées), design system clair/sombre (accent/success, voir §2),
 jaquettes réelles via SteamGridDB avec repli automatique sur placeholder si
 l'image échoue à charger (voir §2), catalogue réel via IGDB (recherche par
 titre et 5 rangées Explorer), bibliothèque persistée localement
-(AsyncStorage) avec suivi (`inLibrary`/"Arrêter de jouer"), Bibliothèque et
-Explorer en **grille murale 3 colonnes** filtrable
-(Tous/Wishlist/Pas commencé/En cours/Terminé — voir §2), rangée "Recommandé
-pour toi" mise en avant à part de cette grille (plus grande, badge, voir
-§6.5), titres longs ("Titre : Sous-titre") toujours lisibles en entier
+(AsyncStorage) avec suivi (`inLibrary`/"Arrêter de jouer"), Bibliothèque en **grille murale 3 colonnes** filtrable
+(Tous/Wishlist/Pas commencé/En cours/Terminé — voir §2), Explorer entièrement
+en rangées horizontales mises en avant (5 rangées, chacune avec son badge —
+voir §6.5), titres longs ("Titre : Sous-titre") toujours lisibles en entier
 (retour à la ligne forcé après les deux-points, jamais tronqués — voir §2),
 notation sur 20 + avis texte par jeu, succès nommés et cochables (voir
 §6.3), heures jouées **directement modifiables** (total éditable en un tap,
@@ -1635,10 +1638,9 @@ bibliothèque vide.
   aucun stub.
 - Le chevron "›" du Profil (`GameShelf`, Jeux joués/Jeux préférés) est
   pour l'instant purement visuel (pas d'écran "voir tout") — non demandé
-  pour cette itération. Les rangées d'Explorer n'en ont plus du tout
-  depuis leur passage en grille/mise en avant (voir §2, §6.5) — la grille
-  affiche déjà plusieurs jeux à la fois, l'affordance "voir tout" a moins
-  de sens qu'avant.
+  pour cette itération. Les rangées d'Explorer (`FeaturedShelf`, voir §2,
+  §6.5) n'en ont jamais eu : chaque rangée défile déjà sur ses jeux,
+  l'affordance "voir tout" y a moins de sens qu'ailleurs.
 - "Plateformes les plus jouées" plutôt que "genres" sur l'écran
   Statistiques (voir §6.7) — la donnée existe déjà, pas besoin d'étendre
   les requêtes IGDB pour cette itération.
